@@ -31,6 +31,7 @@ import com.textgate.app.core.utils.requestWifiScan
 import com.textgate.app.core.utils.scanBlocker
 import com.textgate.app.core.utils.visibleAccessPoints
 import com.textgate.app.core.utils.visibleBssids
+import com.textgate.app.data.local.MonitorLogStore
 import com.textgate.app.data.local.PreferencesDataSource
 import com.textgate.app.domain.model.Place
 import com.textgate.app.domain.model.PresenceState
@@ -66,7 +67,25 @@ class ArrivalService : Service() {
     private val linkRepo: LinkRepository by inject()
     private val answerLocationRequest: AnswerLocationRequestsUseCase by inject()
     private val prefs: PreferencesDataSource by inject()
+    private val monitorLog: MonitorLogStore by inject()
     private val routineAnalyzer = RoutineAnalyzer()
+
+    // The log is for reading, so a condition that holds across many sweeps is
+    // written once when it appears, not once per sweep it survives.
+    private var lastProblem: String? = null
+    private val lastPlaceNote = mutableMapOf<String, String>()
+
+    private fun notePlace(place: Place, kind: String, message: String) {
+        if (lastPlaceNote[place.id] == message) return
+        lastPlaceNote[place.id] = message
+        monitorLog.append(kind, "${place.label.ifBlank { place.id }}: $message")
+    }
+
+    private fun noteProblem(message: String) {
+        if (lastProblem == message) return
+        lastProblem = message
+        monitorLog.append(MonitorLogStore.Kind.PROBLEM, message)
+    }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var sweepJob: Job? = null
@@ -160,10 +179,13 @@ class ArrivalService : Service() {
             startForeground(NOTIFICATION_ID, buildNotification())
         } catch (e: Exception) {
             Log.e(TAG, "Could not start the arrival service in the foreground", e)
+            monitorLog.append(MonitorLogStore.Kind.PROBLEM,
+                "Monitoring could not start, the location permission was taken away")
             isRunning = false
             stopSelf()
             return
         }
+        monitorLog.append(MonitorLogStore.Kind.EVENT, "Monitoring started")
         ArrivalWatchdogReceiver.scheduleNextCheck(this)
         connectivityManager.registerNetworkCallback(buildNetworkRequest(), networkCallback)
         stepSensor?.let {
@@ -176,6 +198,7 @@ class ArrivalService : Service() {
 
     override fun onDestroy() {
         isRunning = false
+        monitorLog.append(MonitorLogStore.Kind.EVENT, "Monitoring stopped")
         // The watchdog keeps running on purpose: the common way this method is
         // reached is the system killing the service, which is exactly the case
         // the watchdog exists to undo. It is cancelled when the user switches
@@ -236,6 +259,7 @@ class ArrivalService : Service() {
             Log.w(TAG, "Cannot observe: $blocker")
             nextSweepSeconds = SWEEP_SECONDS_SETTLED
             updateNotification(blocker)
+            noteProblem(blocker)
             goBlind(saved)
             return
         }
@@ -247,8 +271,13 @@ class ArrivalService : Service() {
             Log.w(TAG, "Scan returned no networks although scanning is available")
             nextSweepSeconds = SWEEP_SECONDS_MOVING
             updateNotification("No WiFi networks heard on this check, trying again soon")
+            noteProblem("Scan returned no networks although scanning is on, retrying soon")
             goBlind(saved)
             return
+        }
+        if (lastProblem != null) {
+            lastProblem = null
+            monitorLog.append(MonitorLogStore.Kind.EVENT, "Able to observe again")
         }
         Log.d(TAG, "Sweep: ${visible.size} networks in range, ${saved.size} saved places")
         prefs.setLastObservedAt(System.currentTimeMillis())
@@ -294,9 +323,13 @@ class ArrivalService : Service() {
                 val resumed = if (present) {
                     Log.i(TAG, "${place.id}: audible after a blind spell (was " +
                         "${presence.stateBeforeBlind}), adopting as already here")
+                    notePlace(place, MonitorLogStore.Kind.EVENT,
+                        "heard again after a gap in observation, treated as already here, no alert")
                     presence.copy(state = PresenceState.HERE)
                 } else {
                     Log.i(TAG, "${place.id}: not audible after a blind spell, away")
+                    notePlace(place, MonitorLogStore.Kind.EVENT,
+                        "not heard after a gap in observation, marked away")
                     presence.copy(state = PresenceState.AWAY, visitStartedAt = 0L, stationaryMillis = 0L)
                 }
                 prefs.setPresence(place.id, resumed)
@@ -316,6 +349,7 @@ class ArrivalService : Service() {
                 val departed = missed >= MISSED_SWEEPS_TO_LEAVE && overlap < FAMILIAR_OVERLAP_TO_STAY
                 if (departed && presence.state != PresenceState.AWAY) {
                     Log.i(TAG, "${place.id}: departure observed, overlap ${"%.2f".format(overlap)}")
+                    notePlace(place, MonitorLogStore.Kind.EVENT, "departure observed")
                     prefs.setPresence(place.id, presence.copy(
                         state = PresenceState.AWAY, visitStartedAt = 0L, stationaryMillis = 0L,
                     ))
@@ -337,16 +371,23 @@ class ArrivalService : Service() {
             }
             if (System.currentTimeMillis() - startedAt < SETTLING_MILLIS) {
                 Log.d(TAG, "${place.id}: still settling after a restart, not alerting yet")
+                notePlace(place, MonitorLogStore.Kind.EVENT,
+                    "in range, but held back while monitoring settles after a restart")
                 return@forEach
             }
             val sinceAlert = System.currentTimeMillis() - presence.lastAlertAt
             if (presence.lastAlertAt > 0L && sinceAlert < REARM_MINUTES * 60_000L) {
                 Log.d(TAG, "${place.id}: within the ${REARM_MINUTES} minute cooling-off period")
+                notePlace(place, MonitorLogStore.Kind.EVENT,
+                    "in range, but inside the ${REARM_MINUTES} minute cooling-off period")
                 return@forEach
             }
 
             val started = presence.state != PresenceState.APPROACHING
-            if (started) Log.i(TAG, "${place.id}: in range, starting the wait")
+            if (started) {
+                Log.i(TAG, "${place.id}: in range, starting the wait")
+                notePlace(place, MonitorLogStore.Kind.EVENT, "in range, waiting for the phone to settle")
+            }
             // The wait counts only the time the phone actually sat still. A 12
             // minute visit is nearly all still time; driving past contains none,
             // so a short setting stays safe instead of becoming trigger-happy.
@@ -370,13 +411,20 @@ class ArrivalService : Service() {
             // or the suppression becomes the reason the next real arrival is lost.
             if (place.isQuietAt(DateUtils.minutesOfDay())) {
                 Log.d(TAG, "${place.id}: inside its quiet hours, not sending")
+                notePlace(place, MonitorLogStore.Kind.EVENT, "arrived inside its quiet hours, nothing sent")
                 return@forEach
             }
 
             val routineTriggered = waitMinutes < dwellMinutes
             recordArrival(uid, place.id, routineTriggered)
-                .onSuccess { Log.i(TAG, "${place.id}: arrival recorded") }
-                .onFailure { Log.w(TAG, "${place.id}: arrival not sent — ${it.message}") }
+                .onSuccess {
+                    Log.i(TAG, "${place.id}: arrival recorded")
+                    notePlace(place, MonitorLogStore.Kind.ALERT, "arrival alert sent")
+                }
+                .onFailure {
+                    Log.w(TAG, "${place.id}: arrival not sent — ${it.message}")
+                    notePlace(place, MonitorLogStore.Kind.PROBLEM, "arrival alert failed, ${it.message}")
+                }
             // Marked here whether or not the gateway accepted it: delivery is
             // retried per recipient from the Auto page, and replaying the whole
             // fan-out would double-message everyone who was already reached.
@@ -387,6 +435,10 @@ class ArrivalService : Service() {
 
         chooseNextCadence(saved, movedSinceLastSweep = stillSinceLastSweep == 0L)
         val here = saved.firstOrNull { prefs.getPresence(it.id).state == PresenceState.HERE }
+        monitorLog.append(MonitorLogStore.Kind.CHECK,
+            "Heard ${visible.size} networks. " +
+                (if (here != null) "At ${here.label.ifBlank { here.id }}." else "Not at a saved place.") +
+                " Next check in ${nextSweepSeconds / 60} min.")
         updateNotification(
             if (here != null) "At ${here.label.ifBlank { here.id }}, checked just now"
             else "Checked just now, not at a saved place"

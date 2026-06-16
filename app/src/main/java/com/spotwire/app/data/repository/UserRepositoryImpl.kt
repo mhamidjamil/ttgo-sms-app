@@ -112,6 +112,9 @@ class UserRepositoryImpl(
 
     override suspend fun sendEmailVerification(): Result<Unit> = auth.sendEmailVerification()
 
+    override suspend fun sendPasswordReset(email: String): Result<Unit> =
+        auth.sendPasswordReset(email)
+
     override fun isLoggedIn() = auth.isLoggedIn()
 
     override fun currentFirebaseUser() = auth.currentUser()

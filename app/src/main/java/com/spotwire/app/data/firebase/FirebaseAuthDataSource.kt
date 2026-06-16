@@ -1,6 +1,8 @@
 package com.spotwire.app.data.firebase
 
+import com.google.firebase.FirebaseNetworkException
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthInvalidUserException
 import com.google.firebase.auth.FirebaseAuthRecentLoginRequiredException
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.userProfileChangeRequest
@@ -39,6 +41,20 @@ class FirebaseAuthDataSource(private val auth: FirebaseAuth) {
         val user = auth.currentUser ?: error("No authenticated user")
         if (user.isEmailVerified) return@runCatching
         user.sendEmailVerification().await()
+    }
+
+    // Firebase emails and validates the reset link on its own, same as the
+    // verification email. With email enumeration protection on (the default),
+    // an address nobody signed up with also comes back successful, so the
+    // user-not-found branch only fires on projects with it switched off.
+    suspend fun sendPasswordReset(email: String): Result<Unit> = runCatching {
+        try {
+            auth.sendPasswordResetEmail(email).await()
+        } catch (e: FirebaseAuthInvalidUserException) {
+            throw IllegalStateException("No account uses that email", e)
+        } catch (e: FirebaseNetworkException) {
+            throw IllegalStateException("Could not reach the server, try again", e)
+        }
     }
 
     fun isEmailVerified(): Boolean = auth.currentUser?.isEmailVerified == true

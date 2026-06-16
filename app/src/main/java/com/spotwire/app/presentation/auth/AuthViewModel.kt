@@ -3,6 +3,7 @@ package com.spotwire.app.presentation.auth
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.spotwire.app.core.utils.PhoneNormalizer
+import com.spotwire.app.domain.repository.UserRepository
 import com.spotwire.app.domain.usecase.auth.SendEmailVerificationUseCase
 import com.spotwire.app.domain.usecase.auth.SendPhoneOtpUseCase
 import com.spotwire.app.domain.usecase.auth.SignInUseCase
@@ -18,6 +19,8 @@ data class AuthUiState(
     val success: Boolean = false,
     val verificationSent: Boolean = false,
     val navigateToPhoneVerify: Boolean = false,
+    val resetSending: Boolean = false,
+    val resetMessage: String? = null,
 )
 
 class AuthViewModel(
@@ -26,6 +29,7 @@ class AuthViewModel(
     private val sendEmailVerification: SendEmailVerificationUseCase,
     private val sendPhoneOtp: SendPhoneOtpUseCase,
     private val phoneNormalizer: PhoneNormalizer,
+    private val userRepo: UserRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AuthUiState())
@@ -73,6 +77,30 @@ class AuthViewModel(
                     )
                 }
                 .onFailure { _uiState.value = AuthUiState(error = it.message ?: "Sign-up failed") }
+        }
+    }
+
+    // Firebase decides whether a reset link actually goes out, and with email
+    // enumeration protection on it never says. Promising "sent to <email>"
+    // would therefore be a guess, and it would also tell a stranger which
+    // addresses have an account here, so the wording stays conditional.
+    fun sendPasswordReset(email: String) {
+        if (email.isBlank()) {
+            _uiState.value = AuthUiState(error = "Type your email above first")
+            return
+        }
+        viewModelScope.launch {
+            _uiState.value = AuthUiState(resetSending = true)
+            userRepo.sendPasswordReset(email.trim())
+                .onSuccess {
+                    _uiState.value = AuthUiState(
+                        resetMessage = "If an account uses this email, a reset link is on its way. " +
+                            "Check the inbox and the spam folder.",
+                    )
+                }
+                .onFailure {
+                    _uiState.value = AuthUiState(error = it.message ?: "Could not send the reset email")
+                }
         }
     }
 

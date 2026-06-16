@@ -2,12 +2,16 @@ package com.spotwire.app.presentation.auth
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.spotwire.app.core.theme.SpotwireTheme
@@ -21,17 +25,24 @@ fun LoginScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     LaunchedEffect(uiState.success) { if (uiState.success) onLoginSuccess() }
-    LoginContent(uiState = uiState, onLogin = viewModel::login, onNavigateToSignup = onNavigateToSignup)
+    LoginContent(
+        uiState = uiState,
+        onLogin = viewModel::login,
+        onForgotPassword = viewModel::sendPasswordReset,
+        onNavigateToSignup = onNavigateToSignup,
+    )
 }
 
 @Composable
 private fun LoginContent(
     uiState: AuthUiState,
     onLogin: (String, String) -> Unit,
+    onForgotPassword: (String) -> Unit,
     onNavigateToSignup: () -> Unit,
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
@@ -59,15 +70,31 @@ private fun LoginContent(
             onValueChange = { password = it },
             label = { Text("Password") },
             singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
+            visualTransformation =
+                if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            trailingIcon = {
+                IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                    Icon(
+                        imageVector = if (passwordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                        contentDescription = if (passwordVisible) "Hide password" else "Show password",
+                    )
+                }
+            },
             modifier = Modifier.fillMaxWidth(),
         )
+        TextButton(
+            onClick = { onForgotPassword(email) },
+            enabled = !uiState.resetSending,
+            modifier = Modifier.align(Alignment.End),
+        ) { Text(if (uiState.resetSending) "Sending..." else "Forgot password?") }
         uiState.error?.let { err ->
-            Spacer(Modifier.height(8.dp))
             Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
         }
-        Spacer(Modifier.height(24.dp))
+        uiState.resetMessage?.let { msg ->
+            Text(msg, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
+        }
+        Spacer(Modifier.height(16.dp))
         Button(
             onClick = { onLogin(email, password) },
             enabled = !uiState.isLoading,
@@ -84,17 +111,17 @@ private fun LoginContent(
 @Preview(showBackground = true, name = "Login — Default")
 @Composable
 private fun LoginPreview() {
-    SpotwireTheme { LoginContent(AuthUiState(), { _, _ -> }, {}) }
+    SpotwireTheme { LoginContent(AuthUiState(), { _, _ -> }, {}, {}) }
 }
 
 @Preview(showBackground = true, name = "Login — Loading")
 @Composable
 private fun LoginLoadingPreview() {
-    SpotwireTheme { LoginContent(AuthUiState(isLoading = true), { _, _ -> }, {}) }
+    SpotwireTheme { LoginContent(AuthUiState(isLoading = true), { _, _ -> }, {}, {}) }
 }
 
 @Preview(showBackground = true, name = "Login — Error")
 @Composable
 private fun LoginErrorPreview() {
-    SpotwireTheme { LoginContent(AuthUiState(error = "Invalid email or password"), { _, _ -> }, {}) }
+    SpotwireTheme { LoginContent(AuthUiState(error = "Invalid email or password"), { _, _ -> }, {}, {}) }
 }

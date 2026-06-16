@@ -21,6 +21,8 @@ interface UserRepository {
     suspend fun refreshEmailVerified(): Result<Boolean>
     // Firebase sends the verification email itself — no mail credential ships.
     suspend fun sendEmailVerification(): Result<Unit>
+    // Same deal for the forgotten-password link: Firebase owns the email.
+    suspend fun sendPasswordReset(email: String): Result<Unit>
     fun isLoggedIn(): Boolean
     fun currentFirebaseUser(): FirebaseUser?
 

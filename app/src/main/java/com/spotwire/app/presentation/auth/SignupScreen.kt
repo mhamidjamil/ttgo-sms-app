@@ -4,12 +4,16 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.spotwire.app.core.theme.SpotwireTheme
@@ -41,6 +45,10 @@ private fun SignupContent(
     var name by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var confirmPassword by remember { mutableStateOf("") }
+    var confirmVisible by remember { mutableStateOf(false) }
+    var confirmError by remember { mutableStateOf<String?>(null) }
     var phone by remember { mutableStateOf("") }
     val phoneError = phoneNormalizer.validationError(phone)
 
@@ -73,12 +81,42 @@ private fun SignupContent(
         Spacer(Modifier.height(12.dp))
         OutlinedTextField(
             value = password,
-            onValueChange = { password = it },
+            onValueChange = { password = it; confirmError = null },
             label = { Text("Password (min 6 chars)") },
             singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
+            visualTransformation =
+                if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            trailingIcon = {
+                IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                    Icon(
+                        imageVector = if (passwordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                        contentDescription = if (passwordVisible) "Hide password" else "Show password",
+                    )
+                }
+            },
             modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(12.dp))
+        OutlinedTextField(
+            value = confirmPassword,
+            onValueChange = { confirmPassword = it; confirmError = null },
+            label = { Text("Confirm Password") },
+            singleLine = true,
+            visualTransformation =
+                if (confirmVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            trailingIcon = {
+                IconButton(onClick = { confirmVisible = !confirmVisible }) {
+                    Icon(
+                        imageVector = if (confirmVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                        contentDescription = if (confirmVisible) "Hide password" else "Show password",
+                    )
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            isError = confirmError != null,
+            supportingText = confirmError?.let { { Text(it) } },
         )
         Spacer(Modifier.height(12.dp))
         OutlinedTextField(
@@ -104,8 +142,14 @@ private fun SignupContent(
             )
         }
         Spacer(Modifier.height(24.dp))
+        // The mismatch is only checked on tap, never while typing: a confirm
+        // field that turns red at the first character is just noise, since it
+        // cannot match until the whole password has been retyped.
         Button(
-            onClick = { onSignup(email, password, name, phone) },
+            onClick = {
+                if (password != confirmPassword) confirmError = "Passwords do not match"
+                else onSignup(email, password, name, phone)
+            },
             enabled = !uiState.isLoading && phoneError == null,
             modifier = Modifier.fillMaxWidth().height(48.dp),
         ) {

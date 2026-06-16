@@ -29,7 +29,10 @@ enum class Closeness(val id: String, val label: String, val dbm: Int) {
     companion object {
         // The nearest chip at or below the stored number, so an exact value typed
         // into the advanced drawer still shows the closest matching chip.
-        fun forDbm(dbm: Int): Closeness = entries.lastOrNull { dbm <= it.dbm } ?: INSIDE
+        // The comparison was backwards, which made every stored value map to
+        // INSIDE, so the first two chips could be tapped but never showed as
+        // chosen and the setting looked impossible to change.
+        fun forDbm(dbm: Int): Closeness = entries.lastOrNull { it.dbm <= dbm } ?: ANY
     }
 }
 

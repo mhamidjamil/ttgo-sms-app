@@ -132,6 +132,13 @@ class ArrivalService : Service() {
     // network simply becoming audible. Concurrent because the receiver writes it
     // from the broadcast thread while a sweep is reading it.
     private val geofenceEnteredAt = ConcurrentHashMap<String, Long>()
+    // place id → this session was opened by the watchdog because the place's
+    // WiFi was audible while no fence had fired. It sits beside the map above
+    // rather than in it because the two say opposite things: there the crossing
+    // was observed, here it was not, so the arrival may only claim the WiFi.
+    // Rewritten on every session start, so a later real crossing is not read
+    // through the last watchdog one.
+    private val missedFenceSession = ConcurrentHashMap<String, Boolean>()
     // When the fences last matched the saved places, so an edit made in the app
     // reaches the system's fence watcher on the next sweep instead of never.
     private var geofencesRefreshedAt = 0L
@@ -270,7 +277,8 @@ class ArrivalService : Service() {
             ACTION_VALIDATE -> placeId?.let { id ->
                 val enteredAt = intent.getLongExtra(EXTRA_ENTERED_AT, System.currentTimeMillis())
                 validationStartedAt = System.currentTimeMillis()
-                scope.launch { onGeofenceEnter(id, enteredAt) }
+                val missedFence = intent.getBooleanExtra(EXTRA_MISSED_FENCE, false)
+                scope.launch { onGeofenceEnter(id, enteredAt, missedFence) }
             }
             ACTION_DEPART -> placeId?.let { id ->
                 scope.launch {
@@ -396,7 +404,7 @@ class ArrivalService : Service() {
      * audible again says nothing about whether the phone travelled, but a fence
      * can only fire on a genuine outside-to-inside crossing.
      */
-    private suspend fun onGeofenceEnter(placeId: String, enteredAt: Long) {
+    private suspend fun onGeofenceEnter(placeId: String, enteredAt: Long, missedFence: Boolean = false) {
         val place = currentUser()?.places?.firstOrNull { it.id == placeId } ?: run {
             Log.w(TAG, "$placeId: geofence entered for a place that is no longer saved")
             monitorLog.append(MonitorLogStore.Kind.PROBLEM,
@@ -417,10 +425,13 @@ class ArrivalService : Service() {
             prefs.setPresence(placeId, presence)
         }
         geofenceEnteredAt[placeId] = enteredAt
+        missedFenceSession[placeId] = missedFence
         prefs.setPresence(placeId, presence.copy(
             state = PresenceState.APPROACHING, visitStartedAt = enteredAt, stationaryMillis = 0L,
         ))
-        notePlace(place, MonitorLogStore.Kind.EVENT, "geofence entered, confirming the arrival")
+        notePlace(place, MonitorLogStore.Kind.EVENT,
+            if (missedFence) "no fence fired, confirming the arrival on WiFi alone"
+            else "geofence entered, confirming the arrival")
         // The wait counts from the crossing, never inheriting the still time of
         // the interval before it: a car ride registers almost no steps, so a
         // drive-past could otherwise arrive with its dwell wait already served.
@@ -759,6 +770,10 @@ class ArrivalService : Service() {
             // so a wrong alert can be told apart from a wrong fence afterwards.
             val detectionMethod = when {
                 geofenceOnly -> "geofence"
+                // The watchdog opened this session, so the fence contributed
+                // nothing: recording it as geofence_wifi would hide the very
+                // fence that is placed wrong.
+                missedFenceSession[place.id] == true -> "wifi"
                 enteredAt > 0L -> "geofence_wifi"
                 else -> "wifi"
             }
@@ -979,6 +994,7 @@ class ArrivalService : Service() {
         const val ACTION_DEPART = "com.spotwire.app.CHECK_DEPARTURE"
         private const val EXTRA_PLACE_ID = "place_id"
         private const val EXTRA_ENTERED_AT = "entered_at"
+        private const val EXTRA_MISSED_FENCE = "missed_fence"
 
         /**
          * Android revokes the permissions of apps that have not been opened for
@@ -1001,7 +1017,12 @@ class ArrivalService : Service() {
          * platform's own list of reasons a foreground service may start from
          * the background, so this works with the app closed.
          */
-        fun startValidation(context: Context, placeId: String, enteredAt: Long) {
+        fun startValidation(
+            context: Context,
+            placeId: String,
+            enteredAt: Long,
+            missedFence: Boolean = false,
+        ) {
             if (!hasLocationPermission(context)) {
                 Log.w(TAG, "Ignoring a geofence arrival: location permission is not granted")
                 return
@@ -1011,7 +1032,20 @@ class ArrivalService : Service() {
                     .setAction(ACTION_VALIDATE)
                     .putExtra(EXTRA_PLACE_ID, placeId)
                     .putExtra(EXTRA_ENTERED_AT, enteredAt)
+                    .putExtra(EXTRA_MISSED_FENCE, missedFence)
             )
+        }
+
+        /**
+         * The same session, opened because a fence that should have fired did
+         * not: coordinates captured from a bad fix, a fence Play services
+         * dropped, or a crossing made while location was off. The place's WiFi
+         * being audible is the only evidence there is, so it is the only
+         * evidence the arrival is allowed to claim.
+         */
+        fun startMissedFenceCheck(context: Context, placeId: String) {
+            Log.i(TAG, "$placeId: starting a WiFi-confirmed check for a fence that did not fire")
+            startValidation(context, placeId, System.currentTimeMillis(), missedFence = true)
         }
 
         fun startDeparture(context: Context, placeId: String) {

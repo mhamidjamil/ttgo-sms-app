@@ -8,8 +8,11 @@ import android.content.Intent
 import android.os.SystemClock
 import android.os.UserManager
 import android.util.Log
+import com.spotwire.app.core.utils.cachedVisibleBssids
 import com.spotwire.app.data.local.MonitorLogStore
 import com.spotwire.app.data.local.PreferencesDataSource
+import com.spotwire.app.domain.model.Place
+import com.spotwire.app.domain.model.PresenceState
 import com.spotwire.app.domain.repository.UserRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -71,6 +74,7 @@ class ArrivalWatchdogReceiver : BroadcastReceiver(), KoinComponent {
                     GeofenceManager.refresh(appContext, places, monitorLog)
                     prefs.setGeofencesRefreshedAt(System.currentTimeMillis())
                 }
+                if (places != null) rescueMissedFences(appContext, places, prefs, monitorLog)
                 if (ArrivalService.isRunning) return@launch
                 // Nothing to bring back when every alerting place is watched by
                 // a fence: starting here would only show a notification for the
@@ -99,6 +103,69 @@ class ArrivalWatchdogReceiver : BroadcastReceiver(), KoinComponent {
         // trust. Long enough that the tick stays free, short enough that a fence
         // the system quietly dropped is not missing for a whole day.
         private const val FENCE_REFRESH_MILLIS = 6 * 60 * 60 * 1000L
+
+        // How long one place waits between two of these checks. A fence sitting
+        // at the wrong coordinates never fires, so without a floor here it would
+        // buy a validation session every fifteen minutes, all day; ninety
+        // minutes is still well inside the same visit for any place worth
+        // alerting about.
+        private const val MISSED_FENCE_COOLDOWN_MILLIS = 90 * 60 * 1000L
+
+        /**
+         * The net under a fence that never fires. Coordinates captured from one
+         * bad location fix put the fence hundreds of metres from the place, and
+         * in geofence mode nothing else is looking: the service has stopped
+         * itself, so the place is silently never detected however loud its own
+         * networks are. Hearing those networks while the place is marked away is
+         * the cheap sign of exactly that, and of a fence Play services dropped
+         * or a crossing made while location was off.
+         *
+         * Only fenced places are checked. A WiFi-only place is already covered
+         * by the resident service, which is running precisely because of it.
+         */
+        suspend fun rescueMissedFences(
+            context: Context,
+            places: List<Place>,
+            prefs: PreferencesDataSource,
+            monitorLog: MonitorLogStore,
+        ) {
+            val audible = cachedVisibleBssids(context)
+            if (audible.isEmpty()) return
+            places.forEach { place ->
+                if (!place.alertsEnabled || !place.hasGeofence) return@forEach
+                if (place.savedBssids.none { it in audible }) return@forEach
+                if (prefs.getPresence(place.id).state != PresenceState.AWAY) return@forEach
+                if (!claimMissedFenceCheck(context, place.id)) return@forEach
+                // Without the battery exemption the platform refuses a service
+                // start from an alarm, and that refusal must not take the fence
+                // refresh and the restart check down with it.
+                val started = runCatching { ArrivalService.startMissedFenceCheck(context, place.id) }
+                    .onFailure { Log.w(TAG, "${place.id}: could not start the missed-fence check", it) }
+                    .isSuccess
+                if (started) monitorLog.append(MonitorLogStore.Kind.EVENT,
+                    "${place.label.ifBlank { place.id }}: its WiFi is audible but no fence fired, checking now")
+            }
+        }
+
+        /**
+         * Takes this place's turn if the cooldown has passed. Plain
+         * SharedPreferences on purpose: this runs in a receiver, where anything
+         * held in memory is gone before the next tick, and it is one timestamp
+         * per place that nothing outside this file ever reads.
+         */
+        private fun claimMissedFenceCheck(context: Context, placeId: String): Boolean {
+            val store = context.getSharedPreferences(WATCHDOG_PREFS, Context.MODE_PRIVATE)
+            val key = "missed_fence_check_$placeId"
+            val now = System.currentTimeMillis()
+            // A stamp in the future can only come from the clock being moved
+            // back, and refusing forever on that would be the same blindness
+            // this exists to end.
+            if (store.getLong(key, 0L) in (now - MISSED_FENCE_COOLDOWN_MILLIS)..now) return false
+            store.edit().putLong(key, now).apply()
+            return true
+        }
+
+        private const val WATCHDOG_PREFS = "spotwire_watchdog"
 
         // Inexact on purpose: the system batches it with other wake-ups, so the
         // check costs nothing extra. Catching a killed service ten minutes late

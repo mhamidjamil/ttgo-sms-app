@@ -56,6 +56,23 @@ fun visibleAccessPoints(context: Context): Map<String, Int> {
     }
 }
 
+/**
+ * What the phone last heard, read straight from the scan cache without asking
+ * for a sweep of its own. A cached read costs nothing and needs no scan budget,
+ * which is what makes it safe to run from a fifteen minute alarm.
+ */
+@Suppress("DEPRECATION")
+fun cachedVisibleBssids(context: Context): Set<String> {
+    if (!canScanWifi(context)) return emptySet()
+    val wm = context.applicationContext.getSystemService(WifiManager::class.java) ?: return emptySet()
+    return try {
+        wm.scanResults.mapNotNull { it.BSSID?.lowercase() }.toSet()
+    } catch (e: Exception) {
+        Log.w(TAG, "Cached scan results unavailable: ${e.message}")
+        emptySet()
+    }
+}
+
 // Asks the framework for a fresh sweep. Android throttles this (four calls per
 // two minutes) and a refused request simply leaves the cached results in place,
 // so the return value is deliberately ignored.

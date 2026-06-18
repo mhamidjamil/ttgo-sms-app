@@ -9,11 +9,13 @@ import com.spotwire.app.core.navigation.AppNavGraph
 import com.spotwire.app.core.navigation.Screen
 import com.spotwire.app.core.theme.SpotwireTheme
 import com.spotwire.app.core.utils.visibleBssids
+import com.spotwire.app.data.local.MonitorLogStore
 import com.spotwire.app.data.local.PreferencesDataSource
 import com.spotwire.app.domain.repository.LinkRepository
 import com.spotwire.app.domain.repository.UserRepository
 import com.spotwire.app.domain.usecase.links.AnswerLocationRequestsUseCase
 import com.spotwire.app.services.ArrivalService
+import com.spotwire.app.services.ArrivalWatchdogReceiver
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 
@@ -23,6 +25,7 @@ class MainActivity : ComponentActivity() {
     private val prefs: PreferencesDataSource by inject()
     private val linkRepo: LinkRepository by inject()
     private val answerLocationRequest: AnswerLocationRequestsUseCase by inject()
+    private val monitorLog: MonitorLogStore by inject()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,6 +42,14 @@ class MainActivity : ComponentActivity() {
             // Settings that could not be read fall back to starting it, because
             // a guess must not be the reason detection stays dead.
             val places = runCatching { userRepo.getCurrentUser()?.places }.getOrNull()
+            // Opening the app is the one chance to catch a place whose fence is
+            // in the wrong spot without waiting out the next watchdog tick, and
+            // someone who opens the app is usually someone who noticed nothing
+            // arrived.
+            if (places != null) {
+                ArrivalWatchdogReceiver.rescueMissedFences(
+                    this@MainActivity, places, prefs, monitorLog)
+            }
             if (places != null && !ArrivalService.needsResidentService(places, this@MainActivity)) {
                 return@launch
             }

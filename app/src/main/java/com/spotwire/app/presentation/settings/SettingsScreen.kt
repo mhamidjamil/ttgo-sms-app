@@ -5,13 +5,15 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.location.Location
 import android.net.wifi.ScanResult
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.Looper
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -36,12 +38,17 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
-import com.google.android.gms.tasks.CancellationTokenSource
+import com.spotwire.app.core.theme.OnWarningAmber
 import com.spotwire.app.core.theme.StatusFailed
 import com.spotwire.app.core.theme.StatusSent
 import com.spotwire.app.core.theme.SpotwireTheme
+import com.spotwire.app.core.theme.WarningAmber
+import com.spotwire.app.core.theme.WarningAmberBorder
 import com.spotwire.app.core.utils.PhoneNormalizer
 import com.spotwire.app.core.utils.PresenceReading
 import com.spotwire.app.core.utils.canScanWifi
@@ -58,12 +65,18 @@ import com.spotwire.app.services.ArrivalService
 import com.spotwire.app.services.ArrivalWatchdogReceiver
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
-import kotlinx.coroutines.withTimeoutOrNull
 import org.koin.androidx.compose.koinViewModel
 import java.util.Locale
 
 private const val TAG_SETTINGS = "SpotwireSettings"
+
+// A phone's own hardware stops improving around here, so the search ends itself
+// instead of holding the GPS on for a number that will not move again.
+private const val EXCELLENT_ACCURACY_M = 5f
+
+// Past this the circle can sit far enough off the real place that an arrival is
+// never noticed, which is worth saying out loud before the place is saved.
+private const val VAGUE_ACCURACY_M = 25f
 
 /**
  * Arrival monitoring settings. Reached as its own bottom-bar tab, where there is
@@ -253,8 +266,8 @@ fun SettingsScreen(
         PlaceEditorDialog(
             place = place,
             showWaMessage = uiState.waConfigured,
-            onSave = { updated ->
-                viewModel.updatePlace(updated)
+            onSave = { updated, fixAccuracy ->
+                viewModel.updatePlace(updated, fixAccuracy)
                 editingPlaceId = null
             },
             onDismiss = { editingPlaceId = null },
@@ -993,11 +1006,10 @@ private fun PlaceCard(
 private fun PlaceEditorDialog(
     place: Place,
     showWaMessage: Boolean = false,
-    onSave: (Place) -> Unit,
+    onSave: (Place, Float?) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val phoneNormalizer = remember { PhoneNormalizer() }
     var label by remember { mutableStateOf(place.label) }
     var message by remember { mutableStateOf(place.message) }
@@ -1030,6 +1042,7 @@ private fun PlaceEditorDialog(
     var locating by remember { mutableStateOf(false) }
     var fixAccuracy by remember { mutableStateOf<Float?>(null) }
     var locationError by remember { mutableStateOf<String?>(null) }
+    var searchSeconds by remember { mutableIntStateOf(0) }
 
     val draftLatitude = latitudeText.trim().toDoubleOrNull()
     val draftLongitude = longitudeText.trim().toDoubleOrNull()
@@ -1039,27 +1052,75 @@ private fun PlaceEditorDialog(
         !latitudeError && !longitudeError
     val radiusMeters = radiusText.toIntOrNull() ?: Place.DEFAULT_RADIUS_METERS
 
-    fun captureLocation() {
-        scope.launch {
-            locating = true
-            locationError = null
-            val fix = currentLocationFix(context)
-            if (fix == null) {
-                locationError = "Could not get a location fix, try outdoors or check that location is on."
-            } else {
+    val fusedLocation = remember { LocationServices.getFusedLocationProviderClient(context) }
+    // A single fix is whatever the phone had lying around: on this phone the
+    // first one came back stale and hundreds of metres out, and it was that
+    // position that got saved onto the place. So fixes are watched as they
+    // arrive and only a strictly better one is kept, the way a map app tightens
+    // its blue circle while you stand still.
+    val refinement = remember {
+        object : LocationCallback() {
+            override fun onLocationResult(result: LocationResult) {
+                val fix = result.lastLocation ?: return
+                // A fix that carries no accuracy reports zero metres, which would
+                // read as perfect and end the search on the worst reading of all.
+                if (!fix.hasAccuracy()) return
+                val best = fixAccuracy
+                if (best != null && fix.accuracy >= best) return
+                fixAccuracy = fix.accuracy
                 latitudeText = String.format(Locale.US, "%.6f", fix.latitude)
                 longitudeText = String.format(Locale.US, "%.6f", fix.longitude)
-                fixAccuracy = fix.accuracy
                 if (radiusText.isBlank()) radiusText = Place.DEFAULT_RADIUS_METERS.toString()
+                if (fix.accuracy <= EXCELLENT_ACCURACY_M) {
+                    fusedLocation.removeLocationUpdates(this)
+                    locating = false
+                }
             }
-            locating = false
+        }
+    }
+
+    fun stopRefining() {
+        fusedLocation.removeLocationUpdates(refinement)
+        locating = false
+    }
+
+    @SuppressLint("MissingPermission")
+    fun startRefining() {
+        locationError = null
+        // The old best is dropped rather than kept: someone refining again has
+        // usually moved, and a stale tight reading would reject every fix from
+        // where they are actually standing now.
+        fixAccuracy = null
+        locating = true
+        fusedLocation.requestLocationUpdates(
+            LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L)
+                .setMinUpdateIntervalMillis(500)
+                .build(),
+            refinement,
+            Looper.getMainLooper(),
+        )
+    }
+
+    // Closing the dialog mid-search must take the updates with it. Location that
+    // outlives the screen that asked for it is invisible battery drain, and it is
+    // the exact background use Google Play pulls apps off the store for.
+    DisposableEffect(Unit) {
+        onDispose { fusedLocation.removeLocationUpdates(refinement) }
+    }
+
+    LaunchedEffect(locating) {
+        if (!locating) return@LaunchedEffect
+        searchSeconds = 0
+        while (true) {
+            delay(1_000)
+            searchSeconds++
         }
     }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) captureLocation()
+        if (granted) startRefining()
         else locationError = "Location permission is off, so this phone cannot report where it is."
     }
 
@@ -1217,27 +1278,58 @@ private fun PlaceEditorDialog(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 )
                 Spacer(Modifier.height(6.dp))
-                // A fix indoors can take most of the fifteen seconds it is given,
-                // and a button that still reads as idle gets tapped again.
+                // Nothing is thrown away on a clock here: the search runs until
+                // the user is happy with the accuracy they can see, because
+                // indoors it is the person, not a timer, who knows whether it is
+                // worth walking to a window for another twenty metres.
                 OutlinedButton(
                     onClick = {
-                        if (hasPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)) captureLocation()
+                        if (locating) stopRefining()
+                        else if (hasPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)) startRefining()
                         else locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
                     },
-                    enabled = !locating,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(if (locating) "Locating..." else "Use my current location")
+                    Text(when {
+                        locating -> "Stop and use this"
+                        fixAccuracy != null -> "Refine again"
+                        else -> "Use my current location"
+                    })
                 }
-                // Only after a fix: the two fields below are the readout the rest
-                // of the time, and this line adds the accuracy they cannot show.
+                // The two fields below are the readout the rest of the time; these
+                // lines add what they cannot show, which is how good the fix is
+                // and whether it is still getting better.
                 fixAccuracy?.let { accuracy ->
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "$latitudeText, $longitudeText (accurate to ${accuracy.toInt()} m)",
+                        "$latitudeText, $longitudeText",
                         style = MaterialTheme.typography.bodySmall,
                         fontFamily = FontFamily.Monospace,
                     )
+                    Text(
+                        if (locating) "Accurate to ${accuracy.toInt()} m and improving, ${searchSeconds}s so far"
+                        else "Accurate to ${accuracy.toInt()} m",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    )
+                }
+                if (locating && fixAccuracy == null) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Searching for satellites, this can take a minute indoors (${searchSeconds}s)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    )
+                    // Half a minute with nothing at all usually means concrete
+                    // between the phone and the sky, so say what actually helps
+                    // rather than giving up on them.
+                    if (searchSeconds >= 30) {
+                        Text(
+                            "Try moving near a window; WiFi and Bluetooth scanning both improve accuracy",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        )
+                    }
                 }
                 locationError?.let {
                     Spacer(Modifier.height(4.dp))
@@ -1247,8 +1339,10 @@ private fun PlaceEditorDialog(
                 Spacer(Modifier.height(6.dp))
                 Row(Modifier.fillMaxWidth()) {
                     OutlinedTextField(
+                        // Typing is an override, so a search still running has to
+                        // let go rather than overwrite the field a second later.
                         value = latitudeText,
-                        onValueChange = { latitudeText = it; fixAccuracy = null },
+                        onValueChange = { if (locating) stopRefining(); latitudeText = it; fixAccuracy = null },
                         label = { Text("Latitude") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -1258,13 +1352,33 @@ private fun PlaceEditorDialog(
                     Spacer(Modifier.width(8.dp))
                     OutlinedTextField(
                         value = longitudeText,
-                        onValueChange = { longitudeText = it; fixAccuracy = null },
+                        onValueChange = { if (locating) stopRefining(); longitudeText = it; fixAccuracy = null },
                         label = { Text("Longitude") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.weight(1f),
                         isError = longitudeError,
                     )
+                }
+                // Saving a vague fix is allowed, because a courtyard between tall
+                // walls may never do better, but it is never allowed to be a
+                // surprise later when the place is silently never detected.
+                fixAccuracy?.takeIf { !locating && it > VAGUE_ACCURACY_M }?.let { accuracy ->
+                    Spacer(Modifier.height(6.dp))
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .background(WarningAmber)
+                            .border(1.dp, WarningAmberBorder)
+                            .padding(8.dp),
+                    ) {
+                        Text(
+                            "This fix is only accurate to ${accuracy.toInt()} m. The place circle " +
+                                "may sit off target; keep refining or set the position by hand.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = OnWarningAmber,
+                        )
+                    }
                 }
                 if (hasCoordinates) {
                     Spacer(Modifier.height(8.dp))
@@ -1293,6 +1407,7 @@ private fun PlaceEditorDialog(
                         },
                     )
                     TextButton(onClick = {
+                        if (locating) stopRefining()
                         latitudeText = ""
                         longitudeText = ""
                         radiusText = ""
@@ -1393,26 +1508,11 @@ private fun PlaceEditorDialog(
                     longitude = if (hasCoordinates) draftLongitude ?: 0.0 else 0.0,
                     radiusMeters = if (!hasCoordinates) 0 else
                         radiusMeters.coerceIn(Place.MIN_RADIUS_METERS, Place.MAX_RADIUS_METERS),
-                ))
+                ), fixAccuracy.takeIf { hasCoordinates })
             }) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
-}
-
-/**
- * One fresh fix, not the last one the phone happened to cache: a place is being
- * pinned to where the user is standing right now. Bounded because indoors the
- * request can wait for satellites that never arrive, and a dialog cannot sit
- * there forever with no way out.
- */
-@SuppressLint("MissingPermission")
-private suspend fun currentLocationFix(context: Context): Location? = withTimeoutOrNull(15_000) {
-    runCatching {
-        LocationServices.getFusedLocationProviderClient(context)
-            .getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token)
-            .await()
-    }.onFailure { Log.w(TAG_SETTINGS, "Location fix failed: ${it.message}") }.getOrNull()
 }
 
 private fun sensitivityExplanation(id: String): String = when (Sensitivity.from(id)) {
@@ -1684,6 +1784,6 @@ private fun SettingsFilledPreview() {
 @Composable
 private fun PlaceEditorPreview() {
     SpotwireTheme {
-        PlaceEditorDialog(place = previewPlaces.first(), onSave = {}, onDismiss = {})
+        PlaceEditorDialog(place = previewPlaces.first(), onSave = { _, _ -> }, onDismiss = {})
     }
 }

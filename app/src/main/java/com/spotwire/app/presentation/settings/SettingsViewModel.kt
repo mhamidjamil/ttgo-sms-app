@@ -106,7 +106,9 @@ class SettingsViewModel(
 
     // Whole-place update — the place editor dialog applies its draft through
     // this (label, message, contacts) and the WiFi picker updates bssid/label.
-    fun updatePlace(updated: Place) {
+    // The accuracy comes with it only when the point was captured from the
+    // phone; coordinates typed by hand have none to report.
+    fun updatePlace(updated: Place, fixAccuracyMeters: Float? = null) {
         val previous = _uiState.value.places.firstOrNull { it.id == updated.id }
         val places = _uiState.value.places.map { if (it.id == updated.id) updated else it }
         _uiState.value = _uiState.value.copy(places = places)
@@ -115,20 +117,23 @@ class SettingsViewModel(
         persistPlaces(places, clearStateFor = updated.id.takeIf { networksChanged })
         if (previous != null) {
             logAlertingChanges(previous, updated)
-            logLocationChange(previous, updated)
+            logLocationChange(previous, updated, fixAccuracyMeters)
         }
     }
 
     // The monitoring log is where a missed arrival is diagnosed, so the moment a
-    // place gained or lost its point on the map has to be readable there.
-    private fun logLocationChange(before: Place, after: Place) {
+    // place gained or lost its point on the map has to be readable there. How
+    // good the fix was belongs in the same row: a place pinned from a 300 m fix
+    // explains a fence that never fires, and nothing else records that.
+    private fun logLocationChange(before: Place, after: Place, fixAccuracyMeters: Float?) {
         if (before.latitude == after.latitude && before.longitude == after.longitude &&
             before.radiusMeters == after.radiusMeters) return
         val name = after.label.ifBlank { after.id }
         val message = if (after.hasGeofence) {
             "$name: location set to ${String.format(Locale.US, "%.6f", after.latitude)}, " +
                 "${String.format(Locale.US, "%.6f", after.longitude)}, " +
-                "radius ${after.radiusMeters} m"
+                "radius ${after.radiusMeters} m" +
+                (fixAccuracyMeters?.let { " (fix accurate to ${it.toInt()} m)" } ?: "")
         } else {
             "$name: location cleared"
         }

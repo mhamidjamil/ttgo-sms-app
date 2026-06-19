@@ -1,0 +1,38 @@
+package com.spotwire.app.core.theme
+
+import androidx.compose.ui.graphics.Color
+
+val Primary = Color(0xFF1565C0)
+val PrimaryVariant = Color(0xFF003C8F)
+val Secondary = Color(0xFF26A69A)
+val Background = Color(0xFFF8F9FA)
+val Surface = Color(0xFFFFFFFF)
+val OnPrimary = Color(0xFFFFFFFF)
+val OnBackground = Color(0xFF1A1A1A)
+val OnSurface = Color(0xFF1A1A1A)
+val Error = Color(0xFFB00020)
+val OnError = Color(0xFFFFFFFF)
+
+val DarkPrimary = Color(0xFF9ECAFF)
+val DarkSecondary = Color(0xFF80D8CF)
+val DarkBackground = Color(0xFF101418)
+val DarkSurface = Color(0xFF181C20)
+val DarkOnPrimary = Color(0xFF003258)
+val DarkOnBackground = Color(0xFFE1E2E6)
+val DarkOnSurface = Color(0xFFE1E2E6)
+val DarkError = Color(0xFFFFB4AB)
+val DarkOnError = Color(0xFF690005)
+
+// Status colors
+val StatusPending = Color(0xFFFB8C00)
+val StatusInProgress = Color(0xFF1976D2)
+val StatusSent = Color(0xFF2E7D32)
+val StatusFailed = Color(0xFFC62828)
+val StatusBlocked = Color(0xFFE65100)
+val StatusUnknown = Color(0xFF757575)
+
+val WarningAmber = Color(0xFFFFF8E1)
+val WarningAmberBorder = Color(0xFFFFE082)
+// The amber banners paint a fixed light background in both themes, so the text
+// on them needs a fixed dark colour rather than the theme's onSurface.
+val OnWarningAmber = Color(0xFF3E2C00)

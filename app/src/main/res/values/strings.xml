@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">TextGate</string>
+    <string name="app_name">Spotwire</string>
     <string name="login">Login</string>
     <string name="sign_up">Sign Up</string>
     <string name="email">Email</string>
@@ -20,7 +20,7 @@
     <string name="unverified_banner">Email not verified — limited to %1$d SMS/day. Tap to resend.</string>
     <string name="refresh_status">Refresh Status</string>
     <string name="no_history">No messages sent yet</string>
-    <string name="arrival_monitoring_active">TextGate arrival monitoring active</string>
+    <string name="arrival_monitoring_active">Spotwire arrival monitoring active</string>
 
     <!-- Phone verification (V1.5) -->
     <string name="verify_phone">Verify Phone</string>

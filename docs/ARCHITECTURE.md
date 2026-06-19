@@ -1,6 +1,6 @@
 # Architecture
 
-TextGate uses **Clean Architecture** with three layers. Dependencies point inward — the domain layer has zero Android or Firebase imports.
+Spotwire uses **Clean Architecture** with three layers. Dependencies point inward — the domain layer has zero Android or Firebase imports.
 
 ---
 

@@ -1,4 +1,4 @@
-# TextGate — Developer Setup Guide
+# Spotwire — Developer Setup Guide
 
 Everything you need to go from a fresh clone to an APK on a phone. Written for
 Linux; macOS is nearly identical, Windows notes are inline where they differ.
@@ -84,11 +84,11 @@ and the comments inside `local.properties.example`.
 The Firebase client config. It is gitignored — every developer places it
 manually:
 
-- **Ask the project admin** for the file for package `com.textgate.app`, or
+- **Ask the project admin** for the file for package `com.spotwire.app`, or
 - Download it yourself if you have Firebase console access: *Project settings →
-  Your apps → Android app `com.textgate.app` → google-services.json*, or
+  Your apps → Android app `com.spotwire.app` → google-services.json*, or
 - Register your **own** Firebase project (Auth email/password + Firestore
-  enabled), add an Android app with package `com.textgate.app`, and use its
+  enabled), add an Android app with package `com.spotwire.app`, and use its
   file (full walkthrough: [docs/SETUP.md](docs/SETUP.md)).
 
 Place it at `app/google-services.json`. The build fails fast with a clear

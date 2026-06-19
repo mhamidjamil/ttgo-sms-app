@@ -5,7 +5,7 @@
          so a light-only window here is a white flash on every cold start for a
          dark-mode user, and a white bar behind the system insets afterwards.
          values-night/ carries the dark counterpart. -->
-    <style name="Theme.TextGate" parent="android:Theme.Material.Light.NoActionBar">
+    <style name="Theme.Spotwire" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/window_background</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:statusBarColor">@android:color/transparent</item>

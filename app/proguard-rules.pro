@@ -18,8 +18,8 @@
 # ── App models ────────────────────────────────────────────────────────────────
 # Firestore maps these by field name, and @PropertyName ties Kotlin names to the
 # snake_case stored on the document. Renaming either half breaks every read.
--keep class com.textgate.app.data.model.** { *; }
--keepclassmembers class com.textgate.app.data.model.** { *; }
+-keep class com.spotwire.app.data.model.** { *; }
+-keepclassmembers class com.spotwire.app.data.model.** { *; }
 
 # ── Firebase ──────────────────────────────────────────────────────────────────
 -keep class com.google.firebase.** { *; }

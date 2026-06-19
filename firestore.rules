@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// TextGate — Cloud Firestore security rules.
+// Spotwire — Cloud Firestore security rules.
 //
 // Two very different clients share this database:
 //
@@ -376,7 +376,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ── NOT TextGate: the academia app shares this Firebase project ──────────
+    // ── NOT Spotwire: the academia app shares this Firebase project ──────────
     //
     // Firebase project `myacademiaapp` also serves the academia Next.js app.
     // Its package.json pulls in `firebase` and NOT `firebase-admin`, so EVERY
@@ -400,7 +400,7 @@ service cloud.firestore {
     //
     // This block is deliberately IDENTICAL in effect to the console default the
     // whole database runs on today: it changes nothing for academia while
-    // TextGate gets locked down, shrinking the wide-open surface from "every
+    // Spotwire gets locked down, shrinking the wide-open surface from "every
     // collection" to these four subtrees. It is NOT safe and it is NOT this
     // change's job to fix — audit academia's own auth model and replace it.
     //

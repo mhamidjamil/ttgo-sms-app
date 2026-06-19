@@ -1,6 +1,6 @@
 # WhatsApp Integration
 
-TextGate delivers arrival notifications over WhatsApp through a self-hosted
+Spotwire delivers arrival notifications over WhatsApp through a self-hosted
 baileys gateway (`WhatsApp Gateway 3.0.0`). There are two ways to get a
 credential, and the app takes whichever it can.
 

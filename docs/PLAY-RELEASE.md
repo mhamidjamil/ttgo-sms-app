@@ -1,4 +1,4 @@
-# Publishing TextGate to Google Play
+# Publishing Spotwire to Google Play
 
 What the repository now does for you, and what only you can do in the console.
 
@@ -39,7 +39,7 @@ serves to users):
 
 1. **Verify the developer account identity.** One-time, account level. Required
    before 30 September 2026.
-2. **Create the app** in Play Console. The package name `com.textgate.app` is
+2. **Create the app** in Play Console. The package name `com.spotwire.app` is
    registered automatically at creation, and Play App Signing registers the key,
    so the developer-verification email needs no separate action for this app.
 3. **Host the privacy policy.** Enable GitHub Pages on this repository, serving

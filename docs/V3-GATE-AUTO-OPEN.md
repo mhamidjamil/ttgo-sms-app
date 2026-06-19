@@ -14,7 +14,7 @@ Two repositories are involved:
 
 | Side | Repository | Role in this design |
 |------|-----------|---------------------|
-| Phone | this one (TextGate) | Decides *whether* to open. Owns all the context. |
+| Phone | this one (Spotwire) | Decides *whether* to open. Owns all the context. |
 | Gate | `mhamidjamil/Door-Monitoring` (`esp32/working_dir/main_code.ino`) | Verifies *who* asked and vetoes. Owns the servo. |
 
 ---

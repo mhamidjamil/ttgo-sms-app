@@ -1,4 +1,4 @@
-# TextGate
+# Spotwire
 
 **SMS Gateway Client for Android** — queue SMS messages through your TTGO T-Call GSM device via Firebase Firestore.
 
@@ -32,7 +32,7 @@
   - Email verification does not affect the SMS quota (needed for WhatsApp linking + admin contact)
 - **Phone OTP verification** — enter your number on the verify screen and request a 6-digit code; it is queued as a priority SMS job (`kind: "otp"`) that the TTGO device sends before all other jobs
 - **1-hour OTP expiry** — codes expire 60 minutes after being sent; request a new one any time
-- **Message signature** — every manual SMS gets `- Sent by <verified number> via TextGate` appended automatically for accountability on the shared gateway number; user text is capped at 90 chars so the total stays inside one 160-char SMS segment
+- **Message signature** — every manual SMS gets `- Sent by <verified number> via Spotwire` appended automatically for accountability on the shared gateway number; user text is capped at 90 chars so the total stays inside one 160-char SMS segment
 - **Request more SMS** — one tap emails the admin (SMTP) with your account details to request a quota increase
 - **Profile page verification banners** — separate banners for unverified email and unverified phone, each with an action button
 - **Skip option** — phone verify can be skipped; sending stays disabled until verified from Profile

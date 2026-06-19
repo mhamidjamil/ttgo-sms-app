@@ -25,15 +25,15 @@ val keystoreProps = Properties().apply {
 val hasReleaseKeystore = keystoreProps.getProperty("storeFile")?.let { file(it).exists() } == true
 
 android {
-    namespace = "com.textgate.app"
+    namespace = "com.spotwire.app"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.textgate.app"
+        applicationId = "com.spotwire.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 9
-        versionName = "1.6.0"
+        versionCode = 10
+        versionName = "1.6.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }

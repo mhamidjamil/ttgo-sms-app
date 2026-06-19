@@ -1,4 +1,4 @@
-# My machine setup — TextGate (not for git, personal reference only)
+# My machine setup — Spotwire (not for git, personal reference only)
 
 This is *your* cheat sheet for this exact machine (Kali, user `megatron`). Unlike
 `setup_guide.md` (generic, for any new developer), everything here is a real
@@ -13,7 +13,7 @@ path that already exists on this computer as of 2026-07-05.
 | JDK 17 (Temurin) | `~/.jdks/jdk-17.0.19+10` |
 | Android SDK | `~/Android/Sdk` (platform 34, build-tools 34.0.0, platform-tools) |
 | Gradle | not installed globally — the project's own `./gradlew` handles it (wrapper pinned to 8.4) |
-| `google-services.json` | already sitting at `app/google-services.json` (Firebase project `myacademiaapp`, registered for `com.textgate.app`) |
+| `google-services.json` | already sitting at `app/google-services.json` (Firebase project `myacademiaapp`, registered for `com.spotwire.app`) |
 | `local.properties` | already filled in with real Firebase/SMTP values |
 
 You do **not** need to redo any of the JDK/SDK download steps in `setup_guide.md`
@@ -58,7 +58,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 To check the app actually launched:
 ```bash
-adb shell monkey -p com.textgate.app -c android.intent.category.LAUNCHER 1
+adb shell monkey -p com.spotwire.app -c android.intent.category.LAUNCHER 1
 ```
 
 ### If MIUI drops the USB connection back to MTP-only

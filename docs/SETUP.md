@@ -1,6 +1,6 @@
 # Setup Guide
 
-Step-by-step instructions for setting up TextGate from scratch.
+Step-by-step instructions for setting up Spotwire from scratch.
 
 ---
 
@@ -9,7 +9,7 @@ Step-by-step instructions for setting up TextGate from scratch.
 ### Create project
 
 1. Go to [console.firebase.google.com](https://console.firebase.google.com)
-2. Click **Add project** → name it (e.g. `TextGate`) → continue
+2. Click **Add project** → name it (e.g. `Spotwire`) → continue
 3. Disable Google Analytics if you don't need it → **Create project**
 
 ### Enable Authentication
@@ -71,8 +71,8 @@ In Firestore, manually create the document `sim_module/device` with:
 
 1. In Firebase console → **Project Settings** (gear icon) → **Your apps**
 2. Click **Add app** → Android
-3. Package name: `com.textgate.app`
-4. Nickname: TextGate → **Register app**
+3. Package name: `com.spotwire.app`
+4. Nickname: Spotwire → **Register app**
 5. Download `google-services.json`
 6. Place at `app/google-services.json` (next to `app/build.gradle.kts`)
 
@@ -97,7 +97,7 @@ SMTP_SECURE=false
 SMTP_USER=
 SMTP_PASS=
 SMTP_FROM_EMAIL=
-SMTP_SENDER_NAME=TextGate
+SMTP_SENDER_NAME=Spotwire
 ADMIN_EMAIL=
 HISTORY_POLL_INTERVAL_SECONDS=10
 WIFI_STABILITY_MINUTES=10

@@ -1,6 +1,6 @@
 # Arrival detection: what is broken, and the design that fixes it
 
-Final engineering proposal for the automatic "I arrived" alerts in TextGate.
+Final engineering proposal for the automatic "I arrived" alerts in Spotwire.
 Written against HEAD `3729794`. Every claim below is anchored to a file and line
 in this repository.
 

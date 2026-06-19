@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "TextGate"
+rootProject.name = "Spotwire"
 include(":app")

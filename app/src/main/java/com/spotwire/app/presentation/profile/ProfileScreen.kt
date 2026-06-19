@@ -29,7 +29,6 @@ import com.spotwire.app.core.theme.WarningAmber
 import com.spotwire.app.core.theme.WarningAmberBorder
 import com.spotwire.app.data.local.PreferencesDataSource
 import com.spotwire.app.domain.model.User
-import com.spotwire.app.services.ArrivalService
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 
@@ -65,7 +64,7 @@ fun ProfileScreen(
     // every signed-in screen behind.
     LaunchedEffect(uiState.accountDeleted) {
         if (uiState.accountDeleted) {
-            ArrivalService.stop(context)
+            viewModel.stopAllMonitoring(context)
             Toast.makeText(context, "Your account has been deleted", Toast.LENGTH_LONG).show()
             onSignOut()
         }
@@ -73,7 +72,7 @@ fun ProfileScreen(
     ProfileContent(
         uiState = uiState,
         onSignOut = {
-            ArrivalService.stop(context)
+            viewModel.stopAllMonitoring(context)
             scope.launch { viewModel.signOut(); onSignOut() }
         },
         onVerifyPhone = onVerifyPhone,

@@ -1,8 +1,13 @@
 package com.spotwire.app.presentation.profile
 
 import android.util.Log
+import android.content.Context
+import com.spotwire.app.services.ArrivalService
+import com.spotwire.app.services.ArrivalWatchdogReceiver
+import com.spotwire.app.services.GeofenceManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.spotwire.app.data.local.MonitorLogStore
 import com.spotwire.app.data.local.PreferencesDataSource
 import com.spotwire.app.domain.model.User
 import com.spotwire.app.domain.repository.OtpChannel
@@ -54,7 +59,20 @@ class ProfileViewModel(
     private val throttle: ThrottleRepository,
     private val waRepo: WhatsAppRepository,
     private val prefs: PreferencesDataSource,
+    private val monitorLog: MonitorLogStore,
 ) : ViewModel() {
+
+    /**
+     * Everything that keeps watching for arrivals, taken down together. Stopping
+     * the service was never enough on its own: geofences are registered with
+     * Android and outlive this process, so signing out left the phone still
+     * waking a location service at every saved place, with no account behind it.
+     */
+    fun stopAllMonitoring(context: Context) {
+        GeofenceManager.clear(context, monitorLog)
+        ArrivalWatchdogReceiver.cancelChecks(context)
+        ArrivalService.stop(context)
+    }
 
     private val _uiState = MutableStateFlow(ProfileUiState())
     val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()

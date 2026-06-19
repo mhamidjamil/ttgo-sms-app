@@ -1554,9 +1554,11 @@ private fun LocationDisclosureDialog(onAgree: () -> Unit, onDismiss: () -> Unit)
                 )
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "Network names never leave your phone. When you arrive, only the place " +
-                        "label you chose is sent to the people you picked. You can switch this " +
-                        "off here at any time.",
+                    "Your saved places are stored in your own account: the WiFi networks you " +
+                        "captured there, and the map position and radius if you set one. When " +
+                        "you arrive, the people you picked are told the place name and the " +
+                        "time, never a network name or a map position. You can switch this off " +
+                        "here at any time.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }

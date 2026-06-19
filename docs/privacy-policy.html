@@ -22,7 +22,7 @@
 <body>
 
 <h1>Spotwire Privacy Policy</h1>
-<p class="updated">Last updated 13 July 2026. Applies to the Android application Spotwire
+<p class="updated">Last updated 11 August 2026. Applies to the Android application Spotwire
 (package <code>com.spotwire.app</code>), published by Muhammad Hamid Jamil.</p>
 
 <p>Spotwire sends SMS through a GSM gateway device you or your administrator owns, and can
@@ -51,7 +51,12 @@ stores, where it goes, and how to get rid of it.</p>
   <tr>
     <td>Nearby WiFi network identifiers (BSSIDs)</td>
     <td>To recognise a place you saved and tell that you have arrived. Android classifies this as location data, which is why the app asks for the location permission.</td>
-    <td><strong>On your phone only.</strong> Network identifiers are never uploaded. Only the place label you chose is sent.</td>
+    <td>The identifiers you captured for a saved place are stored with that place in your own account record in Firebase Cloud Firestore. The full list of networks your phone can currently hear is used on the device and is never uploaded. The people you alert are told the place name, never a network identifier.</td>
+  </tr>
+  <tr>
+    <td>The position and radius of a saved place</td>
+    <td>Optional. If you give a place a position, Android watches for you crossing into it and wakes the app at that moment, which uses far less battery than searching for WiFi all day. You choose the position, either from your current location or by typing it in.</td>
+    <td>Stored with that place in your own account record, and copied onto the arrival records for that place. The people you alert are told the place name, never a position.</td>
   </tr>
   <tr>
     <td>Arrival records: which saved place, at what time, and who was told</td>
@@ -76,12 +81,20 @@ permission that would let it.</p>
 
 <h2>Location, in plain terms</h2>
 
-<p>Arrival detection works by listing which WiFi networks are within range of your phone
-and comparing that list to places you saved yourself. It does not use GPS coordinates and
-it does not build a map of where you have been. While arrival monitoring is switched on
-this runs in the background, and Android shows a permanent notification for the whole time
-it does. You turn it on yourself, you are told what it does before the permission is
-requested, and you can turn it off in the app at any time.</p>
+<p>Arrival detection works two ways, and both only ever compare against places you saved
+yourself. It lists which WiFi networks are within range of your phone and looks for the
+ones you captured at a place. And, if you gave a place a position on the map, it asks
+Android to watch for you crossing into that circle and to wake the app at that moment,
+which is why the app asks for all-the-time location. When a place is confirmed that way,
+the position and radius of the place are recorded on the arrival record.</p>
+
+<p>The app does not track your route, does not record where you are between saved places,
+and does not build a map of where you have been. Nothing about your location is used for
+advertising or analytics, and there is no analytics or advertising code in the app at all.
+While arrival monitoring is switched on this runs in the background, and Android shows a
+permanent notification whenever the app is actively watching. You turn it on yourself, you
+are told what it does before each permission is requested, and you can turn it off in the
+app at any time.</p>
 
 <p>When someone you have linked with asks where you are, the app answers with the label of
 a saved place if one is in range, and otherwise says the location is unknown. You control
@@ -112,9 +125,15 @@ delete your account. Queued messages are removed from the gateway queue once sen
 
 <p>In the app, open <strong>Profile</strong> and choose
 <strong>Delete my account and data</strong>. This permanently erases your profile, your
-message and arrival history, your saved places, your links to other people and your
-WhatsApp settings, and closes your sign-in. It cannot be undone. Messages already
-delivered to a recipient's phone are not recalled.</p>
+message and arrival history, your saved places (including their WiFi identifiers and any
+position you set), your links to other people, the record of who you have alerted, the
+activity log held on your phone, and your WhatsApp settings, and it closes your sign-in.
+It cannot be undone.</p>
+
+<p>Two things deliberately survive. Messages already delivered to a recipient's phone are
+not recalled. And a message that was already handed to the gateway device stays in that
+device's queue as a phone number and a message body until the device has finished with it,
+because the app is not permitted to reach into the queue the hardware is reading from.</p>
 
 <p>If you no longer have the app installed, email the address below from the address on the
 account and ask for deletion, and the same erasure will be carried out.</p>

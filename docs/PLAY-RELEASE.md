@@ -30,7 +30,7 @@ serves to users):
 | R8 keep rules | `app/proguard-rules.pro`, verified against the minified output |
 | No credentials in the artifact | Mailer and SSO secret removed; artifact grepped |
 | Database locked down | `firestore.rules`, deployed, 47 emulator assertions |
-| Background location | Permission removed; never used, so no declaration form |
+| Background location | **Declared and used.** Geofencing needs it, so the console declaration form and a demo video are required on every submission. See `docs/PLAY-READINESS.md` |
 | Prominent disclosure | Shown before the location prompt, Settings screen |
 | In-app account deletion | Profile, with a real erase of the stored data |
 | Privacy policy | `docs/privacy-policy.html`, linked from Profile |
@@ -51,23 +51,34 @@ serves to users):
 4. **App content declarations**, all mandatory even when the answer is "none":
    privacy policy URL, Data safety, content rating questionnaire, health apps,
    financial features, and the target audience.
-5. **Foreground service type**, declared in the console as `location`, with a
-   short description: arrival detection reads nearby WiFi networks to tell when
-   the user reaches a saved place, and a permanent notification is shown while
-   it runs.
-6. **Account deletion URL.** Play wants a web address as well as the in-app
+5. **Foreground service type**, declared in the console as `location`, with its
+   own short video, and a short description: arrival detection reads nearby WiFi
+   networks and confirms a geofence crossing to tell when the user reaches a
+   saved place, and a permanent notification is shown while it runs.
+6. **Background location declaration**, separate from the above and with its own
+   demo video. The video must show, in the production build, the in-app
+   disclosure BEFORE any system dialog, the accept, the system "Allow all the
+   time" grant, and an arrival alert produced by a fence crossing.
+7. **Account deletion URL.** Play wants a web address as well as the in-app
    path, because people who uninstalled cannot use the in-app one. The privacy
    policy page carries the instructions and the contact address.
 
 ## Data safety answers
 
 Collected and linked to the user's identity: name, email address, phone number,
-SMS message content and recipient numbers, and approximate location (arrival
-events at places the user named).
+SMS message content and recipient numbers, and **precise location**. Answer
+precise location as COLLECTED: a saved place stores the coordinates and radius
+the user set for it, and every arrival record for a geofenced place carries
+them. Answer "app functionality" as the purpose, and say the data is not shared
+and not used for advertising.
 
-Not collected: precise GPS coordinates, contacts, photos, files, browsing
-history, and any advertising or analytics identifier. There are no third-party
-analytics or advertising libraries in the build.
+Also collected as location: the WiFi identifiers the user captured at each saved
+place, which Android treats as location data. They are stored on the user's own
+account record.
+
+Not collected: contacts, photos, files, browsing history, and any advertising or
+analytics identifier. There are no third-party analytics or advertising
+libraries in the build, and Firebase Analytics is deliberately not included.
 
 Shared with third parties: message content and recipient numbers reach the
 gateway that transmits them. Everything else stays in Firebase.

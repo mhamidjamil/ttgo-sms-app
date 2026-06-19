@@ -101,6 +101,15 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
      */
     suspend fun deleteUserData(uid: String, phoneNumber: String): Result<Unit> = runCatching {
         val userDoc = db.collection(Paths.USERS).document(uid)
+        // Read before deleting: both of these live outside this account, and the
+        // only record of where they are is inside it.
+        val linkedUids = runCatching {
+            userDoc.collection(Paths.LINKS_SUB).get().await().documents.map { it.id }
+        }.getOrDefault(emptyList())
+        val alertedNumbers = runCatching {
+            userDoc.collection(Paths.AUTO_HISTORY_SUB).get().await()
+                .documents.mapNotNull { it.getString("job_phone_key") }.distinct()
+        }.getOrDefault(emptyList())
         listOf(
             Paths.HISTORY_SUB, Paths.AUTO_HISTORY_SUB, Paths.SETTINGS_HISTORY_SUB,
             Paths.LINKS_SUB, Paths.LOCATION_REQUESTS_SUB,
@@ -114,6 +123,21 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
                 batch.commit().await()
                 if (page.size() < 400) break
             }
+        }
+        // The other half of every pairing. A link is two documents, and clearing
+        // only this account's copy leaves the other person holding a contact that
+        // points at nothing and still names this user.
+        linkedUids.forEach { otherUid ->
+            runCatching {
+                db.collection(Paths.USERS).document(otherUid)
+                    .collection(Paths.LINKS_SUB).document(uid).delete().await()
+            }
+        }
+        // Every "this sender alerted you" breadcrumb left on a recipient's
+        // record. It carries this user's name and number, so the deletion the
+        // policy promises is not done while these are still out there.
+        alertedNumbers.forEach { recipientPhone ->
+            runCatching { subscriptionRef(recipientPhone, uid).delete().await() }
         }
         if (phoneNumber.isNotBlank()) {
             runCatching { db.collection(Paths.PHONE_DIRECTORY).document(phoneNumber).delete().await() }

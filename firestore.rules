@@ -373,7 +373,12 @@ service cloud.firestore {
                         request.resource.data.diff(resource.data)
                           .affectedKeys().hasOnly(['subscribed']));
 
-      allow delete: if false;
+      // Only the sender may remove their own breadcrumb, and the account
+      // deletion flow is the one caller. The row carries the sender's name and
+      // number, so leaving it undeletable made the erasure the privacy policy
+      // promises impossible to actually carry out. A recipient still cannot
+      // delete it, because deleting is how an opt-out would be erased.
+      allow delete: if isAppUser() && request.auth.uid == senderUid;
     }
 
     // ── NOT Spotwire: the academia app shares this Firebase project ──────────

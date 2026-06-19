@@ -4,6 +4,7 @@ import android.util.Log
 import com.google.firebase.auth.FirebaseUser
 import com.spotwire.app.data.firebase.FirebaseAuthDataSource
 import com.spotwire.app.data.firebase.FirestoreDataSource
+import com.spotwire.app.data.local.MonitorLogStore
 import com.spotwire.app.data.local.PreferencesDataSource
 import com.spotwire.app.domain.model.Place
 import com.spotwire.app.domain.model.SettingsChange
@@ -18,6 +19,7 @@ class UserRepositoryImpl(
     private val auth: FirebaseAuthDataSource,
     private val firestore: FirestoreDataSource,
     private val prefs: PreferencesDataSource,
+    private val monitorLog: MonitorLogStore,
 ) : UserRepository {
 
     override suspend fun signIn(email: String, password: String): Result<FirebaseUser> {
@@ -52,6 +54,9 @@ class UserRepositoryImpl(
     override suspend fun signOut() {
         auth.signOut()
         prefs.clearAll()
+        // The activity log names the places this person visited and when, so it
+        // belongs to the account, not to the phone.
+        monitorLog.clear()
     }
 
     override suspend fun getCurrentUser(): User? {
@@ -155,6 +160,7 @@ class UserRepositoryImpl(
         val phoneNumber = firestore.getUser(fbUser.uid).getOrNull()?.phoneNumber.orEmpty()
         firestore.deleteUserData(fbUser.uid, phoneNumber).getOrThrow()
         prefs.clearAll()
+        monitorLog.clear()
         auth.deleteAccount().getOrThrow()
     }
 

@@ -17,7 +17,7 @@ import com.spotwire.app.domain.repository.WhatsAppRepository
 import org.koin.dsl.module
 
 val repositoryModule = module {
-    single<UserRepository> { UserRepositoryImpl(get(), get(), get()) }
+    single<UserRepository> { UserRepositoryImpl(get(), get(), get(), get()) }
     single<SmsRepository> { SmsRepositoryImpl(get()) }
     single<AlertRepository> { AlertRepositoryImpl(get()) }
     single<LinkRepository> { LinkRepositoryImpl(get()) }

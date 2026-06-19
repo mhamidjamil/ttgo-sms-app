@@ -74,6 +74,16 @@ class MonitorLogStore(context: Context) {
         return export
     }
 
+    // The log names the places someone visited and when, so signing out or
+    // deleting the account has to take it with them. It is emptied rather than
+    // removed, because the service can be writing a row at the same moment.
+    fun clear() {
+        synchronized(lock) {
+            runCatching { if (file.exists()) file.writeText("") }
+            appendsSincePrune = PRUNE_EVERY_APPENDS
+        }
+    }
+
     private fun readAll(): List<Entry> {
         if (!file.exists()) return emptyList()
         val floor = System.currentTimeMillis() - RETENTION_MILLIS

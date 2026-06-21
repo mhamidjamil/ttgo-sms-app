@@ -37,12 +37,12 @@ import com.textgate.app.core.theme.StatusFailed
 import com.textgate.app.core.theme.StatusSent
 import com.textgate.app.core.theme.TextGateTheme
 import com.textgate.app.core.utils.PhoneNormalizer
+import com.textgate.app.core.utils.PresenceReading
 import com.textgate.app.core.utils.canScanWifi
-import com.textgate.app.core.utils.placeInRange
+import com.textgate.app.core.utils.freshScan
 import com.textgate.app.core.utils.requestWifiScan
+import com.textgate.app.core.utils.resolvePresence
 import com.textgate.app.core.utils.scanBlocker
-import com.textgate.app.core.utils.visibleAccessPoints
-import com.textgate.app.core.utils.visibleBssids
 import com.textgate.app.domain.model.Place
 import com.textgate.app.domain.model.Closeness
 import com.textgate.app.domain.model.PlaceContact
@@ -414,7 +414,9 @@ private fun SettingsContent(
 @Composable
 private fun DetectionHealthCard(uiState: SettingsUiState) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var verdict by remember { mutableStateOf<String?>(null) }
+    var testing by remember { mutableStateOf(false) }
     val sinceCheck = if (uiState.lastObservedAt == 0L) null
         else System.currentTimeMillis() - uiState.lastObservedAt
     val blindTooLong = sinceCheck != null && sinceCheck > 24 * 60 * 60 * 1000L
@@ -448,8 +450,19 @@ private fun DetectionHealthCard(uiState: SettingsUiState) {
                 )
             }
             Spacer(Modifier.height(6.dp))
-            OutlinedButton(onClick = { verdict = describeDetectionNow(context, uiState.places) }) {
-                Text("Test detection here")
+            // Waiting out a real scan takes a few seconds, so the button has to
+            // say it is working or the first tap looks like it did nothing.
+            OutlinedButton(
+                onClick = {
+                    scope.launch {
+                        testing = true
+                        verdict = describeDetectionNow(context, uiState.places)
+                        testing = false
+                    }
+                },
+                enabled = !testing,
+            ) {
+                Text(if (testing) "Checking..." else "Test detection here")
             }
             verdict?.let {
                 Spacer(Modifier.height(4.dp))
@@ -478,30 +491,39 @@ private fun describeState(state: PresenceState?): String = when (state) {
 
 // Answers what the app would decide right now and, more usefully, why it would
 // not alert. This is what turns a silent failure into a five second diagnosis.
-private fun describeDetectionNow(context: Context, places: List<Place>): String {
+private suspend fun describeDetectionNow(context: Context, places: List<Place>): String {
     scanBlocker(context)?.let { return "Cannot scan. $it." }
-    requestWifiScan(context)
-    val visible = visibleAccessPoints(context)
+    val visible = freshScan(context)
     if (visible.isEmpty()) {
         return "No networks heard on this read. A fresh scan takes a few seconds, try again."
     }
     val saved = places.filter { it.savedBssids.isNotEmpty() }
     if (saved.isEmpty()) return "Heard ${visible.size} networks, but no place has any saved yet."
 
-    return saved.joinToString("\n") { place ->
-        val heard = place.savedBssids.mapNotNull { visible[it] }
+    val presence = resolvePresence(saved, visible)
+    val winner = presence.winner
+    val lines = presence.readings.map { reading ->
+        val place = reading.place
         val name = place.label.ifBlank { place.id }
         when {
-            heard.isEmpty() -> "$name: none of its ${place.savedBssids.size} networks heard."
-            heard.size < place.requiredMatches ->
-                "$name: heard ${heard.size} of its networks, needs ${place.requiredMatches}."
-            heard.max() < place.minRssi ->
-                "$name: heard at ${heard.max()} dBm, too weak for the closeness setting " +
+            reading.heardCount == 0 -> "$name: none of its ${place.savedBssids.size} networks heard."
+            reading.heardCount < place.requiredMatches ->
+                "$name: heard ${reading.heardCount} of its networks, needs ${place.requiredMatches}."
+            reading.strongest < place.minRssi ->
+                "$name: heard at ${reading.strongest} dBm, too weak for the closeness setting " +
                     "(${place.minRssi} dBm). This is what walking past outside looks like."
             !place.alertsEnabled -> "$name: here, but its alerts are switched off."
-            else -> "$name: here, at ${heard.max()} dBm. It would alert after the wait."
+            winner == null -> "$name: in range at ${reading.strongest} dBm, but no place wins this check."
+            winner.id != place.id -> "$name: in range at ${reading.strongest} dBm, but " +
+                "${winner.label.ifBlank { winner.id }} is nearer."
+            else -> "$name: here, at ${reading.strongest} dBm. It would alert after the wait."
         }
     }
+    val tie = if (!presence.contested) emptyList() else listOf(
+        presence.closest.joinToString(" and ") { it.place.label.ifBlank { it.place.id } } +
+            " too close to separate, no winner."
+    )
+    return (lines + tie).joinToString("\n")
 }
 
 /**
@@ -559,15 +581,19 @@ private fun isIgnoringBatteryOptimizations(context: Context): Boolean =
 
 /**
  * "Where am I?" — answers what the arrival service would decide right now,
- * without waiting out the stability window or an SMS. The match rule is the
- * same one the service uses: a place counts as here when its network is within
- * range, connected or not.
+ * without waiting out the stability window or an SMS. It runs the service's own
+ * matcher on a scan it waited for, so a place has to be heard often enough and
+ * loudly enough and beat every other place in range. The looser rule this used
+ * to run said "you are at Office" while walking past it on the street.
  */
 @Composable
 private fun CurrentPlaceCheck(places: List<Place>, onSendLocation: (String) -> Unit) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var checked by remember { mutableStateOf(false) }
-    var inRange by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var checking by remember { mutableStateOf(false) }
+    var presence by remember { mutableStateOf<PresenceReading?>(null) }
+    var heardCount by remember { mutableStateOf(0) }
     var scanningAvailable by remember { mutableStateOf(true) }
 
     Card(
@@ -587,7 +613,7 @@ private fun CurrentPlaceCheck(places: List<Place>, onSendLocation: (String) -> U
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
             Spacer(Modifier.height(8.dp))
-            val match = if (checked) placeInRange(places, inRange) else null
+            val match = presence?.winner
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -595,16 +621,24 @@ private fun CurrentPlaceCheck(places: List<Place>, onSendLocation: (String) -> U
             ) {
                 Button(
                     onClick = {
-                        requestWifiScan(context)
-                        inRange = visibleBssids(context)
-                        scanningAvailable = canScanWifi(context)
-                        checked = true
+                        scope.launch {
+                            checking = true
+                            val visible = freshScan(context)
+                            heardCount = visible.size
+                            presence = resolvePresence(places, visible)
+                            scanningAvailable = canScanWifi(context)
+                            checked = true
+                            checking = false
+                        }
                     },
+                    enabled = !checking,
                     modifier = Modifier.weight(1f),
                 ) {
                     Icon(Icons.Default.Wifi, contentDescription = null, Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Check current place")
+                    // A scan the phone has not delivered yet takes a few seconds,
+                    // and a button that looks idle gets tapped again.
+                    Text(if (checking) "Checking..." else "Check current place")
                 }
                 // Only worth offering once we know where the phone is — the
                 // message names the place.
@@ -621,11 +655,14 @@ private fun CurrentPlaceCheck(places: List<Place>, onSendLocation: (String) -> U
             }
 
             if (checked) {
+                val tie = presence?.takeIf { it.contested }?.closest.orEmpty()
                 Spacer(Modifier.height(10.dp))
                 Text(
                     when {
                         match != null -> "You are at ${match.label.ifBlank { match.id }}"
-                        inRange.isEmpty() -> "No networks in range"
+                        tie.isNotEmpty() -> "Two places are both in range, too close to call: " +
+                            tie.joinToString(" and ") { it.place.label.ifBlank { it.place.id } }
+                        heardCount == 0 -> "No networks in range"
                         else -> "Unknown place"
                     },
                     style = MaterialTheme.typography.titleMedium,
@@ -634,14 +671,17 @@ private fun CurrentPlaceCheck(places: List<Place>, onSendLocation: (String) -> U
                 )
                 Text(
                     when {
-                        match != null -> "${inRange.size} networks in range, one of them is this place"
+                        match != null -> "$heardCount networks in range, one of them is this place"
+                        tie.isNotEmpty() -> tie.joinToString(", ") {
+                            "${it.place.label.ifBlank { it.place.id }} at ${it.strongest} dBm"
+                        } + ". Nothing is sent until one of them is clearly nearer."
                         !scanningAvailable ->
                             "Turn on WiFi, or turn on \"WiFi scanning always available\" in the " +
                                 "system WiFi settings. Arrival alerts cannot fire in this state."
-                        inRange.isEmpty() ->
+                        heardCount == 0 ->
                             "Location permission or device location is off, so the phone cannot " +
                                 "see any networks. Arrival alerts cannot fire in this state."
-                        else -> "${inRange.size} networks in range, none of them saved on a place below"
+                        else -> "$heardCount networks in range, none of them saved on a place below"
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),

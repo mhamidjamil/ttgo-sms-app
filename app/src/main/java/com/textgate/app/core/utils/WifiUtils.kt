@@ -8,6 +8,7 @@ import android.net.wifi.WifiManager
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.textgate.app.domain.model.Place
+import kotlinx.coroutines.delay
 
 private const val TAG = "TextGateWifi"
 
@@ -67,9 +68,87 @@ fun requestWifiScan(context: Context) {
     }
 }
 
-// The first saved place whose network is in range.
+// The first saved place whose network is in range. Deliberately loose, and only
+// good enough for answering a linked account's "where are you?" from a single
+// read; anything that decides an arrival goes through resolvePresence.
 fun placeInRange(places: List<Place>, bssids: Set<String>): Place? =
     places.firstOrNull { place -> place.savedBssids.any { it in bssids } }
+
+// How much louder the winning place has to be than the runner-up. Signal
+// strength wanders by a few dB while standing still, so anything closer than
+// this is not a real difference.
+const val CONTEST_MARGIN_DBM = 8
+
+// How long a freshly requested scan gets to deliver results before an empty
+// cache is taken at its word.
+private const val SCAN_RESULTS_WAIT_MILLIS = 6_000L
+
+// What one saved place sounds like on a single read.
+data class PlaceReading(
+    val place: Place,
+    val heardCount: Int,
+    // The loudest of this place's networks that was actually heard, in dBm.
+    // Int.MIN_VALUE when none of them was, so a place nobody can hear never
+    // wins a comparison.
+    val strongest: Int,
+    // Enough of its networks heard, loud enough for its own closeness setting.
+    val present: Boolean,
+)
+
+// One answer to "where am I", plus the working that produced it.
+data class PresenceReading(
+    val readings: List<PlaceReading>,
+    val winner: Place?,
+    // Two or more places are in range and none of them is clearly the nearest.
+    val contested: Boolean,
+) {
+    // The two loudest places in range, which is what a tie has to name.
+    val closest: List<PlaceReading>
+        get() = readings.filter { it.present }.sortedByDescending { it.strongest }.take(2)
+}
+
+/**
+ * Where the phone is, by the one rule the whole app uses: the sweep, "Where am
+ * I?" and "Test detection here" all ask this and therefore agree.
+ *
+ * "Where am I" is one answer, not one per place. A home above a shop or an
+ * office across the road can both be audible from the same spot, and alerting
+ * for both means one of the two is always wrong. The loudest wins, and only by
+ * a clear margin: a tie is an honest "cannot tell", which sends nothing.
+ */
+fun resolvePresence(places: List<Place>, visible: Map<String, Int>): PresenceReading {
+    val readings = places.map { place ->
+        val heard = place.savedBssids.mapNotNull { visible[it] }
+        PlaceReading(
+            place = place,
+            heardCount = heard.size,
+            strongest = heard.maxOrNull() ?: Int.MIN_VALUE,
+            present = place.isPresentIn(visible),
+        )
+    }
+    val ranked = readings.filter { it.present }.sortedByDescending { it.strongest }
+    val winner = when {
+        ranked.isEmpty() -> null
+        ranked.size == 1 -> ranked.first().place
+        ranked[0].strongest - ranked[1].strongest >= CONTEST_MARGIN_DBM -> ranked.first().place
+        else -> null
+    }
+    return PresenceReading(readings, winner, winner == null && ranked.size > 1)
+}
+
+/**
+ * A read a button can trust. Asking for a scan and reading the cache in the
+ * same breath answers from wherever the phone was the last time anything
+ * scanned, which is how a screen claimed a place the engine had already
+ * rejected. Waiting once is what the sweep does, so the screens match it.
+ */
+suspend fun freshScan(context: Context): Map<String, Int> {
+    requestWifiScan(context)
+    val heard = visibleAccessPoints(context)
+    if (heard.isNotEmpty()) return heard
+    delay(SCAN_RESULTS_WAIT_MILLIS)
+    return visibleAccessPoints(context)
+}
 
 /**
  * Why a sweep cannot observe anything right now, as a sentence the user can act

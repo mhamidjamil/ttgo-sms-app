@@ -29,6 +29,7 @@ import com.textgate.app.core.utils.DateUtils
 import com.textgate.app.core.utils.RoutineAnalyzer
 import com.textgate.app.core.utils.WifiConfig
 import com.textgate.app.core.utils.requestWifiScan
+import com.textgate.app.core.utils.resolvePresence
 import com.textgate.app.core.utils.scanBlocker
 import com.textgate.app.core.utils.visibleAccessPoints
 import com.textgate.app.core.utils.visibleBssids
@@ -378,23 +379,12 @@ class ArrivalService : Service() {
         // would hand the first place the whole interval and the rest nothing.
         val stillSinceLastSweep = stationarySinceLastSweep(System.currentTimeMillis())
 
-        // "Where am I" is one answer, not one per place. A home above a shop or an
-        // office across the road can both be audible from the same spot, and the
-        // old loop simply alerted for both, so one of the two was always wrong.
-        // The loudest wins, and only by a clear margin — a tie is an honest
-        // "cannot tell", which sends nothing.
-        val heardStrength = saved.filter { it.isPresentIn(visible) }
-            .associateWith { place -> place.savedBssids.mapNotNull { visible[it] }.max() }
-        val ranked = heardStrength.entries.sortedByDescending { it.value }
-        val winner = when {
-            ranked.isEmpty() -> null
-            ranked.size == 1 -> ranked.first().key
-            ranked[0].value - ranked[1].value >= CONTEST_MARGIN_DBM -> ranked.first().key
-            else -> null
-        }
-        if (winner == null && ranked.size > 1) {
+        // The same rule the two settings buttons ask, so the three never disagree.
+        val presenceNow = resolvePresence(saved, visible)
+        val winner = presenceNow.winner
+        if (presenceNow.contested) {
             Log.w(TAG, "Two places too close to separate: " +
-                ranked.take(2).joinToString { "${it.key.id} at ${it.value} dBm" })
+                presenceNow.closest.joinToString { "${it.place.id} at ${it.strongest} dBm" })
         }
 
         saved.forEach { place ->
@@ -672,10 +662,6 @@ class ArrivalService : Service() {
         // A floor under repeat alerts, never a permission to send one on its own.
         // Only an observed departure re-arms a place.
         private const val REARM_MINUTES = 45
-        // How much louder the winning place has to be than the runner-up. Signal
-        // strength wanders by a few dB while standing still, so anything closer
-        // than this is not a real difference.
-        private const val CONTEST_MARGIN_DBM = 8
         // Picking the phone up off a desk registers a couple of steps; walking out
         // of the building registers far more than this.
         private const val STEPS_THAT_COUNT_AS_MOVING = 12

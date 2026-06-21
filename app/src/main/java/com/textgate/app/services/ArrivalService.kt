@@ -51,6 +51,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withTimeoutOrNull
 import org.koin.android.ext.android.inject
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -79,6 +80,11 @@ class ArrivalService : Service() {
     // The log is for reading, so a condition that holds across many sweeps is
     // written once when it appears, not once per sweep it survives.
     private var lastProblem: String? = null
+    // The reason looking is impossible right now and the moment it started. The
+    // notice has to say how long it has been true: "WiFi is off" reads like it
+    // just happened even when nothing has been observable since breakfast.
+    private var currentBlocker: String? = null
+    private var blockerSince = 0L
     // Concurrent because the send outlives the sweep that started it and reports
     // its outcome here while the next sweep is already writing its own rows.
     private val lastPlaceNote = ConcurrentHashMap<String, String>()
@@ -118,6 +124,9 @@ class ArrivalService : Service() {
     // Sweeps in a row the scan came back completely empty while scanning was
     // available. One empty read is nearly always the cache, not the world.
     private var emptySweeps = 0
+    // When the current run of empty scans began, so a long silence can name the
+    // time it started rather than claiming it is about to retry.
+    private var firstEmptySweepAt = 0L
 
     private val connectivityManager by lazy {
         getSystemService(ConnectivityManager::class.java)
@@ -266,7 +275,11 @@ class ArrivalService : Service() {
     private suspend fun currentUser(): User? {
         val stale = System.currentTimeMillis() - cachedUserAt > SETTINGS_REFRESH_MILLIS
         if (cachedUser == null || App.isInForeground || stale) {
-            userRepo.getCurrentUser()?.let {
+            // A read that never comes back would hold the sweep loop open, and
+            // the loop is the only thing watching for arrivals. Ten seconds and
+            // then carry on: a timeout counts as a refresh that did not happen,
+            // so whatever was cached stays in use.
+            withTimeoutOrNull(10_000) { userRepo.getCurrentUser() }?.let {
                 cachedUser = it
                 cachedUserAt = System.currentTimeMillis()
             }
@@ -287,11 +300,27 @@ class ArrivalService : Service() {
     }
 
     private suspend fun runSweep() {
-        val uid = userRepo.currentFirebaseUser()?.uid ?: return
-        val user = currentUser() ?: return
+        // A sweep that gives up here still has to say so. Leaving the last good
+        // check on screen is how a signed-out phone went on looking like a
+        // working one, and neither of these paths has observed anything, so
+        // nothing may touch the last-observed stamp either.
+        val uid = userRepo.currentFirebaseUser()?.uid ?: run {
+            updateNotification("Signed out, monitoring idle")
+            return
+        }
+        val user = currentUser() ?: run {
+            updateNotification(
+                "Could not read settings at ${DateUtils.time12h(System.currentTimeMillis())}, will retry")
+            noteProblem("Could not read the account settings, monitoring is waiting for them")
+            return
+        }
         requestWifiScan(this)
         var visible = visibleAccessPoints(this)
         val blocker = scanBlocker(this)
+        if (blocker != currentBlocker) {
+            currentBlocker = blocker
+            blockerSince = System.currentTimeMillis()
+        }
         // A requested scan takes a few seconds to land, and right after a
         // service start the cache is empty. Give the request one chance to
         // land before treating the sweep as unobservable.
@@ -306,7 +335,7 @@ class ArrivalService : Service() {
         if (blocker != null) {
             Log.w(TAG, "Cannot observe: $blocker")
             nextSweepSeconds = SWEEP_SECONDS_SETTLED
-            updateNotification(blocker)
+            updateNotification("$blocker, since ${DateUtils.time12h(blockerSince)}")
             noteProblem(blocker)
             goBlind(saved)
             return
@@ -316,18 +345,28 @@ class ArrivalService : Service() {
         // absence of networks, so retry soon instead of blaming settings that
         // are on and then sitting on the wrong message for fifteen minutes.
         if (visible.isEmpty()) {
+            if (emptySweeps == 0) firstEmptySweepAt = System.currentTimeMillis()
             emptySweeps += 1
             Log.w(TAG, "Scan returned no networks although scanning is available ($emptySweeps in a row)")
-            nextSweepSeconds = SWEEP_SECONDS_MOVING
-            updateNotification("No WiFi networks heard on this check, trying again soon")
+            val blind = emptySweeps >= EMPTY_SWEEPS_TO_GO_BLIND
+            // Looking often is worth it while a cold cache is still the likely
+            // explanation. Once presence is parked there is nothing left to
+            // catch quickly, so stop burning the fast cadence on silence;
+            // significant motion still cuts the long wait short.
+            nextSweepSeconds = if (blind) SWEEP_SECONDS_SETTLED else SWEEP_SECONDS_MOVING
+            updateNotification(
+                if (blind) "No WiFi heard since ${DateUtils.time12h(firstEmptySweepAt)}, cannot confirm places"
+                else "No WiFi heard at ${DateUtils.time12h(System.currentTimeMillis())}, retrying soon"
+            )
             noteProblem("Scan returned no networks although scanning is on, retrying soon")
             // Presence keeps its last observed state through a short gap; going
             // blind on the first empty read is what made every service restart
             // adopt the current place silently and swallow its arrival alert.
-            if (emptySweeps >= EMPTY_SWEEPS_TO_GO_BLIND) goBlind(saved)
+            if (blind) goBlind(saved)
             return
         }
         emptySweeps = 0
+        firstEmptySweepAt = 0L
         if (lastProblem != null) {
             lastProblem = null
             monitorLog.append(MonitorLogStore.Kind.EVENT, "Able to observe again")
@@ -497,9 +536,12 @@ class ArrivalService : Service() {
             "Heard ${visible.size} networks. " +
                 (if (here != null) "At ${here.label.ifBlank { here.id }}." else "Not at a saved place.") +
                 " Next check in ${nextSweepSeconds / 60} min.")
+        // The clock time, never "just now": a loop frozen by Doze used to keep
+        // claiming it had only this moment looked, hours after its last sweep.
+        val checkedAt = DateUtils.time12h(System.currentTimeMillis())
         updateNotification(
-            if (here != null) "At ${here.label.ifBlank { here.id }}, checked just now"
-            else "Checked just now, not at a saved place"
+            if (here != null) "At ${here.label.ifBlank { here.id }}, checked $checkedAt"
+            else "Checked $checkedAt, not at a saved place"
         )
     }
 
@@ -577,6 +619,11 @@ class ArrivalService : Service() {
         runCatching {
             getSystemService(NotificationManager::class.java)
                 ?.notify(NOTIFICATION_ID, buildNotification(status))
+        }.onFailure {
+            // Swallowing this left the phone showing a status from days ago with
+            // nothing anywhere saying why it had stopped moving.
+            Log.w(TAG, "Could not post the status notification", it)
+            noteProblem("Could not update the status notice, notifications may be blocked")
         }
     }
 
@@ -660,10 +707,10 @@ class ArrivalService : Service() {
             context.startForegroundService(Intent(context, ArrivalService::class.java))
         }
 
+        // Approximate location cannot read scan results, so starting on it only
+        // produces a service that watches forever and hears nothing.
         fun hasLocationPermission(context: Context): Boolean =
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
-                PackageManager.PERMISSION_GRANTED ||
-                ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
                 PackageManager.PERMISSION_GRANTED
 
         fun stop(context: Context) {

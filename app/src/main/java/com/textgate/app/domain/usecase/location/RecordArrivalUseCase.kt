@@ -51,6 +51,7 @@ class RecordArrivalUseCase(
         uid: String,
         placeId: String,
         routineTriggered: Boolean,
+        visitStartedAt: Long,
     ): Result<ArrivalOutcome> = runCatching {
         val user = userRepo.getCurrentUser() ?: error("User not found")
         val place = user.places.find { it.id == placeId } ?: return@runCatching ArrivalOutcome()
@@ -59,6 +60,14 @@ class RecordArrivalUseCase(
         // presence state machine in ArrivalService, which knows about departures;
         // a calendar date cannot tell a second visit from a repeat.
         val today = DateUtils.todayString()
+        // The routine learner is supposed to learn ARRIVAL times. It was being
+        // fed the clock at the end of the dwell wait, so every sample it kept
+        // was 5 to 20 minutes after the person actually got there.
+        val arrivedHHmm = if (visitStartedAt > 0) {
+            DateUtils.timeHHmm(visitStartedAt)
+        } else {
+            DateUtils.currentTimeHHmm()
+        }
 
         // The default guardian is ALWAYS notified, plus every contact configured
         // for this place, plus any linked account granted automatic updates. One
@@ -76,15 +85,19 @@ class RecordArrivalUseCase(
             // Everyone opted out: record the day anyway so the service stops
             // re-checking this place until tomorrow.
             if (candidates.isNotEmpty()) {
-                userRepo.recordArrival(uid, placeId, today, DateUtils.currentTimeHHmm())
+                userRepo.recordArrival(uid, placeId, today, arrivedHHmm)
             }
             return@runCatching ArrivalOutcome()
         }
 
-        // Capture the ARRIVAL time now — queueing can delay actual delivery by
-        // minutes, and the receiver must see when the arrival happened, not
-        // when the gateway finally sent the message.
-        val arrivalTime = DateUtils.currentTime12h()
+        // The receiver must see when the visit BEGAN, not when the dwell wait
+        // finished and not when the gateway got round to sending. Only a visit
+        // the service could not date falls back to the clock right now.
+        val arrivalTime = if (visitStartedAt > 0) {
+            DateUtils.time12h(visitStartedAt)
+        } else {
+            DateUtils.currentTime12h()
+        }
         val label = place.label.ifBlank { placeId }
         // Per-place custom message, or the default arrival line — the event
         // timestamp is ALWAYS appended. WhatsApp can carry its own text.
@@ -126,6 +139,7 @@ class RecordArrivalUseCase(
                     location = placeId,
                     locationLabel = label,
                     routineTriggered = routineTriggered,
+                    detectedAt = visitStartedAt,
                 )
                 whatsAppSent += 1
             } else {
@@ -137,6 +151,7 @@ class RecordArrivalUseCase(
                     location = placeId,
                     locationLabel = label,
                     routineTriggered = routineTriggered,
+                    detectedAt = visitStartedAt,
                 ).onSuccess { result ->
                     if (result == EnqueueResult.QUEUED_ON_DEVICE) queuedOnDevice += 1 else enqueued += 1
                 }.onFailure { failure ->
@@ -151,6 +166,7 @@ class RecordArrivalUseCase(
                         location = placeId,
                         locationLabel = label,
                         routineTriggered = routineTriggered,
+                        detectedAt = visitStartedAt,
                         error = failure.message.orEmpty(),
                     )
                     failed += 1
@@ -174,7 +190,7 @@ class RecordArrivalUseCase(
         // Losing this row only costs the routine learner one sample, so it is
         // reported and not thrown: failing the whole send over it would have
         // turned a slow network into "no alert went out".
-        val historySaved = userRepo.recordArrival(uid, placeId, today, DateUtils.currentTimeHHmm())
+        val historySaved = userRepo.recordArrival(uid, placeId, today, arrivedHHmm)
             .onFailure { Log.w(TAG, "$placeId: arrival time not added to the routine history", it) }
             .isSuccess
         ArrivalOutcome(

@@ -482,7 +482,7 @@ class ArrivalService : Service() {
             // phone with no signal has to keep watching for the departure that
             // re-arms this place.
             scope.launch {
-                recordArrival(uid, place.id, routineTriggered)
+                recordArrival(uid, place.id, routineTriggered, running.visitStartedAt)
                     .onSuccess { outcome -> noteArrivalOutcome(place, outcome) }
                     .onFailure {
                         Log.w(TAG, "${place.id}: arrival not sent, ${it.message}")

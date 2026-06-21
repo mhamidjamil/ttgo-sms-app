@@ -36,8 +36,10 @@ class SmsRepositoryImpl(private val firestore: FirestoreDataSource) : SmsReposit
         location: String,
         locationLabel: String,
         routineTriggered: Boolean,
+        detectedAt: Long,
     ): Result<EnqueueResult> = firestore.enqueueAutoArrivalSms(
         uid, phoneNumber, recipientName, message, location, locationLabel, routineTriggered,
+        detectedAt,
     )
 
     override suspend fun logAutoWhatsAppArrival(
@@ -48,8 +50,10 @@ class SmsRepositoryImpl(private val firestore: FirestoreDataSource) : SmsReposit
         location: String,
         locationLabel: String,
         routineTriggered: Boolean,
+        detectedAt: Long,
     ): Result<Unit> = firestore.logAutoWhatsAppArrival(
         uid, phoneNumber, recipientName, message, location, locationLabel, routineTriggered,
+        detectedAt,
     )
 
     override suspend fun logAutoArrivalFailure(
@@ -60,9 +64,11 @@ class SmsRepositoryImpl(private val firestore: FirestoreDataSource) : SmsReposit
         location: String,
         locationLabel: String,
         routineTriggered: Boolean,
+        detectedAt: Long,
         error: String,
     ): Result<Unit> = firestore.logAutoArrivalFailure(
-        uid, phoneNumber, recipientName, message, location, locationLabel, routineTriggered, error,
+        uid, phoneNumber, recipientName, message, location, locationLabel, routineTriggered,
+        detectedAt, error,
     )
 
     override suspend fun updateAutoHistoryStatus(uid: String, entryId: String, status: String): Result<Unit> =

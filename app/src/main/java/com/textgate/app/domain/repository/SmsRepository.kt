@@ -14,7 +14,8 @@ interface SmsRepository {
     // Enqueues an OTP verification SMS without touching user quota or history
     suspend fun enqueueOtpSms(uid: String, phoneNumber: String, message: String): Result<Unit>
 
-    // Arrival monitoring (V2)
+    // Arrival monitoring (V2). detectedAt is when the visit began, which the
+    // history row keeps separately because sent_at is minutes later.
     suspend fun logAutoWhatsAppArrival(
         uid: String,
         phoneNumber: String,
@@ -23,6 +24,7 @@ interface SmsRepository {
         location: String,
         locationLabel: String,
         routineTriggered: Boolean,
+        detectedAt: Long,
     ): Result<Unit>
     suspend fun logAutoArrivalFailure(
         uid: String,
@@ -32,6 +34,7 @@ interface SmsRepository {
         location: String,
         locationLabel: String,
         routineTriggered: Boolean,
+        detectedAt: Long,
         error: String,
     ): Result<Unit>
     suspend fun updateAutoHistoryStatus(uid: String, entryId: String, status: String): Result<Unit>
@@ -49,6 +52,7 @@ interface SmsRepository {
         location: String,
         locationLabel: String,
         routineTriggered: Boolean,
+        detectedAt: Long,
     ): Result<EnqueueResult>
     fun getAutoHistory(uid: String): Flow<List<AutoHistoryEntry>>
 }

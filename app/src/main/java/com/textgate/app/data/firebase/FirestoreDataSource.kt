@@ -350,9 +350,14 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         location: String,
         locationLabel: String,
         routineTriggered: Boolean,
+        detectedAt: Long,
     ): Result<EnqueueResult> = runCatching {
         val enqueBy = "app:$uid:arrival"
         val now = Timestamp.now()
+        // When the visit began, kept apart from sent_at so a row can be audited
+        // against the time the message itself claims. The gateway job stays on
+        // its five agreed fields, because the rules reject anything else.
+        val detected = if (detectedAt > 0) Timestamp(java.util.Date(detectedAt)) else now
         val jobRef = db.collection(Paths.SMS_JOBS).document()
         val jobDto = mapOf(
             "phone_number" to phoneNumber,
@@ -367,6 +372,7 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
             "channel" to "sms",
             "enque_by" to enqueBy,
             "sent_at" to now,
+            "detected_at" to detected,
             "status" to "pending",
             "job_phone_key" to phoneNumber,
             "job_id" to jobRef.id,
@@ -404,9 +410,10 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         location: String,
         locationLabel: String,
         routineTriggered: Boolean,
+        detectedAt: Long,
     ): Result<Unit> = logAutoArrival(
         uid, phoneNumber, recipientName, message, location, locationLabel,
-        routineTriggered, channel = "whatsapp", status = "sent", error = "",
+        routineTriggered, detectedAt, channel = "whatsapp", status = "sent", error = "",
     )
 
     // A recipient the gateway could not be queued for at all. Without this row
@@ -420,10 +427,11 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         location: String,
         locationLabel: String,
         routineTriggered: Boolean,
+        detectedAt: Long,
         error: String,
     ): Result<Unit> = logAutoArrival(
         uid, phoneNumber, recipientName, message, location, locationLabel,
-        routineTriggered, channel = "sms", status = "failed", error = error,
+        routineTriggered, detectedAt, channel = "sms", status = "failed", error = error,
     )
 
     private suspend fun logAutoArrival(
@@ -434,16 +442,19 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         location: String,
         locationLabel: String,
         routineTriggered: Boolean,
+        detectedAt: Long,
         channel: String,
         status: String,
         error: String,
     ): Result<Unit> = runCatching {
+        val now = Timestamp.now()
         val autoDto = mapOf(
             "location" to location,
             "location_label" to locationLabel,
             "channel" to channel,
             "enque_by" to "app:$uid:arrival",
-            "sent_at" to Timestamp.now(),
+            "sent_at" to now,
+            "detected_at" to if (detectedAt > 0) Timestamp(java.util.Date(detectedAt)) else now,
             "status" to status,
             "job_phone_key" to phoneNumber,
             "recipient_name" to recipientName,

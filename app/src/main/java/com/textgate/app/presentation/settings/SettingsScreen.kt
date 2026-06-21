@@ -50,6 +50,7 @@ import com.textgate.app.domain.model.PresenceState
 import com.textgate.app.domain.model.Sensitivity
 import com.textgate.app.services.ArrivalService
 import com.textgate.app.services.ArrivalWatchdogReceiver
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 
@@ -78,20 +79,29 @@ fun SettingsScreen(
     var showScanDialog by remember { mutableStateOf(false) }
     var scanTargetPlaceId by remember { mutableStateOf<String?>(null) }
     var editingPlaceId by remember { mutableStateOf<String?>(null) }
-    var isMonitoring by remember { mutableStateOf(ArrivalService.isRunning) }
+    var isMonitoring by remember { mutableStateOf(false) }
     var showLocationDisclosure by remember { mutableStateOf(false) }
 
-    // Persist monitoring state so it survives process death / system service kill.
-    // On composition, restore from prefs — if the user intended monitoring ON but
-    // the service was killed (e.g. battery optimization), restart it silently.
+    // The switch says what the user asked for, which is what prefs hold, not
+    // whether the service happens to be alive: a service the system killed used
+    // to turn the switch off by itself. Whether it is actually running is a
+    // separate line under it. If it was killed, restart it silently here.
     LaunchedEffect(Unit) {
-        if (!isMonitoring && viewModel.getMonitoringEnabled()) {
+        isMonitoring = viewModel.getMonitoringEnabled()
+        if (isMonitoring && !ArrivalService.isRunning) {
             val missing = requiredMonitoringPermissions()
                 .filterNot { permission -> hasPermission(context, permission) }
-            if (missing.isEmpty()) {
-                isMonitoring = true
-                ArrivalService.start(context)
-            }
+            if (missing.isEmpty()) ArrivalService.start(context)
+        }
+    }
+
+    // Detection health used to be read once per process, so coming back to this
+    // tab days later showed the sweep from the first time it was opened. Ten
+    // seconds matches the cadence the monitoring log already refreshes on.
+    LaunchedEffect(Unit) {
+        while (true) {
+            viewModel.loadHealth()
+            delay(10_000)
         }
     }
 
@@ -366,7 +376,12 @@ private fun SettingsContent(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Text(
-                        if (isMonitoring) "Running in background" else "Tap to start",
+                        when {
+                            !isMonitoring -> "Tap to start"
+                            uiState.serviceRunning -> "Running in background"
+                            else -> "Not running right now, it will be brought back by the " +
+                                "15 minute check"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     )
@@ -374,6 +389,9 @@ private fun SettingsContent(
                 Switch(checked = isMonitoring, onCheckedChange = onMonitoringToggle)
             }
 
+            // Shown whenever monitoring is meant to be on, including when the
+            // service is down: a stopped service is exactly when the battery
+            // notice and the last successful check are worth reading.
             if (isMonitoring) {
                 BatteryExemptionNotice()
                 DetectionHealthCard(uiState)
@@ -1313,6 +1331,7 @@ private fun SettingsFilledPreview() {
                 isLoading = false,
                 guardianNumber = "03001234567",
                 places = previewPlaces,
+                serviceRunning = true,
             ),
             guardianNumber = "03001234567", onGuardianChange = {},
             onEditPlace = {}, onAddPlace = {}, onRemovePlace = {}, onScanPlace = {},

@@ -13,6 +13,7 @@ import com.textgate.app.domain.repository.WhatsAppRepository
 import com.textgate.app.domain.usecase.location.GetPlaceRecipientsUseCase
 import com.textgate.app.domain.usecase.location.SavePlacesUseCase
 import com.textgate.app.domain.usecase.location.SendLocationNowUseCase
+import com.textgate.app.services.ArrivalService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -41,6 +42,10 @@ data class SettingsUiState(
     // invisible. These are what it actually knows.
     val lastObservedAt: Long = 0L,
     val placeStates: Map<String, PresenceState> = emptyMap(),
+    // Whether the service is alive at this moment, re-read with the health data.
+    // The screen used to sample it once, so a service the system had killed
+    // hours ago still read as running.
+    val serviceRunning: Boolean = false,
 )
 
 class SettingsViewModel(
@@ -66,6 +71,7 @@ class SettingsViewModel(
             _uiState.value = _uiState.value.copy(
                 lastObservedAt = prefs.getLastObservedAt(),
                 placeStates = places.associate { it.id to prefs.getPresence(it.id).state },
+                serviceRunning = ArrivalService.isRunning,
             )
         }
     }
@@ -74,7 +80,11 @@ class SettingsViewModel(
         viewModelScope.launch {
             val user = userRepo.getCurrentUser()
             if (user != null) {
-                _uiState.value = SettingsUiState(
+                // Copied onto whatever is already there, never a fresh state: the
+                // health read runs alongside this one and whichever finishes last
+                // used to wipe the other's fields, which is how the card ended up
+                // stuck on "nothing checked yet" and "away" for every place.
+                _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     guardianNumber = user.guardianNumber,
                     // toDomain() migrates legacy home/office fields into the
@@ -83,7 +93,7 @@ class SettingsViewModel(
                     waConfigured = waRepo.isLinked(),
                 )
             } else {
-                _uiState.value = SettingsUiState(isLoading = false, error = "Could not load settings")
+                _uiState.value = _uiState.value.copy(isLoading = false, error = "Could not load settings")
             }
         }
     }

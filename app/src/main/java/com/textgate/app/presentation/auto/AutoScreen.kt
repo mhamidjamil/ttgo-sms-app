@@ -279,9 +279,18 @@ private fun RecipientRow(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 )
             }
+            // The reason has always been stored on a failed row and never shown,
+            // so "Failed" was the whole explanation the user got.
+            if (entry.error.isNotBlank()) {
+                Text(
+                    entry.error,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = StatusFailed.copy(alpha = 0.8f),
+                )
+            }
         }
         Text(
-            statusLabel(entry.status),
+            statusLabel(entry),
             style = MaterialTheme.typography.labelMedium,
             color = statusColor(entry.status),
         )
@@ -324,14 +333,19 @@ private fun statusColor(status: SmsStatus): Color = when (status) {
     SmsStatus.UNKNOWN -> StatusUnknown
 }
 
-private fun statusLabel(status: SmsStatus): String = when (status) {
-    SmsStatus.PENDING -> "Pending"
-    SmsStatus.IN_PROGRESS -> "Sending"
-    SmsStatus.SENT -> "Sent"
-    SmsStatus.FAILED -> "Failed"
-    SmsStatus.BLOCKED -> "Blocked"
-    SmsStatus.UNKNOWN -> "Unknown"
-}
+// A row that is still only in this phone's write queue is waiting on the
+// network, not on the gateway. Calling both "Pending" is what let an alert that
+// never left the phone look like one already lined up to send.
+private fun statusLabel(entry: AutoHistoryEntry): String =
+    if (entry.status == SmsStatus.PENDING && entry.pendingWrite) "Waiting for network"
+    else when (entry.status) {
+        SmsStatus.PENDING -> "Pending"
+        SmsStatus.IN_PROGRESS -> "Sending"
+        SmsStatus.SENT -> "Sent"
+        SmsStatus.FAILED -> "Failed"
+        SmsStatus.BLOCKED -> "Blocked"
+        SmsStatus.UNKNOWN -> "Unknown"
+    }
 
 // ── Preview helpers ───────────────────────────────────────────────────────────
 

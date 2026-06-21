@@ -3,11 +3,13 @@ package com.textgate.app.data.firebase
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.MetadataChanges
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.snapshots
 import com.textgate.app.core.utils.DateUtils
 import com.textgate.app.core.utils.Paths
+import com.textgate.app.domain.model.EnqueueResult
 import com.textgate.app.domain.model.Place
 import com.textgate.app.domain.model.LinkPermissions
 import com.textgate.app.domain.model.LinkState
@@ -24,6 +26,7 @@ import com.textgate.app.data.model.UserDto
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withTimeoutOrNull
 
 class FirestoreDataSource(private val db: FirebaseFirestore) {
 
@@ -320,16 +323,21 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         currentTime: String,
     ): Result<Unit> = runCatching {
         val ref = db.collection(Paths.USERS).document(uid)
-        db.runTransaction { tx ->
-            val snap = tx.get(ref)
-            @Suppress("UNCHECKED_CAST")
-            val allTimes = (snap.get("arrival_times") as? Map<String, List<String>>) ?: emptyMap()
-            val updated = ((allTimes[placeId] ?: emptyList()) + currentTime).takeLast(30)
-            tx.update(ref, mapOf(
-                "last_arrival_dates.$placeId" to date,
-                "arrival_times.$placeId" to updated,
-            ))
-        }.await()
+        // A transaction reads from the server, so with no network it can only
+        // wait. This is the routine-learning history, not the alert, so it is
+        // bounded and the caller carries on without it.
+        withTimeoutOrNull(TRANSACTION_TIMEOUT_MILLIS) {
+            db.runTransaction { tx ->
+                val snap = tx.get(ref)
+                @Suppress("UNCHECKED_CAST")
+                val allTimes = (snap.get("arrival_times") as? Map<String, List<String>>) ?: emptyMap()
+                val updated = ((allTimes[placeId] ?: emptyList()) + currentTime).takeLast(30)
+                tx.update(ref, mapOf(
+                    "last_arrival_dates.$placeId" to date,
+                    "arrival_times.$placeId" to updated,
+                ))
+            }.await()
+        } ?: error("The arrival history write did not reach the server in time")
     }
 
     // ── Auto arrival SMS (V2) ─────────────────────────────────────────────────
@@ -342,7 +350,7 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         location: String,
         locationLabel: String,
         routineTriggered: Boolean,
-    ): Result<Unit> = runCatching {
+    ): Result<EnqueueResult> = runCatching {
         val enqueBy = "app:$uid:arrival"
         val now = Timestamp.now()
         val jobRef = db.collection(Paths.SMS_JOBS).document()
@@ -373,7 +381,16 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
                 .collection(Paths.AUTO_HISTORY_SUB).document(),
             autoDto,
         )
-        batch.commit().await()
+        // Firestore writes the batch to the phone's cache at once but only ends
+        // this wait when the SERVER has it, which with no network is never. The
+        // unbounded wait was what parked the whole monitoring loop. A wait that
+        // runs out is not a lost job: it stays in Firestore's own queue, through
+        // a restart, and syncs by itself, so it is reported as queued here.
+        val acknowledged = withTimeoutOrNull(COMMIT_TIMEOUT_MILLIS) {
+            batch.commit().await()
+            true
+        }
+        if (acknowledged == null) EnqueueResult.QUEUED_ON_DEVICE else EnqueueResult.SENT_TO_SERVER
     }
 
     // WhatsApp deliveries don't create a gateway job — record the arrival in
@@ -478,14 +495,18 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
             .update("status", status).await()
     }
 
+    // Metadata changes are included so the page hears the moment a row stops
+    // being a local-only write. Without them a row written offline looks exactly
+    // like one the gateway already has, which is how "pending" lied for hours.
     fun getAutoHistory(uid: String): Flow<List<AutoHistoryEntryDto>> =
         db.collection(Paths.USERS).document(uid)
             .collection(Paths.AUTO_HISTORY_SUB)
             .orderBy("sent_at", Query.Direction.DESCENDING)
-            .snapshots()
+            .snapshots(MetadataChanges.INCLUDE)
             .map { snap ->
                 snap.documents.mapNotNull { doc ->
-                    doc.toObject(AutoHistoryEntryDto::class.java)?.copy(id = doc.id)
+                    doc.toObject(AutoHistoryEntryDto::class.java)
+                        ?.copy(id = doc.id, pendingWrite = doc.metadata.hasPendingWrites())
                 }
             }
 
@@ -602,14 +623,19 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         senderName: String,
         senderPhone: String,
     ): Result<Unit> = runCatching {
-        subscriptionRef(recipientPhone, senderUid).set(
-            mapOf(
-                "sender_name" to senderName,
-                "sender_phone" to senderPhone,
-                "last_alert_at" to Timestamp.now(),
-            ),
-            SetOptions.merge(),
-        ).await()
+        // A breadcrumb for the recipient, never the alert itself, so it gets a
+        // short wait and nothing more: the merge syncs on its own whenever the
+        // network returns and it must not hold an arrival up in the meantime.
+        withTimeoutOrNull(SUBSCRIPTION_TIMEOUT_MILLIS) {
+            subscriptionRef(recipientPhone, senderUid).set(
+                mapOf(
+                    "sender_name" to senderName,
+                    "sender_phone" to senderPhone,
+                    "last_alert_at" to Timestamp.now(),
+                ),
+                SetOptions.merge(),
+            ).await()
+        }
     }
 
     // Absent document or absent field means the recipient never opted out, which
@@ -770,5 +796,14 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         locationRequests(uid).document(requestId).update(
             mapOf("status" to status, "answer" to answer, "answered_at" to Timestamp.now())
         ).await()
+    }
+
+    companion object {
+        // Long enough for a slow but working connection to acknowledge the
+        // write, short enough that a dead one is called dead while the arrival
+        // is still recent.
+        private const val COMMIT_TIMEOUT_MILLIS = 15_000L
+        private const val TRANSACTION_TIMEOUT_MILLIS = 10_000L
+        private const val SUBSCRIPTION_TIMEOUT_MILLIS = 10_000L
     }
 }

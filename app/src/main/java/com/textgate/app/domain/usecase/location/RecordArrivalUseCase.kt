@@ -1,6 +1,8 @@
 package com.textgate.app.domain.usecase.location
 
+import android.util.Log
 import com.textgate.app.core.utils.DateUtils
+import com.textgate.app.domain.model.EnqueueResult
 import com.textgate.app.domain.model.PlaceContact
 import com.textgate.app.domain.repository.AlertRepository
 import com.textgate.app.domain.repository.LinkRepository
@@ -8,6 +10,22 @@ import com.textgate.app.domain.repository.SmsRepository
 import com.textgate.app.domain.repository.UserRepository
 import com.textgate.app.domain.repository.WhatsAppRepository
 import com.textgate.app.domain.usecase.sms.EnqueueSmsUseCase
+
+/**
+ * What became of one arrival, recipient by recipient. A single "it worked" was
+ * printed even when every job had failed, so the monitoring log could not tell
+ * a delivered alert from one that never left the phone.
+ */
+data class ArrivalOutcome(
+    val whatsAppSent: Int = 0,
+    val enqueued: Int = 0,
+    val queuedOnDevice: Int = 0,
+    val failed: Int = 0,
+    val firstFailure: String = "",
+    val routineHistorySaved: Boolean = true,
+) {
+    val total: Int get() = whatsAppSent + enqueued + queuedOnDevice + failed
+}
 
 class RecordArrivalUseCase(
     private val userRepo: UserRepository,
@@ -25,11 +43,17 @@ class RecordArrivalUseCase(
         // Marks the sender signature as machine-sent. Its counterpart on a
         // hand-pressed location share is SendLocationNowUseCase.MANUAL_SUFFIX.
         const val AUTOMATION_SUFFIX = " (via automation)"
+
+        private const val TAG = "TextGateArrival"
     }
 
-    suspend operator fun invoke(uid: String, placeId: String, routineTriggered: Boolean): Result<Unit> = runCatching {
+    suspend operator fun invoke(
+        uid: String,
+        placeId: String,
+        routineTriggered: Boolean,
+    ): Result<ArrivalOutcome> = runCatching {
         val user = userRepo.getCurrentUser() ?: error("User not found")
-        val place = user.places.find { it.id == placeId } ?: return@runCatching
+        val place = user.places.find { it.id == placeId } ?: return@runCatching ArrivalOutcome()
 
         // No day guard here. Whether this visit may alert is decided by the
         // presence state machine in ArrivalService, which knows about departures;
@@ -54,7 +78,7 @@ class RecordArrivalUseCase(
             if (candidates.isNotEmpty()) {
                 userRepo.recordArrival(uid, placeId, today, DateUtils.currentTimeHHmm())
             }
-            return@runCatching
+            return@runCatching ArrivalOutcome()
         }
 
         // Capture the ARRIVAL time now — queueing can delay actual delivery by
@@ -83,6 +107,11 @@ class RecordArrivalUseCase(
         // fall back to the SMS gateway per recipient when unlinked or the send
         // fails. A failure for one recipient must not block the others.
         val waLinked = waRepo.isLinked()
+        var whatsAppSent = 0
+        var enqueued = 0
+        var queuedOnDevice = 0
+        var failed = 0
+        var firstFailure = ""
         recipients.forEach { contact ->
             // recipientName personalizes for the RECEIVER (gateway anti-ban).
             val sentViaWhatsApp = waLinked &&
@@ -98,6 +127,7 @@ class RecordArrivalUseCase(
                     locationLabel = label,
                     routineTriggered = routineTriggered,
                 )
+                whatsAppSent += 1
             } else {
                 smsRepo.enqueueAutoArrivalSms(
                     uid = uid,
@@ -107,7 +137,9 @@ class RecordArrivalUseCase(
                     location = placeId,
                     locationLabel = label,
                     routineTriggered = routineTriggered,
-                ).onFailure { failure ->
+                ).onSuccess { result ->
+                    if (result == EnqueueResult.QUEUED_ON_DEVICE) queuedOnDevice += 1 else enqueued += 1
+                }.onFailure { failure ->
                     // Leave a failed row for THIS recipient so the Auto page can
                     // show them and retry just them. Without it a recipient the
                     // gateway rejected is lost with no trace.
@@ -121,6 +153,9 @@ class RecordArrivalUseCase(
                         routineTriggered = routineTriggered,
                         error = failure.message.orEmpty(),
                     )
+                    failed += 1
+                    if (firstFailure.isBlank()) firstFailure = failure.message.orEmpty()
+                    Log.w(TAG, "$placeId: could not queue the alert for ${contact.number}", failure)
                 }
             }
             // Leaves a trail the recipient can find when they install the app,
@@ -136,6 +171,19 @@ class RecordArrivalUseCase(
         // happened. Delivery is now tracked per recipient, so a failure is a row
         // that can be retried on its own rather than a reason to replay the whole
         // fan-out and double-message everyone who was already reached.
-        userRepo.recordArrival(uid, placeId, today, DateUtils.currentTimeHHmm()).getOrThrow()
+        // Losing this row only costs the routine learner one sample, so it is
+        // reported and not thrown: failing the whole send over it would have
+        // turned a slow network into "no alert went out".
+        val historySaved = userRepo.recordArrival(uid, placeId, today, DateUtils.currentTimeHHmm())
+            .onFailure { Log.w(TAG, "$placeId: arrival time not added to the routine history", it) }
+            .isSuccess
+        ArrivalOutcome(
+            whatsAppSent = whatsAppSent,
+            enqueued = enqueued,
+            queuedOnDevice = queuedOnDevice,
+            failed = failed,
+            firstFailure = firstFailure,
+            routineHistorySaved = historySaved,
+        )
     }
 }

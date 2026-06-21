@@ -2,6 +2,7 @@ package com.textgate.app.data.repository
 
 import com.textgate.app.data.firebase.FirestoreDataSource
 import com.textgate.app.domain.model.AutoHistoryEntry
+import com.textgate.app.domain.model.EnqueueResult
 import com.textgate.app.domain.model.HistoryEntry
 import com.textgate.app.domain.model.SmsJob
 import com.textgate.app.domain.repository.SmsRepository
@@ -35,7 +36,7 @@ class SmsRepositoryImpl(private val firestore: FirestoreDataSource) : SmsReposit
         location: String,
         locationLabel: String,
         routineTriggered: Boolean,
-    ): Result<Unit> = firestore.enqueueAutoArrivalSms(
+    ): Result<EnqueueResult> = firestore.enqueueAutoArrivalSms(
         uid, phoneNumber, recipientName, message, location, locationLabel, routineTriggered,
     )
 

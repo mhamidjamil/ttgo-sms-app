@@ -19,4 +19,9 @@ data class AutoHistoryEntry(
     val recipientName: String = "",
     val message: String,
     val routineTriggered: Boolean,
+    // Why the gateway refused it, on failed rows only.
+    val error: String = "",
+    // True while the row is still only in this phone's cache, so the alert has
+    // not reached the gateway yet however "pending" it looks.
+    val pendingWrite: Boolean = false,
 )

@@ -2,6 +2,7 @@ package com.textgate.app.data.model
 
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentId
+import com.google.firebase.firestore.Exclude
 import com.google.firebase.firestore.PropertyName
 import com.textgate.app.domain.model.AutoHistoryEntry
 import com.textgate.app.domain.model.SmsStatus
@@ -26,6 +27,12 @@ data class AutoHistoryEntryDto(
     val message: String = "",
     @get:PropertyName("routine_triggered") @set:PropertyName("routine_triggered")
     var routineTriggered: Boolean = false,
+    // Why the gateway refused this recipient. It has always been written on a
+    // failed row and never read back, so the Auto page could only say "Failed".
+    val error: String = "",
+    // Not a stored field: it comes from the snapshot metadata and says the row
+    // exists only in this phone's cache so far.
+    @get:Exclude val pendingWrite: Boolean = false,
 ) {
     fun toDomain() = AutoHistoryEntry(
         id = id,
@@ -40,5 +47,7 @@ data class AutoHistoryEntryDto(
         recipientName = recipientName,
         message = message,
         routineTriggered = routineTriggered,
+        error = error,
+        pendingWrite = pendingWrite,
     )
 }

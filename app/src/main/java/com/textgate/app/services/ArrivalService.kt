@@ -22,6 +22,7 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.google.firebase.firestore.FirebaseFirestore
 import com.textgate.app.R
 import com.textgate.app.App
 import com.textgate.app.core.utils.DateUtils
@@ -39,6 +40,7 @@ import com.textgate.app.domain.model.User
 import com.textgate.app.domain.repository.LinkRepository
 import com.textgate.app.domain.repository.UserRepository
 import com.textgate.app.domain.usecase.links.AnswerLocationRequestsUseCase
+import com.textgate.app.domain.usecase.location.ArrivalOutcome
 import com.textgate.app.domain.usecase.location.RecordArrivalUseCase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -48,7 +50,10 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import org.koin.android.ext.android.inject
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Watches for the WiFi networks of saved places being IN RANGE, whether or not
@@ -68,12 +73,15 @@ class ArrivalService : Service() {
     private val answerLocationRequest: AnswerLocationRequestsUseCase by inject()
     private val prefs: PreferencesDataSource by inject()
     private val monitorLog: MonitorLogStore by inject()
+    private val firestore: FirebaseFirestore by inject()
     private val routineAnalyzer = RoutineAnalyzer()
 
     // The log is for reading, so a condition that holds across many sweeps is
     // written once when it appears, not once per sweep it survives.
     private var lastProblem: String? = null
-    private val lastPlaceNote = mutableMapOf<String, String>()
+    // Concurrent because the send outlives the sweep that started it and reports
+    // its outcome here while the next sweep is already writing its own rows.
+    private val lastPlaceNote = ConcurrentHashMap<String, String>()
 
     private fun notePlace(place: Place, kind: String, message: String) {
         if (lastPlaceNote[place.id] == message) return
@@ -89,6 +97,11 @@ class ArrivalService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var sweepJob: Job? = null
+    // The timer, the motion trigger and the WiFi-join callback all ask for a
+    // sweep and can land within a second of each other. Two running at once
+    // would both find the same place still counting down and send the whole
+    // fan-out twice.
+    private val sweeping = AtomicBoolean(false)
     // A restart must never read as a fresh arrival. Nothing may be sent until the
     // first observations have had time to land and the state has been re-read.
     private var startedAt = 0L
@@ -196,6 +209,7 @@ class ArrivalService : Service() {
         } ?: Log.w(TAG, "No step sensor — the wait will count plain elapsed time")
         armMotionTrigger()
         startSweeping()
+        flushQueuedAlerts()
         watchLocationRequests()
     }
 
@@ -226,6 +240,25 @@ class ArrivalService : Service() {
     }
 
     /**
+     * An alert written while offline sits in Firestore's own queue on the phone
+     * until the process runs with a network again, which is usually the moment
+     * this service starts. Waiting on that queue here is what turns "queued on
+     * this phone" into a real send, and a wait that took a while is worth a line
+     * in the log because it explains an SMS arriving late.
+     */
+    private fun flushQueuedAlerts() {
+        scope.launch {
+            runCatching {
+                val waitStartedAt = System.currentTimeMillis()
+                firestore.waitForPendingWrites().await()
+                if (System.currentTimeMillis() - waitStartedAt > BACKLOG_WORTH_NOTING_MILLIS) {
+                    monitorLog.append(MonitorLogStore.Kind.EVENT, "alerts queued earlier reached the server")
+                }
+            }.onFailure { Log.w(TAG, "Could not wait for the queued writes", it) }
+        }
+    }
+
+    /**
      * Settings, without a network round trip on every sweep. A refresh happens on
      * the first sweep, whenever the app is open on screen, and once every few
      * hours as a safety net.
@@ -242,6 +275,18 @@ class ArrivalService : Service() {
     }
 
     private suspend fun sweep() {
+        if (!sweeping.compareAndSet(false, true)) {
+            Log.d(TAG, "A sweep is already running, leaving this one to it")
+            return
+        }
+        try {
+            runSweep()
+        } finally {
+            sweeping.set(false)
+        }
+    }
+
+    private suspend fun runSweep() {
         val uid = userRepo.currentFirebaseUser()?.uid ?: return
         val user = currentUser() ?: return
         requestWifiScan(this)
@@ -424,21 +469,26 @@ class ArrivalService : Service() {
             }
 
             val routineTriggered = waitMinutes < dwellMinutes
-            recordArrival(uid, place.id, routineTriggered)
-                .onSuccess {
-                    Log.i(TAG, "${place.id}: arrival recorded")
-                    notePlace(place, MonitorLogStore.Kind.ALERT, "arrival alert sent")
-                }
-                .onFailure {
-                    Log.w(TAG, "${place.id}: arrival not sent — ${it.message}")
-                    notePlace(place, MonitorLogStore.Kind.PROBLEM, "arrival alert failed, ${it.message}")
-                }
-            // Marked here whether or not the gateway accepted it: delivery is
-            // retried per recipient from the Auto page, and replaying the whole
-            // fan-out would double-message everyone who was already reached.
+            // Marked here whether or not the gateway accepted it, and BEFORE any
+            // network work: delivery is retried per recipient from the Auto
+            // page, and replaying the whole fan-out would double-message
+            // everyone who was already reached. Flipping it first also closes
+            // the window a slow send used to leave open, where the place was
+            // still counting down and the next sweep sent everything again.
             prefs.setPresence(place.id, running.copy(
                 state = PresenceState.HERE, lastAlertAt = System.currentTimeMillis(),
             ))
+            // On its own coroutine so the sweep never waits on the network. A
+            // phone with no signal has to keep watching for the departure that
+            // re-arms this place.
+            scope.launch {
+                recordArrival(uid, place.id, routineTriggered)
+                    .onSuccess { outcome -> noteArrivalOutcome(place, outcome) }
+                    .onFailure {
+                        Log.w(TAG, "${place.id}: arrival not sent, ${it.message}")
+                        notePlace(place, MonitorLogStore.Kind.PROBLEM, "arrival alert failed, ${it.message}")
+                    }
+            }
         }
 
         chooseNextCadence(saved, movedSinceLastSweep = stillSinceLastSweep == 0L)
@@ -451,6 +501,26 @@ class ArrivalService : Service() {
             if (here != null) "At ${here.label.ifBlank { here.id }}, checked just now"
             else "Checked just now, not at a saved place"
         )
+    }
+
+    // Says what became of each recipient. One green row used to be written
+    // whatever happened, so an alert still sitting on the phone read exactly
+    // like one the gateway had already taken.
+    private fun noteArrivalOutcome(place: Place, outcome: ArrivalOutcome) {
+        val reached = outcome.whatsAppSent + outcome.enqueued
+        Log.i(TAG, "${place.id}: arrival recorded, $reached sent, " +
+            "${outcome.queuedOnDevice} queued on this phone, ${outcome.failed} failed")
+        if (reached > 0) {
+            notePlace(place, MonitorLogStore.Kind.ALERT, "arrival alert sent to $reached recipient(s)")
+        }
+        if (outcome.queuedOnDevice > 0) {
+            notePlace(place, MonitorLogStore.Kind.EVENT,
+                "alert for ${outcome.queuedOnDevice} recipient(s) queued on this phone, waiting for network")
+        }
+        if (outcome.failed > 0) {
+            notePlace(place, MonitorLogStore.Kind.PROBLEM,
+                "arrival alert failed for ${outcome.failed} of ${outcome.total}, ${outcome.firstFailure}")
+        }
     }
 
     private suspend fun goBlind(saved: List<Place>) {
@@ -570,6 +640,9 @@ class ArrivalService : Service() {
         private const val SCAN_RESULTS_WAIT_MILLIS = 6_000L
         // Consecutive empty scans before presence is parked as unobservable.
         private const val EMPTY_SWEEPS_TO_GO_BLIND = 3
+        // A queue that clears instantly had nothing in it, so only a wait longer
+        // than this is reported as a backlog actually going out.
+        private const val BACKLOG_WORTH_NOTING_MILLIS = 2_000L
 
         /**
          * Android revokes the permissions of apps that have not been opened for

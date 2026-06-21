@@ -1,6 +1,7 @@
 package com.textgate.app.domain.repository
 
 import com.textgate.app.domain.model.AutoHistoryEntry
+import com.textgate.app.domain.model.EnqueueResult
 import com.textgate.app.domain.model.HistoryEntry
 import com.textgate.app.domain.model.SmsJob
 import kotlinx.coroutines.flow.Flow
@@ -48,6 +49,6 @@ interface SmsRepository {
         location: String,
         locationLabel: String,
         routineTriggered: Boolean,
-    ): Result<Unit>
+    ): Result<EnqueueResult>
     fun getAutoHistory(uid: String): Flow<List<AutoHistoryEntry>>
 }

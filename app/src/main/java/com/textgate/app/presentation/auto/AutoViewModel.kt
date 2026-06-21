@@ -156,7 +156,19 @@ class AutoViewModel(
         _uiState.value.groups.flatMap { it.entries }
             .filter { it.channel == "sms" }
             .filter { it.status == SmsStatus.PENDING || it.status == SmsStatus.IN_PROGRESS }
-            .forEach { refreshStatus(uid, it) }
+            .forEach { entry ->
+                // Every poll failure used to be dropped, so a page that could
+                // not reach the gateway at all sat on stale statuses looking
+                // healthy. Said once per visit: this runs on a timer, and one
+                // message per tick would be noise.
+                refreshStatus(uid, entry).onFailure {
+                    if (_uiState.value.error == null) {
+                        _uiState.value = _uiState.value.copy(
+                            error = "Could not check the latest delivery status",
+                        )
+                    }
+                }
+            }
     }
 
     override fun onCleared() {

@@ -540,10 +540,20 @@ class ArrivalService : Service() {
 
         chooseNextCadence(saved, movedSinceLastSweep = stillSinceLastSweep == 0L)
         val here = saved.firstOrNull { prefs.getPresence(it.id).state == PresenceState.HERE }
+        // What each place sounded like on this check, kept with the row because
+        // "not at a saved place" is only arguable next to the numbers that
+        // produced it: one network short, or heard but too faint for its floor.
+        val readings = presenceNow.readings.joinToString("\n") { reading ->
+            val name = reading.place.label.ifBlank { reading.place.id }
+            if (reading.heardCount == 0) "$name: 0/${reading.place.savedBssids.size} heard"
+            else "$name: ${reading.heardCount}/${reading.place.savedBssids.size} heard, " +
+                "strongest ${reading.strongest} dBm (floor ${reading.place.minRssi})"
+        }
         monitorLog.append(MonitorLogStore.Kind.CHECK,
             "Heard ${visible.size} networks. " +
                 (if (here != null) "At ${here.label.ifBlank { here.id }}." else "Not at a saved place.") +
-                " Next check in ${nextSweepSeconds / 60} min.")
+                " Next check in ${nextSweepSeconds / 60} min.",
+            readings.ifBlank { null })
         // The clock time, never "just now": a loop frozen by Doze used to keep
         // claiming it had only this moment looked, hours after its last sweep.
         val checkedAt = DateUtils.time12h(System.currentTimeMillis())

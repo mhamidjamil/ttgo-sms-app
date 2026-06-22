@@ -73,6 +73,18 @@
             </intent-filter>
         </receiver>
 
+        <!-- Lets the share sheet read the exported monitoring log. A file in the
+             app's own cache is unreadable to any other app without this. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="com.textgate.app.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
     </application>
 
 </manifest>

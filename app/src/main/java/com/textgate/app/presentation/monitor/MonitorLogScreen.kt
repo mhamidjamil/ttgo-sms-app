@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -57,9 +58,10 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * What monitoring is doing right now and everything it did over the last day,
- * read from the on-device log. This page exists so "why did no alert come" is
- * answered by scrolling, not by guessing.
+ * What monitoring is doing right now and everything it did over the last few
+ * days, read from the on-device log. This page exists so "why did no alert
+ * come" is answered by scrolling, not by guessing, and the export button sends
+ * the same account off the phone when the answer needs another pair of eyes.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -87,6 +89,11 @@ fun MonitorLogScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
+                actions = {
+                    IconButton(onClick = { viewModel.exportLog(context) }) {
+                        Icon(Icons.Filled.Share, contentDescription = "Export the log")
+                    }
+                },
             )
         },
     ) { padding ->
@@ -99,7 +106,7 @@ fun MonitorLogScreen(
             StatusCard(uiState, blocker)
             Spacer(Modifier.height(16.dp))
             Text(
-                "Last 24 hours",
+                "Last 3 days",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
@@ -171,8 +178,8 @@ private fun StatusCard(uiState: MonitorLogUiState, blocker: String?) {
 
 @Composable
 private fun LogRow(entry: MonitorLogStore.Entry) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(8.dp).clip(CircleShape).background(kindColor(entry.kind)))
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.Top) {
+        Box(Modifier.padding(top = 4.dp).size(8.dp).clip(CircleShape).background(kindColor(entry.kind)))
         Spacer(Modifier.width(8.dp))
         Text(
             rowTime(entry.at),
@@ -180,13 +187,24 @@ private fun LogRow(entry: MonitorLogStore.Entry) {
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
             modifier = Modifier.width(84.dp),
         )
-        Text(
-            entry.message,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(
-                alpha = if (entry.kind == MonitorLogStore.Kind.CHECK) 0.65f else 0.9f
-            ),
-        )
+        Column {
+            Text(
+                entry.message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(
+                    alpha = if (entry.kind == MonitorLogStore.Kind.CHECK) 0.65f else 0.9f
+                ),
+            )
+            // The numbers behind the row, quieter than it: they are only read
+            // when the row itself looks wrong.
+            entry.detail?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                )
+            }
+        }
     }
 }
 

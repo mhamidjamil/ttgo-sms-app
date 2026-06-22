@@ -2,6 +2,7 @@ package com.textgate.app.presentation.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.textgate.app.data.local.MonitorLogStore
 import com.textgate.app.data.local.PreferencesDataSource
 import com.textgate.app.domain.model.Place
 import com.textgate.app.domain.model.PlaceContact
@@ -14,10 +15,12 @@ import com.textgate.app.domain.usecase.location.GetPlaceRecipientsUseCase
 import com.textgate.app.domain.usecase.location.SavePlacesUseCase
 import com.textgate.app.domain.usecase.location.SendLocationNowUseCase
 import com.textgate.app.services.ArrivalService
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 data class SettingsUiState(
     val isLoading: Boolean = true,
@@ -55,6 +58,7 @@ class SettingsViewModel(
     private val prefs: PreferencesDataSource,
     private val getPlaceRecipients: GetPlaceRecipientsUseCase,
     private val sendLocationNow: SendLocationNowUseCase,
+    private val monitorLog: MonitorLogStore,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -107,7 +111,28 @@ class SettingsViewModel(
         val networksChanged = previous != null &&
             previous.savedBssids.toSet() != updated.savedBssids.toSet()
         persistPlaces(places, clearStateFor = updated.id.takeIf { networksChanged })
-        if (previous != null) logAlertingChanges(previous, updated)
+        if (previous != null) {
+            logAlertingChanges(previous, updated)
+            logLocationChange(previous, updated)
+        }
+    }
+
+    // The monitoring log is where a missed arrival is diagnosed, so the moment a
+    // place gained or lost its point on the map has to be readable there.
+    private fun logLocationChange(before: Place, after: Place) {
+        if (before.latitude == after.latitude && before.longitude == after.longitude &&
+            before.radiusMeters == after.radiusMeters) return
+        val name = after.label.ifBlank { after.id }
+        val message = if (after.hasGeofence) {
+            "$name: location set to ${String.format(Locale.US, "%.6f", after.latitude)}, " +
+                "${String.format(Locale.US, "%.6f", after.longitude)}, " +
+                "radius ${after.radiusMeters} m"
+        } else {
+            "$name: location cleared"
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            monitorLog.append(MonitorLogStore.Kind.EVENT, message)
+        }
     }
 
     // Only the settings that decide whether an alert goes out are audited, so a

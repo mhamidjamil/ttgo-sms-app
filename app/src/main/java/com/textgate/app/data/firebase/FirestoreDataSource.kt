@@ -258,6 +258,9 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         "dwell_minutes" to place.dwellMinutesOverride,
         "quiet_from" to place.quietFrom,
         "quiet_to" to place.quietTo,
+        "latitude" to place.latitude,
+        "longitude" to place.longitude,
+        "radius_m" to place.radiusMeters,
     )
 
     suspend fun savePlacesSettings(

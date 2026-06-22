@@ -103,6 +103,9 @@ data class UserDto(
                 dwellMinutesOverride = (raw["dwell_minutes"] as? Number)?.toInt() ?: 0,
                 quietFrom = raw["quiet_from"] as? String ?: "",
                 quietTo = raw["quiet_to"] as? String ?: "",
+                latitude = (raw["latitude"] as? Number)?.toDouble() ?: 0.0,
+                longitude = (raw["longitude"] as? Number)?.toDouble() ?: 0.0,
+                radiusMeters = (raw["radius_m"] as? Number)?.toInt() ?: 0,
             )
         }.ifEmpty {
             // Only a genuinely legacy document, one that predates the places

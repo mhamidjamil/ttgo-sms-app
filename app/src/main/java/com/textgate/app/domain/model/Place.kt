@@ -64,7 +64,18 @@ data class Place(
     // "HH:mm" pair; blank → no quiet window. Sending is suppressed inside it.
     val quietFrom: String = "",
     val quietTo: String = "",
+    // Where the place is on the map, captured from a location fix or typed in.
+    // Zero means never set, which is what every place saved before this existed
+    // looks like.
+    val latitude: Double = 0.0,
+    val longitude: Double = 0.0,
+    // How far from that point still counts as being here.
+    val radiusMeters: Int = 0,
 ) {
+    // No radius means the place is WiFi-only, exactly as it was before coordinates existed.
+    val hasGeofence: Boolean
+        get() = radiusMeters > 0 && (latitude != 0.0 || longitude != 0.0)
+
     // Every network saved for this place, however it was saved.
     val savedBssids: List<String>
         get() = (bssids + bssid).filter { it.isNotBlank() }.map { it.lowercase() }.distinct()
@@ -102,6 +113,13 @@ data class Place(
     companion object {
         const val HOME_ID = "home"
         const val OFFICE_ID = "office"
+
+        // A house sits well inside 50 m, and anything under that is smaller than
+        // the fix accuracy a phone usually manages. The cap is 500 m because the
+        // largest place anyone here has is a couple of kanal, which fits in 200.
+        const val DEFAULT_RADIUS_METERS = 50
+        const val MIN_RADIUS_METERS = 50
+        const val MAX_RADIUS_METERS = 500
 
         fun parseHhMm(value: String): Int? {
             val parts = value.split(":").takeIf { it.size == 2 } ?: return null

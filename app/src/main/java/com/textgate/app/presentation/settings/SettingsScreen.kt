@@ -1,9 +1,11 @@
 package com.textgate.app.presentation.settings
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.Location
 import android.net.wifi.ScanResult
 import android.net.wifi.WifiManager
 import android.os.Build
@@ -28,11 +30,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import com.textgate.app.core.theme.StatusFailed
 import com.textgate.app.core.theme.StatusSent
 import com.textgate.app.core.theme.TextGateTheme
@@ -52,7 +58,10 @@ import com.textgate.app.services.ArrivalService
 import com.textgate.app.services.ArrivalWatchdogReceiver
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withTimeoutOrNull
 import org.koin.androidx.compose.koinViewModel
+import java.util.Locale
 
 private const val TAG_SETTINGS = "TextGateSettings"
 
@@ -836,6 +845,13 @@ private fun PlaceCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     )
+                    if (place.hasGeofence) {
+                        Text(
+                            "Geofence: ${place.radiusMeters} m radius",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        )
+                    }
                 }
                 OutlinedButton(onClick = onScan) {
                     Icon(Icons.Default.Wifi, contentDescription = null, Modifier.size(16.dp))
@@ -861,6 +877,7 @@ private fun PlaceCard(
  * manage its contact list (add / edit / remove — e.g. Wife, Parents, Manager).
  * Edits are a local draft; nothing changes until Save.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PlaceEditorDialog(
     place: Place,
@@ -868,6 +885,8 @@ private fun PlaceEditorDialog(
     onSave: (Place) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val phoneNormalizer = remember { PhoneNormalizer() }
     var label by remember { mutableStateOf(place.label) }
     var message by remember { mutableStateOf(place.message) }
@@ -885,6 +904,53 @@ private fun PlaceEditorDialog(
     var quietTo by remember { mutableStateOf(place.quietTo) }
     var showAdvanced by remember { mutableStateOf(false) }
     var minRssi by remember { mutableIntStateOf(place.minRssi) }
+    // Blank rather than "0.0" for a place that has never been located, so the
+    // fields read as empty instead of as a point in the Atlantic.
+    val placeIsLocated = place.latitude != 0.0 || place.longitude != 0.0
+    var latitudeText by remember {
+        mutableStateOf(if (placeIsLocated) place.latitude.toString() else "")
+    }
+    var longitudeText by remember {
+        mutableStateOf(if (placeIsLocated) place.longitude.toString() else "")
+    }
+    var radiusText by remember {
+        mutableStateOf(place.radiusMeters.takeIf { it > 0 }?.toString() ?: "")
+    }
+    var locating by remember { mutableStateOf(false) }
+    var fixAccuracy by remember { mutableStateOf<Float?>(null) }
+    var locationError by remember { mutableStateOf<String?>(null) }
+
+    val draftLatitude = latitudeText.trim().toDoubleOrNull()
+    val draftLongitude = longitudeText.trim().toDoubleOrNull()
+    val latitudeError = latitudeText.isNotBlank() && draftLatitude?.let { it in -90.0..90.0 } != true
+    val longitudeError = longitudeText.isNotBlank() && draftLongitude?.let { it in -180.0..180.0 } != true
+    val hasCoordinates = draftLatitude != null && draftLongitude != null &&
+        !latitudeError && !longitudeError
+    val radiusMeters = radiusText.toIntOrNull() ?: Place.DEFAULT_RADIUS_METERS
+
+    fun captureLocation() {
+        scope.launch {
+            locating = true
+            locationError = null
+            val fix = currentLocationFix(context)
+            if (fix == null) {
+                locationError = "Could not get a location fix, try outdoors or check that location is on."
+            } else {
+                latitudeText = String.format(Locale.US, "%.6f", fix.latitude)
+                longitudeText = String.format(Locale.US, "%.6f", fix.longitude)
+                fixAccuracy = fix.accuracy
+                if (radiusText.isBlank()) radiusText = Place.DEFAULT_RADIUS_METERS.toString()
+            }
+            locating = false
+        }
+    }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) captureLocation()
+        else locationError = "Location permission is off, so this phone cannot report where it is."
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1031,6 +1097,100 @@ private fun PlaceEditorDialog(
                 }
 
                 Spacer(Modifier.height(12.dp))
+                Text("Location", style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary)
+                Text(
+                    "Optional. A place that knows where it is on the map can be set up before " +
+                        "you have ever been there, and is still found when its WiFi is off.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+                Spacer(Modifier.height(6.dp))
+                // A fix indoors can take most of the fifteen seconds it is given,
+                // and a button that still reads as idle gets tapped again.
+                OutlinedButton(
+                    onClick = {
+                        if (hasPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)) captureLocation()
+                        else locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                    },
+                    enabled = !locating,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(if (locating) "Locating..." else "Use my current location")
+                }
+                // Only after a fix: the two fields below are the readout the rest
+                // of the time, and this line adds the accuracy they cannot show.
+                fixAccuracy?.let { accuracy ->
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "$latitudeText, $longitudeText (accurate to ${accuracy.toInt()} m)",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
+                locationError?.let {
+                    Spacer(Modifier.height(4.dp))
+                    Text(it, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error)
+                }
+                Spacer(Modifier.height(6.dp))
+                Row(Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = latitudeText,
+                        onValueChange = { latitudeText = it; fixAccuracy = null },
+                        label = { Text("Latitude") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.weight(1f),
+                        isError = latitudeError,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    OutlinedTextField(
+                        value = longitudeText,
+                        onValueChange = { longitudeText = it; fixAccuracy = null },
+                        label = { Text("Longitude") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.weight(1f),
+                        isError = longitudeError,
+                    )
+                }
+                if (hasCoordinates) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("Detection radius: $radiusMeters meters",
+                        style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.height(4.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(50, 75, 100, 150, 200).forEach { meters ->
+                            FilterChip(
+                                selected = radiusMeters == meters,
+                                onClick = { radiusText = meters.toString() },
+                                label = { Text("$meters m") },
+                            )
+                        }
+                    }
+                    OutlinedTextField(
+                        value = radiusText,
+                        onValueChange = { radiusText = it.filter(Char::isDigit).take(3) },
+                        label = { Text("Custom") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth(),
+                        supportingText = {
+                            Text("Meters. Anything outside ${Place.MIN_RADIUS_METERS} to " +
+                                "${Place.MAX_RADIUS_METERS} is pulled back into range on save.")
+                        },
+                    )
+                    TextButton(onClick = {
+                        latitudeText = ""
+                        longitudeText = ""
+                        radiusText = ""
+                        fixAccuracy = null
+                        locationError = null
+                    }) { Text("Clear location") }
+                }
+
+                Spacer(Modifier.height(12.dp))
                 Text("Contacts", style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary)
                 Text(
@@ -1118,11 +1278,30 @@ private fun PlaceEditorDialog(
                     quietFrom = quietFrom.trim(),
                     quietTo = quietTo.trim(),
                     minRssi = minRssi,
+                    latitude = if (hasCoordinates) draftLatitude ?: 0.0 else 0.0,
+                    longitude = if (hasCoordinates) draftLongitude ?: 0.0 else 0.0,
+                    radiusMeters = if (!hasCoordinates) 0 else
+                        radiusMeters.coerceIn(Place.MIN_RADIUS_METERS, Place.MAX_RADIUS_METERS),
                 ))
             }) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+/**
+ * One fresh fix, not the last one the phone happened to cache: a place is being
+ * pinned to where the user is standing right now. Bounded because indoors the
+ * request can wait for satellites that never arrive, and a dialog cannot sit
+ * there forever with no way out.
+ */
+@SuppressLint("MissingPermission")
+private suspend fun currentLocationFix(context: Context): Location? = withTimeoutOrNull(15_000) {
+    runCatching {
+        LocationServices.getFusedLocationProviderClient(context)
+            .getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token)
+            .await()
+    }.onFailure { Log.w(TAG_SETTINGS, "Location fix failed: ${it.message}") }.getOrNull()
 }
 
 private fun sensitivityExplanation(id: String): String = when (Sensitivity.from(id)) {

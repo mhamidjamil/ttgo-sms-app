@@ -104,7 +104,9 @@ class SettingsViewModel(
         val previous = _uiState.value.places.firstOrNull { it.id == updated.id }
         val places = _uiState.value.places.map { if (it.id == updated.id) updated else it }
         _uiState.value = _uiState.value.copy(places = places)
-        persistPlaces(places)
+        val networksChanged = previous != null &&
+            previous.savedBssids.toSet() != updated.savedBssids.toSet()
+        persistPlaces(places, clearStateFor = updated.id.takeIf { networksChanged })
         if (previous != null) logAlertingChanges(previous, updated)
     }
 
@@ -151,7 +153,7 @@ class SettingsViewModel(
     fun removePlace(id: String) {
         val places = _uiState.value.places.filterNot { it.id == id }
         _uiState.value = _uiState.value.copy(places = places)
-        persistPlaces(places)
+        persistPlaces(places, clearStateFor = id)
     }
 
     fun save(guardianNumber: String) {
@@ -178,12 +180,23 @@ class SettingsViewModel(
     // Place edits write straight through instead of waiting for the Save button
     // at the bottom of the screen, which is what lost added contacts. The
     // guardian number is left alone here because its text field may be mid-edit.
-    private fun persistPlaces(places: List<Place>) {
+    private fun persistPlaces(places: List<Place>, clearStateFor: String? = null) {
         val uid = userRepo.currentFirebaseUser()?.uid ?: return
         viewModelScope.launch {
+            // A place whose networks changed is a different place as far as the
+            // countdown is concerned. Keeping the old visit state is how a
+            // renamed or re-captured place never alerted again: it stayed marked
+            // as already here, so every sweep decided the arrival was old news.
+            clearStateFor?.let { prefs.clearPlaceState(it) }
             _uiState.value = _uiState.value.copy(isSaving = true, error = null, saveSuccess = false)
             savePlaces.savePlacesOnly(uid, places.filter(::isWorthSaving))
-                .onSuccess { _uiState.value = _uiState.value.copy(isSaving = false, saveSuccess = true) }
+                .onSuccess {
+                    // The service caches the place list for hours, so without
+                    // this an edit made on this phone would not reach detection
+                    // until the next refresh.
+                    ArrivalService.notePlacesChanged()
+                    _uiState.value = _uiState.value.copy(isSaving = false, saveSuccess = true)
+                }
                 .onFailure {
                     _uiState.value = _uiState.value.copy(
                         isSaving = false,

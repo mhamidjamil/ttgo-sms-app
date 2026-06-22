@@ -60,6 +60,16 @@ class PreferencesDataSource(private val context: Context) {
         context.dataStore.edit { it[presenceKey(placeId)] = presence.encode() }
     }
 
+    // Everything remembered about standing at one place. A place that was
+    // deleted, or whose networks were re-captured, must not hand its old visit
+    // state to whatever carries that id next.
+    suspend fun clearPlaceState(placeId: String) {
+        context.dataStore.edit {
+            it.remove(presenceKey(placeId))
+            it.remove(placeEnvironmentKey(placeId))
+        }
+    }
+
     // Everything heard on the last successful scan, saved or not. This is what
     // makes "the surroundings changed" a testable statement instead of a guess,
     // so a router power cut does not read as having left the building.

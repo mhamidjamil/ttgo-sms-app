@@ -274,7 +274,11 @@ class ArrivalService : Service() {
      * hours as a safety net.
      */
     private suspend fun currentUser(): User? {
-        val stale = System.currentTimeMillis() - cachedUserAt > SETTINGS_REFRESH_MILLIS
+        // An edit made on this phone has to reach the engine on the next sweep,
+        // not six hours later, or a place someone just fixed goes on being
+        // detected with the settings it had before they fixed it.
+        val stale = System.currentTimeMillis() - cachedUserAt > SETTINGS_REFRESH_MILLIS ||
+            cachedUserAt < placesChangedAt
         if (cachedUser == null || App.isInForeground || stale) {
             // A read that never comes back would hold the sweep loop open, and
             // the loop is the only thing watching for arrivals. Ten seconds and
@@ -383,13 +387,20 @@ class ArrivalService : Service() {
         val presenceNow = resolvePresence(saved, visible)
         val winner = presenceNow.winner
         if (presenceNow.contested) {
-            Log.w(TAG, "Two places too close to separate: " +
-                presenceNow.closest.joinToString { "${it.place.id} at ${it.strongest} dBm" })
+            // Worth reading, not just worth logging: two places this close is
+            // why one of them is quietly never the winner and never alerts.
+            val tooClose = presenceNow.closest.joinToString {
+                "${it.place.label.ifBlank { it.place.id }} at ${it.strongest} dBm"
+            }
+            Log.w(TAG, "Two places too close to separate: $tooClose")
+            noteProblem("Two places too close to separate: $tooClose")
         }
 
         saved.forEach { place ->
             if (!place.alertsEnabled) {
                 Log.d(TAG, "${place.id}: alerts switched off for this place")
+                notePlace(place, MonitorLogStore.Kind.EVENT,
+                    "alerts are switched off for this place, nothing will be sent")
                 return@forEach
             }
             val presence = prefs.getPresence(place.id)
@@ -438,6 +449,9 @@ class ArrivalService : Service() {
                 } else if (missed >= MISSED_SWEEPS_TO_LEAVE) {
                     Log.d(TAG, "${place.id}: not heard but surroundings unchanged " +
                         "(overlap ${"%.2f".format(overlap)}), still counted as here")
+                    notePlace(place, MonitorLogStore.Kind.EVENT,
+                        "not heard on this check, but the surroundings have not " +
+                            "changed, still counted as here")
                 }
                 return@forEach
             }
@@ -449,6 +463,10 @@ class ArrivalService : Service() {
             // alert, and stops a flickering boundary alerting twice.
             if (presence.state == PresenceState.HERE) {
                 Log.d(TAG, "${place.id}: already alerted for this visit")
+                // The branch that silently swallowed every arrival at a place
+                // whose stored state was stuck here. It has to be visible.
+                notePlace(place, MonitorLogStore.Kind.EVENT,
+                    "in range, already alerted for this visit, waiting for a departure")
                 return@forEach
             }
             if (System.currentTimeMillis() - startedAt < SETTLING_MILLIS) {
@@ -637,6 +655,16 @@ class ArrivalService : Service() {
     companion object {
         var isRunning: Boolean = false
             private set
+
+        // When the places were last edited on this phone, so the running service
+        // can tell that its cached copy is out of date.
+        @Volatile
+        var placesChangedAt: Long = 0L
+            private set
+
+        fun notePlacesChanged() {
+            placesChangedAt = System.currentTimeMillis()
+        }
 
         private const val TAG = "TextGateArrival"
         private const val NOTIFICATION_ID = 1001

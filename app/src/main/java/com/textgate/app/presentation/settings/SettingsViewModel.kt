@@ -1,5 +1,6 @@
 package com.textgate.app.presentation.settings
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.textgate.app.data.local.MonitorLogStore
@@ -15,6 +16,7 @@ import com.textgate.app.domain.usecase.location.GetPlaceRecipientsUseCase
 import com.textgate.app.domain.usecase.location.SavePlacesUseCase
 import com.textgate.app.domain.usecase.location.SendLocationNowUseCase
 import com.textgate.app.services.ArrivalService
+import com.textgate.app.services.GeofenceManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -293,6 +295,11 @@ class SettingsViewModel(
     fun clearLocationResult() { _uiState.value = _uiState.value.copy(locationResult = null) }
 
     suspend fun getMonitoringEnabled(): Boolean = prefs.getMonitoringEnabled()
+
+    // Switching monitoring off has to take the registered fences with it, or the
+    // system goes on waking the app at every boundary for a feature the user
+    // just turned off.
+    fun clearGeofences(context: Context) = GeofenceManager.clear(context, monitorLog)
 
     suspend fun setMonitoringEnabled(enabled: Boolean) {
         val was = prefs.getMonitoringEnabled()

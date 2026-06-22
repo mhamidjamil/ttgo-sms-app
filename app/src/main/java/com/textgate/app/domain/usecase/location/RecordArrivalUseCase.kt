@@ -47,11 +47,15 @@ class RecordArrivalUseCase(
         private const val TAG = "TextGateArrival"
     }
 
+    // How the arrival was established. The defaults are what the WiFi engine has
+    // always done, so a caller that knows nothing about geofences is unchanged.
     suspend operator fun invoke(
         uid: String,
         placeId: String,
         routineTriggered: Boolean,
         visitStartedAt: Long,
+        detectionMethod: String = "wifi",
+        wifiMatch: Boolean = true,
     ): Result<ArrivalOutcome> = runCatching {
         val user = userRepo.getCurrentUser() ?: error("User not found")
         val place = user.places.find { it.id == placeId } ?: return@runCatching ArrivalOutcome()
@@ -140,6 +144,11 @@ class RecordArrivalUseCase(
                     locationLabel = label,
                     routineTriggered = routineTriggered,
                     detectedAt = visitStartedAt,
+                    detectionMethod = detectionMethod,
+                    wifiMatch = wifiMatch,
+                    latitude = place.latitude,
+                    longitude = place.longitude,
+                    radiusMeters = if (place.hasGeofence) place.radiusMeters else 0,
                 )
                 whatsAppSent += 1
             } else {
@@ -152,6 +161,11 @@ class RecordArrivalUseCase(
                     locationLabel = label,
                     routineTriggered = routineTriggered,
                     detectedAt = visitStartedAt,
+                    detectionMethod = detectionMethod,
+                    wifiMatch = wifiMatch,
+                    latitude = place.latitude,
+                    longitude = place.longitude,
+                    radiusMeters = if (place.hasGeofence) place.radiusMeters else 0,
                 ).onSuccess { result ->
                     if (result == EnqueueResult.QUEUED_ON_DEVICE) queuedOnDevice += 1 else enqueued += 1
                 }.onFailure { failure ->
@@ -168,6 +182,11 @@ class RecordArrivalUseCase(
                         routineTriggered = routineTriggered,
                         detectedAt = visitStartedAt,
                         error = failure.message.orEmpty(),
+                        detectionMethod = detectionMethod,
+                        wifiMatch = wifiMatch,
+                        latitude = place.latitude,
+                        longitude = place.longitude,
+                        radiusMeters = if (place.hasGeofence) place.radiusMeters else 0,
                     )
                     failed += 1
                     if (firstFailure.isBlank()) firstFailure = failure.message.orEmpty()

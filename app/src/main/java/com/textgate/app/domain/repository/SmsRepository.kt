@@ -16,6 +16,11 @@ interface SmsRepository {
 
     // Arrival monitoring (V2). detectedAt is when the visit began, which the
     // history row keeps separately because sent_at is minutes later.
+    //
+    // detectionMethod, wifiMatch and the place's circle say how the arrival was
+    // established: a wrong alert cannot be told apart from a wrong fence
+    // afterwards unless the row records which of the two decided it. The
+    // defaults describe what the WiFi engine has always done.
     suspend fun logAutoWhatsAppArrival(
         uid: String,
         phoneNumber: String,
@@ -25,6 +30,11 @@ interface SmsRepository {
         locationLabel: String,
         routineTriggered: Boolean,
         detectedAt: Long,
+        detectionMethod: String = "wifi",
+        wifiMatch: Boolean = true,
+        latitude: Double = 0.0,
+        longitude: Double = 0.0,
+        radiusMeters: Int = 0,
     ): Result<Unit>
     suspend fun logAutoArrivalFailure(
         uid: String,
@@ -36,6 +46,11 @@ interface SmsRepository {
         routineTriggered: Boolean,
         detectedAt: Long,
         error: String,
+        detectionMethod: String = "wifi",
+        wifiMatch: Boolean = true,
+        latitude: Double = 0.0,
+        longitude: Double = 0.0,
+        radiusMeters: Int = 0,
     ): Result<Unit>
     suspend fun updateAutoHistoryStatus(uid: String, entryId: String, status: String): Result<Unit>
     suspend fun retryAutoArrivalSms(
@@ -53,6 +68,11 @@ interface SmsRepository {
         locationLabel: String,
         routineTriggered: Boolean,
         detectedAt: Long,
+        detectionMethod: String = "wifi",
+        wifiMatch: Boolean = true,
+        latitude: Double = 0.0,
+        longitude: Double = 0.0,
+        radiusMeters: Int = 0,
     ): Result<EnqueueResult>
     fun getAutoHistory(uid: String): Flow<List<AutoHistoryEntry>>
 }

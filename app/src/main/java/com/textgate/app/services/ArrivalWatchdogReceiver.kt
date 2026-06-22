@@ -8,7 +8,9 @@ import android.content.Intent
 import android.os.SystemClock
 import android.os.UserManager
 import android.util.Log
+import com.textgate.app.data.local.MonitorLogStore
 import com.textgate.app.data.local.PreferencesDataSource
+import com.textgate.app.domain.repository.UserRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -31,6 +33,8 @@ import org.koin.core.component.inject
 class ArrivalWatchdogReceiver : BroadcastReceiver(), KoinComponent {
 
     private val prefs: PreferencesDataSource by inject()
+    private val userRepo: UserRepository by inject()
+    private val monitorLog: MonitorLogStore by inject()
 
     override fun onReceive(context: Context, intent: Intent) {
         val reason = intent.action ?: return
@@ -49,6 +53,16 @@ class ArrivalWatchdogReceiver : BroadcastReceiver(), KoinComponent {
             try {
                 if (!prefs.getMonitoringEnabled()) return@launch
                 scheduleNextCheck(appContext)
+                // A reboot wipes every fence the system was watching, and
+                // nothing else puts them back. Done before the running check
+                // because a service that survived says nothing about the fences.
+                if (reason == Intent.ACTION_BOOT_COMPLETED) {
+                    runCatching {
+                        userRepo.getCurrentUser()?.let {
+                            GeofenceManager.refresh(appContext, it.places, monitorLog)
+                        }
+                    }.onFailure { Log.w(TAG, "Could not re-register the geofences after the reboot", it) }
+                }
                 if (ArrivalService.isRunning) return@launch
                 Log.i(TAG, "Restarting arrival monitoring after $reason")
                 ArrivalService.start(appContext)

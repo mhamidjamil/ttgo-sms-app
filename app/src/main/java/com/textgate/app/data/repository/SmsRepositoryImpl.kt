@@ -37,9 +37,14 @@ class SmsRepositoryImpl(private val firestore: FirestoreDataSource) : SmsReposit
         locationLabel: String,
         routineTriggered: Boolean,
         detectedAt: Long,
+        detectionMethod: String,
+        wifiMatch: Boolean,
+        latitude: Double,
+        longitude: Double,
+        radiusMeters: Int,
     ): Result<EnqueueResult> = firestore.enqueueAutoArrivalSms(
         uid, phoneNumber, recipientName, message, location, locationLabel, routineTriggered,
-        detectedAt,
+        detectedAt, detectionMethod, wifiMatch, latitude, longitude, radiusMeters,
     )
 
     override suspend fun logAutoWhatsAppArrival(
@@ -51,9 +56,14 @@ class SmsRepositoryImpl(private val firestore: FirestoreDataSource) : SmsReposit
         locationLabel: String,
         routineTriggered: Boolean,
         detectedAt: Long,
+        detectionMethod: String,
+        wifiMatch: Boolean,
+        latitude: Double,
+        longitude: Double,
+        radiusMeters: Int,
     ): Result<Unit> = firestore.logAutoWhatsAppArrival(
         uid, phoneNumber, recipientName, message, location, locationLabel, routineTriggered,
-        detectedAt,
+        detectedAt, detectionMethod, wifiMatch, latitude, longitude, radiusMeters,
     )
 
     override suspend fun logAutoArrivalFailure(
@@ -66,9 +76,14 @@ class SmsRepositoryImpl(private val firestore: FirestoreDataSource) : SmsReposit
         routineTriggered: Boolean,
         detectedAt: Long,
         error: String,
+        detectionMethod: String,
+        wifiMatch: Boolean,
+        latitude: Double,
+        longitude: Double,
+        radiusMeters: Int,
     ): Result<Unit> = firestore.logAutoArrivalFailure(
         uid, phoneNumber, recipientName, message, location, locationLabel, routineTriggered,
-        detectedAt, error,
+        detectedAt, error, detectionMethod, wifiMatch, latitude, longitude, radiusMeters,
     )
 
     override suspend fun updateAutoHistoryStatus(uid: String, entryId: String, status: String): Result<Unit> =

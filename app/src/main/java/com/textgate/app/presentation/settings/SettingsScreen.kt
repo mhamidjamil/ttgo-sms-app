@@ -257,6 +257,7 @@ fun SettingsScreen(
                 scope.launch { viewModel.setMonitoringEnabled(false) }
                 ArrivalService.stop(context)
                 ArrivalWatchdogReceiver.cancelChecks(context)
+                viewModel.clearGeofences(context)
             }
         },
         onSave = { guardian -> viewModel.save(guardian) },
@@ -1161,7 +1162,7 @@ private fun PlaceEditorDialog(
                         style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(4.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(50, 75, 100, 150, 200).forEach { meters ->
+                        listOf(100, 150, 200, 300, 500).forEach { meters ->
                             FilterChip(
                                 selected = radiusMeters == meters,
                                 onClick = { radiusText = meters.toString() },

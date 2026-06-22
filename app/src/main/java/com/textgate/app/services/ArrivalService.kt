@@ -1,6 +1,7 @@
 package com.textgate.app.services
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -8,6 +9,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.Location
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -19,15 +21,20 @@ import android.hardware.SensorManager
 import android.hardware.TriggerEvent
 import android.hardware.TriggerEventListener
 import android.os.IBinder
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import com.google.firebase.firestore.FirebaseFirestore
 import com.textgate.app.R
 import com.textgate.app.App
 import com.textgate.app.core.utils.DateUtils
 import com.textgate.app.core.utils.RoutineAnalyzer
 import com.textgate.app.core.utils.WifiConfig
+import com.textgate.app.core.utils.freshScan
 import com.textgate.app.core.utils.requestWifiScan
 import com.textgate.app.core.utils.resolvePresence
 import com.textgate.app.core.utils.scanBlocker
@@ -118,6 +125,25 @@ class ArrivalService : Service() {
     private var cachedUserAt = 0L
     private var nextSweepSeconds = SWEEP_SECONDS_MOVING
     private var stillSweeps = 0
+    // place id → when its geofence last reported an ENTER, cleared when the
+    // fence or the WiFi engine reports the departure. While an entry is here the
+    // phone is inside that place's fence, which is what tells a confirmation
+    // that started from a real crossing apart from one that started from a
+    // network simply becoming audible. Concurrent because the receiver writes it
+    // from the broadcast thread while a sweep is reading it.
+    private val geofenceEnteredAt = ConcurrentHashMap<String, Long>()
+    // When the fences last matched the saved places, so an edit made in the app
+    // reaches the system's fence watcher on the next sweep instead of never.
+    private var geofencesRefreshedAt = 0L
+
+    // Doze parks the sweep's delay and takes the dwell clock down with it, so an
+    // arrival at night was never counted long enough to alert. A bounded lock,
+    // held only while a visit is actually being confirmed, is the trade between
+    // missing those arrivals and keeping the CPU awake all night for nothing.
+    private val wakeLock by lazy {
+        getSystemService(PowerManager::class.java)
+            ?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "TextGate:arrival-validation")
+    }
 
     // place id → sweeps in a row the network went missing, because scan results
     // drop an access point at random even while the phone sits next to it.
@@ -221,6 +247,25 @@ class ArrivalService : Service() {
         startSweeping()
         flushQueuedAlerts()
         watchLocationRequests()
+        scope.launch { currentUser()?.let { refreshGeofences(it.places) } }
+    }
+
+    /**
+     * A geofence crossing arrives here as a start with an action on it. The
+     * service is started the same way from the settings screen and the watchdog,
+     * where the intent carries no action at all and everything is left to the
+     * sweep loop, exactly as before.
+     */
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val placeId = intent?.getStringExtra(EXTRA_PLACE_ID)
+        when (intent?.action) {
+            ACTION_VALIDATE -> placeId?.let { id ->
+                val enteredAt = intent.getLongExtra(EXTRA_ENTERED_AT, System.currentTimeMillis())
+                scope.launch { onGeofenceEnter(id, enteredAt) }
+            }
+            ACTION_DEPART -> placeId?.let { id -> scope.launch { onGeofenceExit(id) } }
+        }
+        return START_STICKY
     }
 
     override fun onDestroy() {
@@ -233,6 +278,7 @@ class ArrivalService : Service() {
         try { connectivityManager.unregisterNetworkCallback(networkCallback) } catch (_: Exception) {}
         sensorManager?.unregisterListener(stepListener)
         motionSensor?.let { sensorManager?.cancelTriggerSensor(motionTrigger, it) }
+        releaseWakeLock()
         scope.cancel()
         super.onDestroy()
     }
@@ -292,6 +338,113 @@ class ArrivalService : Service() {
         return cachedUser
     }
 
+    private fun refreshGeofences(places: List<Place>) {
+        geofencesRefreshedAt = System.currentTimeMillis()
+        GeofenceManager.refresh(this, places, monitorLog)
+    }
+
+    /**
+     * A fence has reported a crossing INTO a place. That is an observed
+     * transition, which is what WiFi could never give: a network becoming
+     * audible again says nothing about whether the phone travelled, but a fence
+     * can only fire on a genuine outside-to-inside crossing.
+     */
+    private suspend fun onGeofenceEnter(placeId: String, enteredAt: Long) {
+        val place = currentUser()?.places?.firstOrNull { it.id == placeId } ?: run {
+            Log.w(TAG, "$placeId: geofence entered for a place that is no longer saved")
+            monitorLog.append(MonitorLogStore.Kind.PROBLEM,
+                "A geofence fired for a place that is no longer saved: $placeId")
+            return
+        }
+        var presence = prefs.getPresence(placeId)
+        // Crossing in from outside means the visit that was stored is over,
+        // whether or not its departure was ever seen. Without this a state stuck
+        // at here swallows every arrival that follows it, which is exactly what
+        // happened to the hostel.
+        if (presence.state == PresenceState.HERE) {
+            notePlace(place, MonitorLogStore.Kind.EVENT,
+                "geofence entered while still marked here, clearing the old visit")
+            presence = presence.copy(
+                state = PresenceState.AWAY, visitStartedAt = 0L, stationaryMillis = 0L,
+            )
+            prefs.setPresence(placeId, presence)
+        }
+        geofenceEnteredAt[placeId] = enteredAt
+        prefs.setPresence(placeId, presence.copy(
+            state = PresenceState.APPROACHING, visitStartedAt = enteredAt, stationaryMillis = 0L,
+        ))
+        notePlace(place, MonitorLogStore.Kind.EVENT, "geofence entered, confirming the arrival")
+        // The wait counts from the crossing, never inheriting the still time of
+        // the interval before it: a car ride registers almost no steps, so a
+        // drive-past could otherwise arrive with its dwell wait already served.
+        lastSweepAt = 0L
+        holdWakeLock()
+        nextSweepSeconds = SWEEP_SECONDS_APPROACHING
+        scope.launch { sweep() }
+    }
+
+    /**
+     * A fence has reported a crossing OUT of a place. Fences flap at the
+     * boundary, so one look at the WiFi decides whether that was really leaving:
+     * a place still loud in the scan is a phone sitting near the edge of its own
+     * fence, and ending the visit there would re-arm it to alert all over again.
+     */
+    private suspend fun onGeofenceExit(placeId: String) {
+        val place = currentUser()?.places?.firstOrNull { it.id == placeId } ?: return
+        val presence = prefs.getPresence(placeId)
+        if (presence.state == PresenceState.AWAY) return
+        // Not being able to look is not a reason to doubt the crossing: the
+        // fence observed it, which is more than a blocked scan can say.
+        val audible = place.savedBssids.isNotEmpty() && scanBlocker(this) == null &&
+            place.isPresentIn(freshScan(this))
+        if (audible) {
+            Log.i(TAG, "$placeId: geofence exit ignored, its networks are still in range")
+            notePlace(place, MonitorLogStore.Kind.EVENT,
+                "geofence exited but its WiFi is still loud, keeping the visit")
+            return
+        }
+        geofenceEnteredAt.remove(placeId)
+        prefs.setPresence(placeId, presence.copy(
+            state = PresenceState.AWAY, visitStartedAt = 0L, stationaryMillis = 0L,
+        ))
+        notePlace(place, MonitorLogStore.Kind.EVENT, "departure confirmed after geofence exit")
+    }
+
+    /**
+     * One fused fix to back the fence up. A place with no saved networks has
+     * nothing else to check, and a fence entered on a cell-tower estimate can be
+     * most of a kilometre out, so an alert on the fence alone would be a guess.
+     */
+    @SuppressLint("MissingPermission")
+    private suspend fun insideByLocation(place: Place): Boolean {
+        val fix = withTimeoutOrNull(LOCATION_FIX_TIMEOUT_MILLIS) {
+            runCatching {
+                LocationServices.getFusedLocationProviderClient(this@ArrivalService)
+                    .getCurrentLocation(
+                        Priority.PRIORITY_BALANCED_POWER_ACCURACY,
+                        CancellationTokenSource().token,
+                    ).await()
+            }.onFailure { Log.w(TAG, "${place.id}: location fix failed, ${it.message}") }.getOrNull()
+        } ?: return false
+        val centre = Location("place").apply {
+            latitude = place.latitude
+            longitude = place.longitude
+        }
+        // The fix's own accuracy is added to the radius, or a 40 m estimate
+        // would reject a phone standing in the middle of a 50 m place.
+        return fix.distanceTo(centre) <= place.radiusMeters + fix.accuracy
+    }
+
+    private fun holdWakeLock() {
+        runCatching { wakeLock?.acquire(VALIDATION_WAKE_LOCK_MILLIS) }
+            .onFailure { Log.w(TAG, "Could not hold the CPU awake for the validation session", it) }
+    }
+
+    private fun releaseWakeLock() {
+        runCatching { wakeLock?.takeIf { it.isHeld }?.release() }
+            .onFailure { Log.w(TAG, "Could not release the validation wake lock", it) }
+    }
+
     private suspend fun sweep() {
         if (!sweeping.compareAndSet(false, true)) {
             Log.d(TAG, "A sweep is already running, leaving this one to it")
@@ -319,6 +472,9 @@ class ArrivalService : Service() {
             noteProblem("Could not read the account settings, monitoring is waiting for them")
             return
         }
+        // An edited place has to reach the system's fence watcher too, or the
+        // fences go on describing where the places used to be.
+        if (placesChangedAt > geofencesRefreshedAt) refreshGeofences(user.places)
         requestWifiScan(this)
         var visible = visibleAccessPoints(this)
         val blocker = scanBlocker(this)
@@ -333,7 +489,17 @@ class ArrivalService : Service() {
             delay(SCAN_RESULTS_WAIT_MILLIS)
             visible = visibleAccessPoints(this)
         }
-        val saved = user.places.filter { it.savedBssids.isNotEmpty() }
+        // A place with coordinates but no saved networks is watched only while
+        // its fence session is open: there is nothing to hear, so the sweep
+        // counts its still time and a location fix decides at the end of the
+        // wait. Blind is kept in the list so a session cut short by an
+        // unobservable spell is closed rather than latching there forever.
+        val saved = user.places.filter { place ->
+            if (place.savedBssids.isNotEmpty()) return@filter true
+            if (!place.hasGeofence) return@filter false
+            val state = prefs.getPresence(place.id).state
+            state == PresenceState.APPROACHING || state == PresenceState.BLIND
+        }
 
         // Not being able to look is its own answer. Inferring "away" from it is
         // what turned switching the radios on in the morning into an arrival.
@@ -404,9 +570,16 @@ class ArrivalService : Service() {
                 return@forEach
             }
             val presence = prefs.getPresence(place.id)
+            // Nothing saved to listen for: the fence is the only evidence there
+            // is, so the phone counts as being here for as long as the fence has
+            // not reported the way out, and the fix at the end of the wait is
+            // what actually decides.
+            val geofenceOnly = place.savedBssids.isEmpty() && place.hasGeofence
             // Audible but beaten by a nearer place counts as not being here, so a
             // losing place cannot quietly run its own countdown to an alert.
-            val present = place.isPresentIn(visible) && place.id == winner?.id
+            val present = if (geofenceOnly) presence.state == PresenceState.APPROACHING
+                else place.isPresentIn(visible) && place.id == winner?.id
+            val enteredAt = geofenceEnteredAt[place.id] ?: 0L
 
             // First look after a blind spell. Hearing this place now says nothing
             // about whether the phone travelled while nobody was watching, so the
@@ -443,6 +616,7 @@ class ArrivalService : Service() {
                 if (departed && presence.state != PresenceState.AWAY) {
                     Log.i(TAG, "${place.id}: departure observed, overlap ${"%.2f".format(overlap)}")
                     notePlace(place, MonitorLogStore.Kind.EVENT, "departure observed")
+                    geofenceEnteredAt.remove(place.id)
                     prefs.setPresence(place.id, presence.copy(
                         state = PresenceState.AWAY, visitStartedAt = 0L, stationaryMillis = 0L,
                     ))
@@ -469,7 +643,11 @@ class ArrivalService : Service() {
                     "in range, already alerted for this visit, waiting for a departure")
                 return@forEach
             }
-            if (System.currentTimeMillis() - startedAt < SETTLING_MILLIS) {
+            // A crossing seen since the service started is the very evidence the
+            // restart hold is waiting for, so it outranks the hold. Without this
+            // an arrival that woke the service up would sit out its own first
+            // two minutes.
+            if (System.currentTimeMillis() - startedAt < SETTLING_MILLIS && enteredAt < startedAt) {
                 Log.d(TAG, "${place.id}: still settling after a restart, not alerting yet")
                 notePlace(place, MonitorLogStore.Kind.EVENT,
                     "in range, but held back while monitoring settles after a restart")
@@ -515,7 +693,28 @@ class ArrivalService : Service() {
                 return@forEach
             }
 
+            // The last check before anything is sent on a fence alone. A fix
+            // that cannot be got, or one that puts the phone outside the place,
+            // is a reason not to alert rather than a reason to guess.
+            if (geofenceOnly && !insideByLocation(place)) {
+                Log.w(TAG, "${place.id}: the location fix does not agree with the fence")
+                notePlace(place, MonitorLogStore.Kind.PROBLEM,
+                    "geofence says inside but the location fix disagrees, not alerting")
+                geofenceEnteredAt.remove(place.id)
+                prefs.setPresence(place.id, running.copy(
+                    state = PresenceState.AWAY, visitStartedAt = 0L, stationaryMillis = 0L,
+                ))
+                return@forEach
+            }
+
             val routineTriggered = waitMinutes < dwellMinutes
+            // How this arrival was actually established, kept on the history row
+            // so a wrong alert can be told apart from a wrong fence afterwards.
+            val detectionMethod = when {
+                geofenceOnly -> "geofence"
+                enteredAt > 0L -> "geofence_wifi"
+                else -> "wifi"
+            }
             // Marked here whether or not the gateway accepted it, and BEFORE any
             // network work: delivery is retried per recipient from the Auto
             // page, and replaying the whole fan-out would double-message
@@ -529,7 +728,8 @@ class ArrivalService : Service() {
             // phone with no signal has to keep watching for the departure that
             // re-arms this place.
             scope.launch {
-                recordArrival(uid, place.id, routineTriggered, running.visitStartedAt)
+                recordArrival(uid, place.id, routineTriggered, running.visitStartedAt,
+                    detectionMethod, wifiMatch = !geofenceOnly)
                     .onSuccess { outcome -> noteArrivalOutcome(place, outcome) }
                     .onFailure {
                         Log.w(TAG, "${place.id}: arrival not sent, ${it.message}")
@@ -539,6 +739,11 @@ class ArrivalService : Service() {
         }
 
         chooseNextCadence(saved, movedSinceLastSweep = stillSinceLastSweep == 0L)
+        // Nothing left counting down means the session the lock was taken for is
+        // over, and holding the CPU awake past that is pure battery.
+        if (saved.none { prefs.getPresence(it.id).state == PresenceState.APPROACHING }) {
+            releaseWakeLock()
+        }
         val here = saved.firstOrNull { prefs.getPresence(it.id).state == PresenceState.HERE }
         // What each place sounded like on this check, kept with the row because
         // "not at a saved place" is only arguable next to the numbers that
@@ -714,6 +919,18 @@ class ArrivalService : Service() {
         // A queue that clears instantly had nothing in it, so only a wait longer
         // than this is reported as a backlog actually going out.
         private const val BACKLOG_WORTH_NOTING_MILLIS = 2_000L
+        // The hard cap on one validation session. Even the most careful place
+        // has decided well inside half an hour, so anything still holding the
+        // CPU after that is a session that went wrong, not one still working.
+        private const val VALIDATION_WAKE_LOCK_MILLIS = 30 * 60 * 1000L
+        // Indoors a fix can wait for satellites that never arrive, and the
+        // decision cannot sit there forever with nothing watching.
+        private const val LOCATION_FIX_TIMEOUT_MILLIS = 15_000L
+
+        const val ACTION_VALIDATE = "com.textgate.app.VALIDATE_ARRIVAL"
+        const val ACTION_DEPART = "com.textgate.app.CHECK_DEPARTURE"
+        private const val EXTRA_PLACE_ID = "place_id"
+        private const val EXTRA_ENTERED_AT = "entered_at"
 
         /**
          * Android revokes the permissions of apps that have not been opened for
@@ -729,6 +946,36 @@ class ArrivalService : Service() {
                 return
             }
             context.startForegroundService(Intent(context, ArrivalService::class.java))
+        }
+
+        /**
+         * A geofence has reported an arrival. The transition is on the
+         * platform's own list of reasons a foreground service may start from
+         * the background, so this works with the app closed.
+         */
+        fun startValidation(context: Context, placeId: String, enteredAt: Long) {
+            if (!hasLocationPermission(context)) {
+                Log.w(TAG, "Ignoring a geofence arrival: location permission is not granted")
+                return
+            }
+            context.startForegroundService(
+                Intent(context, ArrivalService::class.java)
+                    .setAction(ACTION_VALIDATE)
+                    .putExtra(EXTRA_PLACE_ID, placeId)
+                    .putExtra(EXTRA_ENTERED_AT, enteredAt)
+            )
+        }
+
+        fun startDeparture(context: Context, placeId: String) {
+            if (!hasLocationPermission(context)) {
+                Log.w(TAG, "Ignoring a geofence departure: location permission is not granted")
+                return
+            }
+            context.startForegroundService(
+                Intent(context, ArrivalService::class.java)
+                    .setAction(ACTION_DEPART)
+                    .putExtra(EXTRA_PLACE_ID, placeId)
+            )
         }
 
         // Approximate location cannot read scan results, so starting on it only

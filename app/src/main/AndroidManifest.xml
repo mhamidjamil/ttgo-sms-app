@@ -17,13 +17,21 @@
     <!-- Android 12 and above show a precise/approximate choice, and refuse the
          precise prompt unless the approximate one is declared alongside it. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <!-- ACCESS_BACKGROUND_LOCATION is deliberately NOT declared. Every WiFi scan
-         happens either inside the location foreground service, which grants
-         location for as long as it runs, or with a screen open. Declaring it
-         would oblige a Play background-location declaration and video review
-         for an access this app never makes. -->
+    <!-- This reverses the earlier decision to leave background location out. A
+         geofence that fires while the app is closed is location delivered to a
+         dead process, and no phone will do that without this permission, so
+         detection that survives the app not running cannot exist without it.
+         The cost lands at release time, not build time: the next Play
+         submission needs the background-location declaration form, the demo
+         video and the prominent disclosure (docs/V4-GEOFENCE-HYBRID.md
+         section 2.9). -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <!-- Held only while an arrival is being confirmed. Doze otherwise parks the
+         sweep and the dwell clock with it, which is how a night arrival was
+         never counted. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Step counter, used only to tell a real stop from driving past. Optional:
          without it the wait falls back to counting plain elapsed time. -->
@@ -72,6 +80,13 @@
                 <action android:name="com.textgate.app.ARRIVAL_WATCHDOG" />
             </intent-filter>
         </receiver>
+
+        <!-- Woken by the system when a place's fence is crossed. It needs no
+             intent-filter: the geofencing service sends to it by name through
+             the pending intent it was registered with. -->
+        <receiver
+            android:name=".services.GeofenceEventReceiver"
+            android:exported="false" />
 
         <!-- Lets the share sheet read the exported monitoring log. A file in the
              app's own cache is unreadable to any other app without this. -->

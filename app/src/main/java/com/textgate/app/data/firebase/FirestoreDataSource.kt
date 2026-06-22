@@ -354,6 +354,11 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         locationLabel: String,
         routineTriggered: Boolean,
         detectedAt: Long,
+        detectionMethod: String,
+        wifiMatch: Boolean,
+        latitude: Double,
+        longitude: Double,
+        radiusMeters: Int,
     ): Result<EnqueueResult> = runCatching {
         val enqueBy = "app:$uid:arrival"
         val now = Timestamp.now()
@@ -382,7 +387,7 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
             "recipient_name" to recipientName,
             "message" to message,
             "routine_triggered" to routineTriggered,
-        )
+        ) + detectionFields(detectionMethod, wifiMatch, latitude, longitude, radiusMeters)
         val batch = db.batch()
         batch.set(jobRef, jobDto)
         batch.set(
@@ -414,9 +419,16 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         locationLabel: String,
         routineTriggered: Boolean,
         detectedAt: Long,
+        detectionMethod: String,
+        wifiMatch: Boolean,
+        latitude: Double,
+        longitude: Double,
+        radiusMeters: Int,
     ): Result<Unit> = logAutoArrival(
         uid, phoneNumber, recipientName, message, location, locationLabel,
         routineTriggered, detectedAt, channel = "whatsapp", status = "sent", error = "",
+        detectionMethod = detectionMethod, wifiMatch = wifiMatch,
+        latitude = latitude, longitude = longitude, radiusMeters = radiusMeters,
     )
 
     // A recipient the gateway could not be queued for at all. Without this row
@@ -432,10 +444,36 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         routineTriggered: Boolean,
         detectedAt: Long,
         error: String,
+        detectionMethod: String,
+        wifiMatch: Boolean,
+        latitude: Double,
+        longitude: Double,
+        radiusMeters: Int,
     ): Result<Unit> = logAutoArrival(
         uid, phoneNumber, recipientName, message, location, locationLabel,
         routineTriggered, detectedAt, channel = "sms", status = "failed", error = error,
+        detectionMethod = detectionMethod, wifiMatch = wifiMatch,
+        latitude = latitude, longitude = longitude, radiusMeters = radiusMeters,
     )
+
+    // How the arrival was established, kept beside the row it produced. The
+    // circle is only worth recording for a place that actually has one, so a
+    // WiFi-only place keeps exactly the fields it always had.
+    private fun detectionFields(
+        detectionMethod: String,
+        wifiMatch: Boolean,
+        latitude: Double,
+        longitude: Double,
+        radiusMeters: Int,
+    ): Map<String, Any> = buildMap {
+        put("detection_method", detectionMethod)
+        put("wifi_match", wifiMatch)
+        if (radiusMeters > 0) {
+            put("latitude", latitude)
+            put("longitude", longitude)
+            put("radius_m", radiusMeters)
+        }
+    }
 
     private suspend fun logAutoArrival(
         uid: String,
@@ -449,6 +487,11 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         channel: String,
         status: String,
         error: String,
+        detectionMethod: String,
+        wifiMatch: Boolean,
+        latitude: Double,
+        longitude: Double,
+        radiusMeters: Int,
     ): Result<Unit> = runCatching {
         val now = Timestamp.now()
         val autoDto = mapOf(
@@ -464,7 +507,7 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
             "message" to message,
             "routine_triggered" to routineTriggered,
             "error" to error,
-        )
+        ) + detectionFields(detectionMethod, wifiMatch, latitude, longitude, radiusMeters)
         db.collection(Paths.USERS).document(uid)
             .collection(Paths.AUTO_HISTORY_SUB).document().set(autoDto).await()
     }

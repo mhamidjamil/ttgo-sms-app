@@ -114,11 +114,12 @@ data class Place(
         const val HOME_ID = "home"
         const val OFFICE_ID = "office"
 
-        // A house sits well inside 50 m, and anything under that is smaller than
-        // the fix accuracy a phone usually manages. The cap is 500 m because the
-        // largest place anyone here has is a couple of kanal, which fits in 200.
-        const val DEFAULT_RADIUS_METERS = 50
-        const val MIN_RADIUS_METERS = 50
+        // Android itself does not promise a fence tighter than about 100 m, and
+        // a fence smaller than what the hardware can tell apart just fires late
+        // or never. The cap is 500 m because the largest place anyone here has
+        // is a couple of kanal, which fits well inside 200.
+        const val DEFAULT_RADIUS_METERS = 150
+        const val MIN_RADIUS_METERS = 100
         const val MAX_RADIUS_METERS = 500
 
         fun parseHhMm(value: String): Int? {

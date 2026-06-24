@@ -20,4 +20,15 @@ interface UserRepository {
     suspend fun savePhoneOtp(uid: String, otp: String): Result<Unit>
     suspend fun getPhoneOtp(uid: String): Result<String?>
     suspend fun markPhoneVerified(uid: String): Result<Unit>
+
+    // Arrival monitoring (V2)
+    suspend fun saveLocationSettings(
+        uid: String,
+        guardianNumber: String,
+        homeBssid: String,
+        homeLabel: String,
+        officeBssid: String,
+        officeLabel: String,
+    ): Result<Unit>
+    suspend fun recordArrival(uid: String, location: String, date: String, currentTime: String): Result<Unit>
 }

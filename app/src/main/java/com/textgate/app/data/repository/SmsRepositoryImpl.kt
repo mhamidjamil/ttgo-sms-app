@@ -1,6 +1,7 @@
 package com.textgate.app.data.repository
 
 import com.textgate.app.data.firebase.FirestoreDataSource
+import com.textgate.app.domain.model.AutoHistoryEntry
 import com.textgate.app.domain.model.HistoryEntry
 import com.textgate.app.domain.model.SmsJob
 import com.textgate.app.domain.repository.SmsRepository
@@ -23,4 +24,17 @@ class SmsRepositoryImpl(private val firestore: FirestoreDataSource) : SmsReposit
 
     override suspend fun enqueueOtpSms(uid: String, phoneNumber: String, message: String): Result<Unit> =
         firestore.enqueueOtpSms(phoneNumber, message, enqueBy = "app:$uid:otp")
+
+    // ── Arrival monitoring (V2) ───────────────────────────────────────────────
+
+    override suspend fun enqueueAutoArrivalSms(
+        uid: String,
+        phoneNumber: String,
+        message: String,
+        location: String,
+        routineTriggered: Boolean,
+    ): Result<Unit> = firestore.enqueueAutoArrivalSms(uid, phoneNumber, message, location, routineTriggered)
+
+    override fun getAutoHistory(uid: String): Flow<List<AutoHistoryEntry>> =
+        firestore.getAutoHistory(uid).map { list -> list.map { it.toDomain() } }
 }

@@ -70,4 +70,18 @@ class UserRepositoryImpl(
 
     override suspend fun markPhoneVerified(uid: String) =
         firestore.markPhoneVerified(uid)
+
+    // ── Arrival monitoring (V2) ───────────────────────────────────────────────
+
+    override suspend fun saveLocationSettings(
+        uid: String,
+        guardianNumber: String,
+        homeBssid: String,
+        homeLabel: String,
+        officeBssid: String,
+        officeLabel: String,
+    ) = firestore.saveLocationSettings(uid, guardianNumber, homeBssid, homeLabel, officeBssid, officeLabel)
+
+    override suspend fun recordArrival(uid: String, location: String, date: String, currentTime: String) =
+        firestore.recordArrival(uid, location, date, currentTime)
 }

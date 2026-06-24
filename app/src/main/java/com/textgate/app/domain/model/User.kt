@@ -10,4 +10,16 @@ data class User(
     val assignedQuota: Int,
     val remainingQuota: Int,
     val lastQuotaResetDate: String,
+
+    // V2: arrival monitoring
+    val guardianNumber: String = "",
+    val homeBssid: String = "",
+    val homeLabel: String = "",
+    val officeBssid: String = "",
+    val officeLabel: String = "",
+    val wifiStabilityMinutes: Int = 10,
+    val arrivalHomeTimes: List<String> = emptyList(),
+    val arrivalOfficeTimes: List<String> = emptyList(),
+    val lastHomeArrivalDate: String = "",
+    val lastOfficeArrivalDate: String = "",
 )

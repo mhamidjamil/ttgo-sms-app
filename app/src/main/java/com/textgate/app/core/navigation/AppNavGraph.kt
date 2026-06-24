@@ -3,6 +3,7 @@ package com.textgate.app.core.navigation
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Icon
@@ -22,9 +23,11 @@ import androidx.navigation.compose.rememberNavController
 import com.textgate.app.presentation.auth.LoginScreen
 import com.textgate.app.presentation.auth.PhoneVerifyScreen
 import com.textgate.app.presentation.auth.SignupScreen
+import com.textgate.app.presentation.auto.AutoScreen
 import com.textgate.app.presentation.history.HistoryScreen
 import com.textgate.app.presentation.profile.ProfileScreen
 import com.textgate.app.presentation.send.SendScreen
+import com.textgate.app.presentation.settings.SettingsScreen
 
 private data class BottomNavItem(
     val screen: Screen,
@@ -35,8 +38,11 @@ private data class BottomNavItem(
 private val bottomNavItems = listOf(
     BottomNavItem(Screen.Send, "Send", Icons.Default.Send),
     BottomNavItem(Screen.History, "History", Icons.Default.History),
+    BottomNavItem(Screen.Auto, "Auto", Icons.Default.Notifications),
     BottomNavItem(Screen.Profile, "Profile", Icons.Default.Person),
 )
+
+private val bottomNavRoutes = bottomNavItems.map { it.screen.route }.toSet()
 
 @Composable
 fun AppNavGraph(startDestination: String) {
@@ -44,9 +50,7 @@ fun AppNavGraph(startDestination: String) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
 
-    val showBottomBar = currentDestination?.route in listOf(
-        Screen.Send.route, Screen.History.route, Screen.Profile.route
-    )
+    val showBottomBar = currentDestination?.route in bottomNavRoutes
 
     Scaffold(
         bottomBar = {
@@ -111,6 +115,7 @@ fun AppNavGraph(startDestination: String) {
             }
             composable(Screen.Send.route) { SendScreen() }
             composable(Screen.History.route) { HistoryScreen() }
+            composable(Screen.Auto.route) { AutoScreen() }
             composable(Screen.Profile.route) {
                 ProfileScreen(
                     onSignOut = {
@@ -120,8 +125,14 @@ fun AppNavGraph(startDestination: String) {
                     },
                     onVerifyPhone = {
                         navController.navigate(Screen.PhoneVerify.route)
-                    }
+                    },
+                    onNavigateToSettings = {
+                        navController.navigate(Screen.Settings.route)
+                    },
                 )
+            }
+            composable(Screen.Settings.route) {
+                SettingsScreen(onBack = { navController.popBackStack() })
             }
         }
     }

@@ -7,6 +7,7 @@ object Paths {
     val USERS: String = BuildConfig.USERS_PATH
     val DEVICE_DOC: String = BuildConfig.DEVICE_DOC_PATH
     const val HISTORY_SUB: String = "history"
+    const val AUTO_HISTORY_SUB: String = "auto_history"
     const val FREE_SMS_QUOTA_FIELD: String = "free_sms_quota"
 }
 

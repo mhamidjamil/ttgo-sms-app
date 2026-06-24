@@ -23,6 +23,28 @@ data class UserDto(
     var lastQuotaResetDate: String = "",
     @get:PropertyName("created_at") @set:PropertyName("created_at")
     var createdAt: Timestamp? = null,
+
+    // V2: arrival monitoring
+    @get:PropertyName("guardian_number") @set:PropertyName("guardian_number")
+    var guardianNumber: String = "",
+    @get:PropertyName("home_bssid") @set:PropertyName("home_bssid")
+    var homeBssid: String = "",
+    @get:PropertyName("home_label") @set:PropertyName("home_label")
+    var homeLabel: String = "",
+    @get:PropertyName("office_bssid") @set:PropertyName("office_bssid")
+    var officeBssid: String = "",
+    @get:PropertyName("office_label") @set:PropertyName("office_label")
+    var officeLabel: String = "",
+    @get:PropertyName("wifi_stability_minutes") @set:PropertyName("wifi_stability_minutes")
+    var wifiStabilityMinutes: Int = 10,
+    @get:PropertyName("arrival_home_times") @set:PropertyName("arrival_home_times")
+    var arrivalHomeTimes: List<String> = emptyList(),
+    @get:PropertyName("arrival_office_times") @set:PropertyName("arrival_office_times")
+    var arrivalOfficeTimes: List<String> = emptyList(),
+    @get:PropertyName("last_home_arrival_date") @set:PropertyName("last_home_arrival_date")
+    var lastHomeArrivalDate: String = "",
+    @get:PropertyName("last_office_arrival_date") @set:PropertyName("last_office_arrival_date")
+    var lastOfficeArrivalDate: String = "",
 ) {
     fun toDomain() = User(
         uid = uid,
@@ -34,5 +56,15 @@ data class UserDto(
         assignedQuota = assignedQuota,
         remainingQuota = remainingQuota,
         lastQuotaResetDate = lastQuotaResetDate,
+        guardianNumber = guardianNumber,
+        homeBssid = homeBssid,
+        homeLabel = homeLabel,
+        officeBssid = officeBssid,
+        officeLabel = officeLabel,
+        wifiStabilityMinutes = wifiStabilityMinutes,
+        arrivalHomeTimes = arrivalHomeTimes,
+        arrivalOfficeTimes = arrivalOfficeTimes,
+        lastHomeArrivalDate = lastHomeArrivalDate,
+        lastOfficeArrivalDate = lastOfficeArrivalDate,
     )
 }

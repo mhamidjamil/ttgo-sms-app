@@ -22,6 +22,7 @@ import org.koin.androidx.compose.koinViewModel
 fun ProfileScreen(
     onSignOut: () -> Unit,
     onVerifyPhone: () -> Unit,
+    onNavigateToSettings: () -> Unit = {},
     viewModel: ProfileViewModel = koinViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -168,6 +169,26 @@ fun ProfileScreen(
                 Text("Resets daily at midnight",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        // Arrival monitoring shortcut
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Arrival Monitoring", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Set up guardian SMS notifications when you arrive home or at office",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedButton(
+                    onClick = onNavigateToSettings,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Setup Arrival Settings (V2)") }
             }
         }
 

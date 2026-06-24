@@ -11,22 +11,38 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.textgate.app.core.theme.TextGateTheme
 import com.textgate.app.core.theme.WarningAmber
 import com.textgate.app.core.theme.WarningAmberBorder
 import com.textgate.app.core.utils.PhoneNormalizer
+import com.textgate.app.domain.model.User
 import org.koin.androidx.compose.koinViewModel
 
 @Composable
 fun SendScreen(viewModel: SendViewModel = koinViewModel()) {
     val uiState by viewModel.uiState.collectAsState()
+    SendContent(
+        uiState = uiState,
+        onSend = viewModel::send,
+        onClearMessage = viewModel::clearSentMessage,
+    )
+}
+
+@Composable
+private fun SendContent(
+    uiState: SendUiState,
+    onSend: (String, String) -> Unit,
+    onClearMessage: () -> Unit,
+) {
     val snackbarHostState = remember { SnackbarHostState() }
     val phoneNormalizer = remember { PhoneNormalizer() }
 
     LaunchedEffect(uiState.sentMessage) {
         uiState.sentMessage?.let {
             snackbarHostState.showSnackbar(it)
-            viewModel.clearSentMessage()
+            onClearMessage()
         }
     }
 
@@ -41,7 +57,6 @@ fun SendScreen(viewModel: SendViewModel = koinViewModel()) {
             Text("Send SMS", style = MaterialTheme.typography.headlineMedium)
             Spacer(Modifier.height(8.dp))
 
-            // Unverified account banner
             val user = uiState.user
             if (user != null && (!user.emailVerified || !user.phoneVerified)) {
                 val unverified = buildList {
@@ -63,7 +78,6 @@ fun SendScreen(viewModel: SendViewModel = koinViewModel()) {
                 Spacer(Modifier.height(12.dp))
             }
 
-            // Quota progress — uses sentToday so cap is correctly enforced for unverified users
             if (user != null) {
                 Text(
                     "${uiState.remainingToday} / ${uiState.effectiveQuota} SMS remaining today",
@@ -74,7 +88,7 @@ fun SendScreen(viewModel: SendViewModel = koinViewModel()) {
                     progress = { uiState.remainingToday.toFloat() / uiState.effectiveQuota.coerceAtLeast(1) },
                     modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
                     color = if (uiState.canSendMore) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.error,
+                    else MaterialTheme.colorScheme.error,
                 )
                 Spacer(Modifier.height(16.dp))
             }
@@ -106,8 +120,7 @@ fun SendScreen(viewModel: SendViewModel = koinViewModel()) {
 
             uiState.error?.let {
                 Spacer(Modifier.height(8.dp))
-                Text(it, color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall)
+                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
 
             Spacer(Modifier.height(24.dp))
@@ -115,7 +128,7 @@ fun SendScreen(viewModel: SendViewModel = koinViewModel()) {
                     phoneError == null && !uiState.isSending && uiState.canSendMore
 
             Button(
-                onClick = { viewModel.send(phone, message) },
+                onClick = { onSend(phone, message) },
                 enabled = canSend,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
             ) {
@@ -132,5 +145,49 @@ fun SendScreen(viewModel: SendViewModel = koinViewModel()) {
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
             }
         }
+    }
+}
+
+// ── Preview helpers ───────────────────────────────────────────────────────────
+
+private val previewUser = User(
+    uid = "preview", email = "alice@textgate.com", name = "Alice",
+    emailVerified = true, phoneVerified = true,
+    assignedQuota = 10, remainingQuota = 7, lastQuotaResetDate = "2026-06-24",
+    phoneNumber = "+923001234567",
+)
+
+private val unverifiedUser = previewUser.copy(emailVerified = false, phoneVerified = false)
+
+@Preview(showBackground = true, name = "Send — Ready")
+@Composable
+private fun SendReadyPreview() {
+    TextGateTheme {
+        SendContent(
+            uiState = SendUiState(user = previewUser, effectiveQuota = 10),
+            onSend = { _, _ -> }, onClearMessage = {},
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "Send — Quota low")
+@Composable
+private fun SendQuotaLowPreview() {
+    TextGateTheme {
+        SendContent(
+            uiState = SendUiState(user = previewUser.copy(remainingQuota = 1), effectiveQuota = 10),
+            onSend = { _, _ -> }, onClearMessage = {},
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "Send — Unverified (2 SMS cap)")
+@Composable
+private fun SendUnverifiedPreview() {
+    TextGateTheme {
+        SendContent(
+            uiState = SendUiState(user = unverifiedUser, effectiveQuota = 2),
+            onSend = { _, _ -> }, onClearMessage = {},
+        )
     }
 }

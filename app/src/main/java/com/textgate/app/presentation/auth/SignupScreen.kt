@@ -10,7 +10,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.textgate.app.core.theme.TextGateTheme
 import com.textgate.app.core.utils.PhoneNormalizer
 import org.koin.androidx.compose.koinViewModel
 
@@ -21,11 +23,26 @@ fun SignupScreen(
     viewModel: AuthViewModel = koinViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val phoneNormalizer = remember { PhoneNormalizer() }
+    LaunchedEffect(uiState.navigateToPhoneVerify) { if (uiState.navigateToPhoneVerify) onSignupSuccess() }
+    SignupContent(
+        uiState = uiState,
+        onSignup = viewModel::register,
+        onNavigateToLogin = onNavigateToLogin,
+    )
+}
 
-    LaunchedEffect(uiState.navigateToPhoneVerify) {
-        if (uiState.navigateToPhoneVerify) onSignupSuccess()
-    }
+@Composable
+private fun SignupContent(
+    uiState: AuthUiState,
+    onSignup: (String, String, String, String) -> Unit,
+    onNavigateToLogin: () -> Unit,
+) {
+    val phoneNormalizer = remember { PhoneNormalizer() }
+    var name by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf("") }
+    val phoneError = phoneNormalizer.validationError(phone)
 
     Column(
         modifier = Modifier
@@ -37,13 +54,6 @@ fun SignupScreen(
     ) {
         Text("Create Account", style = MaterialTheme.typography.headlineLarge)
         Spacer(Modifier.height(32.dp))
-
-        var name by remember { mutableStateOf("") }
-        var email by remember { mutableStateOf("") }
-        var password by remember { mutableStateOf("") }
-        var phone by remember { mutableStateOf("") }
-        val phoneError = phoneNormalizer.validationError(phone)
-
         OutlinedTextField(
             value = name,
             onValueChange = { name = it },
@@ -81,22 +91,21 @@ fun SignupScreen(
             isError = phoneError != null,
             supportingText = phoneError?.let { { Text(it) } },
         )
-
         uiState.error?.let { err ->
             Spacer(Modifier.height(8.dp))
-            Text(err, color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall)
+            Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
         }
         if (uiState.verificationSent) {
             Spacer(Modifier.height(8.dp))
-            Text("Verification email sent! Check your inbox.",
+            Text(
+                "Verification email sent! Check your inbox.",
                 color = MaterialTheme.colorScheme.secondary,
-                style = MaterialTheme.typography.bodySmall)
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
-
         Spacer(Modifier.height(24.dp))
         Button(
-            onClick = { viewModel.register(email, password, name, phone) },
+            onClick = { onSignup(email, password, name, phone) },
             enabled = !uiState.isLoading && phoneError == null,
             modifier = Modifier.fillMaxWidth().height(48.dp),
         ) {
@@ -106,4 +115,22 @@ fun SignupScreen(
         Spacer(Modifier.height(16.dp))
         TextButton(onClick = onNavigateToLogin) { Text("Already have an account? Login") }
     }
+}
+
+@Preview(showBackground = true, name = "Signup — Default")
+@Composable
+private fun SignupPreview() {
+    TextGateTheme { SignupContent(AuthUiState(), { _, _, _, _ -> }, {}) }
+}
+
+@Preview(showBackground = true, name = "Signup — Loading")
+@Composable
+private fun SignupLoadingPreview() {
+    TextGateTheme { SignupContent(AuthUiState(isLoading = true), { _, _, _, _ -> }, {}) }
+}
+
+@Preview(showBackground = true, name = "Signup — Error")
+@Composable
+private fun SignupErrorPreview() {
+    TextGateTheme { SignupContent(AuthUiState(error = "Email already in use"), { _, _, _, _ -> }, {}) }
 }

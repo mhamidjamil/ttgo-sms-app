@@ -8,7 +8,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.textgate.app.core.theme.TextGateTheme
 import org.koin.androidx.compose.koinViewModel
 
 @Composable
@@ -18,27 +20,31 @@ fun LoginScreen(
     viewModel: AuthViewModel = koinViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    LaunchedEffect(uiState.success) { if (uiState.success) onLoginSuccess() }
+    LoginContent(uiState = uiState, onLogin = viewModel::login, onNavigateToSignup = onNavigateToSignup)
+}
 
-    LaunchedEffect(uiState.success) {
-        if (uiState.success) onLoginSuccess()
-    }
+@Composable
+private fun LoginContent(
+    uiState: AuthUiState,
+    onLogin: (String, String) -> Unit,
+    onNavigateToSignup: () -> Unit,
+) {
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
+        modifier = Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text("TextGate", style = MaterialTheme.typography.headlineLarge)
-        Text("SMS Gateway", style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-
+        Text(
+            "SMS Gateway",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+        )
         Spacer(Modifier.height(40.dp))
-
-        var email by remember { mutableStateOf("") }
-        var password by remember { mutableStateOf("") }
-
         OutlinedTextField(
             value = email,
             onValueChange = { email = it },
@@ -57,26 +63,38 @@ fun LoginScreen(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             modifier = Modifier.fillMaxWidth(),
         )
-
         uiState.error?.let { err ->
             Spacer(Modifier.height(8.dp))
-            Text(err, color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall)
+            Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
         }
-
         Spacer(Modifier.height(24.dp))
         Button(
-            onClick = { viewModel.login(email, password) },
+            onClick = { onLogin(email, password) },
             enabled = !uiState.isLoading,
             modifier = Modifier.fillMaxWidth().height(48.dp),
         ) {
             if (uiState.isLoading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
             else Text("Login")
         }
-
         Spacer(Modifier.height(16.dp))
-        TextButton(onClick = onNavigateToSignup) {
-            Text("Don't have an account? Sign Up")
-        }
+        TextButton(onClick = onNavigateToSignup) { Text("Don't have an account? Sign Up") }
     }
+}
+
+@Preview(showBackground = true, name = "Login — Default")
+@Composable
+private fun LoginPreview() {
+    TextGateTheme { LoginContent(AuthUiState(), { _, _ -> }, {}) }
+}
+
+@Preview(showBackground = true, name = "Login — Loading")
+@Composable
+private fun LoginLoadingPreview() {
+    TextGateTheme { LoginContent(AuthUiState(isLoading = true), { _, _ -> }, {}) }
+}
+
+@Preview(showBackground = true, name = "Login — Error")
+@Composable
+private fun LoginErrorPreview() {
+    TextGateTheme { LoginContent(AuthUiState(error = "Invalid email or password"), { _, _ -> }, {}) }
 }

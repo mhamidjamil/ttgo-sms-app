@@ -156,13 +156,10 @@ private fun SettingsContent(
         },
     ) { padding ->
         if (uiState.isLoading) {
-            Box(Modifier.fillMaxSize().padding(padding)) {
-                CircularProgressIndicator(Modifier.align(Alignment.Center))
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
             }
-            return@Scaffold
-        }
-
-        Column(
+        } else Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)

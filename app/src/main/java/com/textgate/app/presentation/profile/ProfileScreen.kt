@@ -77,158 +77,165 @@ private fun ProfileContent(
         Text("Profile", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(24.dp))
 
-        if (uiState.isLoading) {
-            CircularProgressIndicator()
-            return@Column
-        }
-
-        val user = uiState.user ?: run {
-            Text("Could not load profile", color = MaterialTheme.colorScheme.error)
-            return@Column
-        }
-
-        Box(
-            modifier = Modifier.size(80.dp).clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                user.name.firstOrNull()?.uppercase() ?: "?",
-                style = MaterialTheme.typography.headlineLarge,
-                color = MaterialTheme.colorScheme.onPrimary,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-
-        Spacer(Modifier.height(16.dp))
-        Text(user.name, style = MaterialTheme.typography.titleLarge)
-        Text(
-            user.email, style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-        )
-
-        Spacer(Modifier.height(24.dp))
-
-        if (!user.emailVerified) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(WarningAmber)
-                    .border(1.dp, WarningAmberBorder)
-                    .padding(12.dp),
-            ) {
-                Column {
-                    Text(
-                        "⚠ Email not verified",
-                        style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        "Verify both email and phone to unlock ${user.assignedQuota} SMS/day.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedButton(onClick = onResendVerification) {
-                        Text("Resend Verification Email")
-                    }
-                    if (uiState.verificationSent) {
-                        Text(
-                            "Sent! Check your inbox.", style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.secondary,
-                        )
-                    }
+        // No early returns — Compose requires a stable node tree across recompositions.
+        when {
+            uiState.isLoading -> {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
                 }
             }
-            Spacer(Modifier.height(12.dp))
-        }
+            uiState.user == null -> {
+                Text("Could not load profile", color = MaterialTheme.colorScheme.error)
+            }
+            else -> {
+                val user = uiState.user
 
-        if (!user.phoneVerified) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(WarningAmber)
-                    .border(1.dp, WarningAmberBorder)
-                    .padding(12.dp),
-            ) {
-                Column {
+                Box(
+                    modifier = Modifier.size(80.dp).clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center,
+                ) {
                     Text(
-                        "⚠ Phone not verified",
-                        style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold,
+                        user.name.firstOrNull()?.uppercase() ?: "?",
+                        style = MaterialTheme.typography.headlineLarge,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        fontWeight = FontWeight.Bold,
                     )
-                    if (user.phoneNumber.isNotBlank()) {
+                }
+
+                Spacer(Modifier.height(16.dp))
+                Text(user.name, style = MaterialTheme.typography.titleLarge)
+                Text(
+                    user.email, style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+
+                Spacer(Modifier.height(24.dp))
+
+                if (!user.emailVerified) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(WarningAmber)
+                            .border(1.dp, WarningAmberBorder)
+                            .padding(12.dp),
+                    ) {
+                        Column {
+                            Text(
+                                "⚠ Email not verified",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                "Verify both email and phone to unlock ${user.assignedQuota} SMS/day.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedButton(onClick = onResendVerification) {
+                                Text("Resend Verification Email")
+                            }
+                            if (uiState.verificationSent) {
+                                Text(
+                                    "Sent! Check your inbox.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.secondary,
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+
+                if (!user.phoneVerified) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(WarningAmber)
+                            .border(1.dp, WarningAmberBorder)
+                            .padding(12.dp),
+                    ) {
+                        Column {
+                            Text(
+                                "⚠ Phone not verified",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            if (user.phoneNumber.isNotBlank()) {
+                                Text(
+                                    "${user.phoneNumber} — tap below to enter your verification code.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedButton(onClick = onVerifyPhone) { Text("Verify Phone Number") }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Daily SMS Quota", style = MaterialTheme.typography.titleLarge)
+                        Spacer(Modifier.height(4.dp))
+                        val verifiedStr = buildList {
+                            if (user.emailVerified) add("email")
+                            if (user.phoneVerified) add("phone")
+                        }.let { if (it.isEmpty()) "none verified" else "${it.joinToString(" + ")} verified" }
                         Text(
-                            "${user.phoneNumber} — tap below to enter your verification code.",
+                            verifiedStr, style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        val remaining = user.remainingQuota.coerceAtMost(uiState.effectiveQuota)
+                        val total = uiState.effectiveQuota.coerceAtLeast(1)
+                        LinearProgressIndicator(
+                            progress = { remaining.toFloat() / total },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "$remaining / $total remaining today",
                             style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        )
+                        Text(
+                            "Resets daily at midnight",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                         )
                     }
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedButton(onClick = onVerifyPhone) { Text("Verify Phone Number") }
                 }
-            }
-            Spacer(Modifier.height(12.dp))
-        }
 
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("Daily SMS Quota", style = MaterialTheme.typography.titleLarge)
-                Spacer(Modifier.height(4.dp))
-                val verifiedStr = buildList {
-                    if (user.emailVerified) add("email")
-                    if (user.phoneVerified) add("phone")
-                }.let { if (it.isEmpty()) "none verified" else "${it.joinToString(" + ")} verified" }
-                Text(
-                    verifiedStr, style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                )
-                Spacer(Modifier.height(8.dp))
-                val remaining = user.remainingQuota.coerceAtMost(uiState.effectiveQuota)
-                val total = uiState.effectiveQuota.coerceAtLeast(1)
-                LinearProgressIndicator(
-                    progress = { remaining.toFloat() / total },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "$remaining / $total remaining today",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                )
-                Text(
-                    "Resets daily at midnight",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                )
-            }
-        }
+                Spacer(Modifier.height(16.dp))
 
-        Spacer(Modifier.height(16.dp))
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Arrival Monitoring", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Set up guardian SMS notifications when you arrive home or at office",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedButton(
+                            onClick = onNavigateToSettings,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Setup Arrival Settings (V2)") }
+                    }
+                }
 
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("Arrival Monitoring", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Set up guardian SMS notifications when you arrive home or at office",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                )
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(24.dp))
                 OutlinedButton(
-                    onClick = onNavigateToSettings,
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("Setup Arrival Settings (V2)") }
+                    onClick = { showSignOutDialog = true },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                ) { Text("Sign Out") }
+                Spacer(Modifier.height(16.dp))
             }
         }
-
-        Spacer(Modifier.weight(1f))
-        Spacer(Modifier.height(24.dp))
-        OutlinedButton(
-            onClick = { showSignOutDialog = true },
-            modifier = Modifier.fillMaxWidth().height(48.dp),
-            colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = MaterialTheme.colorScheme.error,
-            ),
-        ) { Text("Sign Out") }
-        Spacer(Modifier.height(16.dp))
     }
 }
 

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- White "T" lettermark centred in the safe zone (18dp inset each side = 72dp usable) -->
+    <!-- Horizontal bar: y=30..46, x=20..88 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M20,30 L88,30 L88,46 L62,46 L62,82 L46,82 L46,46 L20,46 Z" />
+
+</vector>

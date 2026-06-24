@@ -3,11 +3,11 @@ package com.textgate.app.presentation.send
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.textgate.app.domain.model.User
+import com.textgate.app.domain.repository.UserRepository
 import com.textgate.app.domain.usecase.quota.CheckAndResetQuotaUseCase
 import com.textgate.app.domain.usecase.quota.DecrementQuotaUseCase
 import com.textgate.app.domain.usecase.quota.GetEffectiveQuotaUseCase
 import com.textgate.app.domain.usecase.sms.EnqueueSmsUseCase
-import com.textgate.app.domain.repository.UserRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,7 +20,15 @@ data class SendUiState(
     val isSending: Boolean = false,
     val error: String? = null,
     val sentMessage: String? = null,
-)
+) {
+    // How many SMS were sent today = assigned minus what's left.
+    // Comparing sentToday against effectiveQuota correctly caps unverified users:
+    // e.g. assigned=10, remaining=8 → sentToday=2; if effectiveQuota=2 → blocked.
+    val sentToday: Int get() = user
+        ?.let { (it.assignedQuota - it.remainingQuota).coerceAtLeast(0) } ?: 0
+    val remainingToday: Int get() = (effectiveQuota - sentToday).coerceAtLeast(0)
+    val canSendMore: Boolean get() = sentToday < effectiveQuota
+}
 
 class SendViewModel(
     private val userRepo: UserRepository,
@@ -51,8 +59,7 @@ class SendViewModel(
 
     fun send(phone: String, message: String) {
         val user = _uiState.value.user ?: return
-        val remaining = user.remainingQuota.coerceAtMost(_uiState.value.effectiveQuota)
-        if (remaining <= 0) {
+        if (!_uiState.value.canSendMore) {
             _uiState.value = _uiState.value.copy(error = "Daily quota reached. Resets at midnight.")
             return
         }

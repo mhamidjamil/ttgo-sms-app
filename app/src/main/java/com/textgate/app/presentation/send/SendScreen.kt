@@ -44,7 +44,7 @@ fun SendScreen(viewModel: SendViewModel = koinViewModel()) {
             // Unverified account banner
             val user = uiState.user
             if (user != null && (!user.emailVerified || !user.phoneVerified)) {
-                val reasons = buildList {
+                val unverified = buildList {
                     if (!user.emailVerified) add("email")
                     if (!user.phoneVerified) add("phone")
                 }
@@ -56,26 +56,25 @@ fun SendScreen(viewModel: SendViewModel = koinViewModel()) {
                         .padding(12.dp),
                 ) {
                     Text(
-                        "⚠ ${reasons.joinToString(" & ").replaceFirstChar { it.uppercaseChar() }} not verified — limited to ${uiState.effectiveQuota} SMS/day.",
+                        "⚠ ${unverified.joinToString(" & ").replaceFirstChar { it.uppercaseChar() }} not verified — limited to ${uiState.effectiveQuota} SMS/day.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
                 Spacer(Modifier.height(12.dp))
             }
 
-            // Quota progress
+            // Quota progress — uses sentToday so cap is correctly enforced for unverified users
             if (user != null) {
-                val remaining = user.remainingQuota.coerceAtMost(uiState.effectiveQuota)
-                val total = uiState.effectiveQuota.coerceAtLeast(1)
                 Text(
-                    "$remaining / $total SMS remaining today",
+                    "${uiState.remainingToday} / ${uiState.effectiveQuota} SMS remaining today",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                 )
                 LinearProgressIndicator(
-                    progress = { remaining.toFloat() / total },
+                    progress = { uiState.remainingToday.toFloat() / uiState.effectiveQuota.coerceAtLeast(1) },
                     modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                    color = if (remaining > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    color = if (uiState.canSendMore) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.error,
                 )
                 Spacer(Modifier.height(16.dp))
             }
@@ -113,8 +112,7 @@ fun SendScreen(viewModel: SendViewModel = koinViewModel()) {
 
             Spacer(Modifier.height(24.dp))
             val canSend = phone.isNotBlank() && message.isNotBlank() &&
-                    phoneError == null &&
-                    !uiState.isSending && (uiState.user?.remainingQuota ?: 0) > 0
+                    phoneError == null && !uiState.isSending && uiState.canSendMore
 
             Button(
                 onClick = { viewModel.send(phone, message) },

@@ -96,6 +96,16 @@ WIFI_STABILITY_MINUTES=10
 MIN_WIFI_STABILITY_MINUTES=5
 ```
 
+### Gradle wrapper (first-time only)
+
+The binary `gradle/wrapper/gradle-wrapper.jar` is not committed (binary files in git). On first clone, let Android Studio download it automatically by opening the project, **or** run:
+
+```bash
+gradle wrapper --gradle-version 8.4
+```
+
+(Requires Gradle installed locally. Android Studio handles this for you.)
+
 ### Build
 
 ```bash

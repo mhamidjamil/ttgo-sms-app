@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.net.wifi.ScanResult
 import android.net.wifi.WifiManager
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -26,6 +27,7 @@ import androidx.core.content.ContextCompat
 import com.textgate.app.core.theme.TextGateTheme
 import com.textgate.app.core.utils.PhoneNormalizer
 import com.textgate.app.services.ArrivalService
+import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -37,6 +39,7 @@ fun SettingsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     var guardianNumber by remember(uiState.guardianNumber) { mutableStateOf(uiState.guardianNumber) }
     var homeBssid by remember(uiState.homeBssid) { mutableStateOf(uiState.homeBssid) }
@@ -55,6 +58,22 @@ fun SettingsScreen(
         if (granted) {
             scanResults = scanWifi(context)
             showScanDialog = true
+        }
+    }
+
+    val monitoringPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        val granted = requiredMonitoringPermissions()
+            .all { permission -> grants[permission] == true || hasPermission(context, permission) }
+        if (granted) {
+            isMonitoring = true
+            ArrivalService.start(context)
+        } else {
+            isMonitoring = false
+            scope.launch {
+                snackbarHostState.showSnackbar("Location and notification permissions are required")
+            }
         }
     }
 
@@ -95,8 +114,19 @@ fun SettingsScreen(
         onOfficeLabelChange = { officeLabel = it },
         isMonitoring = isMonitoring,
         onMonitoringToggle = { enabled ->
-            isMonitoring = enabled
-            if (enabled) ArrivalService.start(context) else ArrivalService.stop(context)
+            if (enabled) {
+                val missing = requiredMonitoringPermissions()
+                    .filterNot { permission -> hasPermission(context, permission) }
+                if (missing.isEmpty()) {
+                    isMonitoring = true
+                    ArrivalService.start(context)
+                } else {
+                    monitoringPermissionLauncher.launch(missing.toTypedArray())
+                }
+            } else {
+                isMonitoring = false
+                ArrivalService.stop(context)
+            }
         },
         onScanHome = {
             scanTarget = "home"
@@ -143,6 +173,7 @@ private fun SettingsContent(
     val guardianError = phoneNormalizer.validationError(guardianNumber)
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0.dp),
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
@@ -326,11 +357,19 @@ private fun requestScanOrLaunch(
     launcher: androidx.activity.result.ActivityResultLauncher<String>,
     onGranted: () -> Unit,
 ) {
-    if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
-        == PackageManager.PERMISSION_GRANTED
-    ) onGranted()
+    if (hasPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)) onGranted()
     else launcher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
 }
+
+private fun requiredMonitoringPermissions(): List<String> = buildList {
+    add(Manifest.permission.ACCESS_FINE_LOCATION)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        add(Manifest.permission.POST_NOTIFICATIONS)
+    }
+}
+
+private fun hasPermission(context: Context, permission: String): Boolean =
+    ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 
 // ── Preview helpers ───────────────────────────────────────────────────────────
 

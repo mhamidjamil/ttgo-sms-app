@@ -46,7 +46,10 @@ private fun SendContent(
         }
     }
 
-    Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }) { padding ->
+    Scaffold(
+        contentWindowInsets = WindowInsets(0.dp),
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+    ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()

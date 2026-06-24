@@ -1,6 +1,8 @@
 package com.textgate.app.core.navigation
 
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Notifications
@@ -53,6 +55,7 @@ fun AppNavGraph(startDestination: String) {
     val showBottomBar = currentDestination?.route in bottomNavRoutes
 
     Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing,
         bottomBar = {
             if (showBottomBar) {
                 NavigationBar {

@@ -32,7 +32,7 @@ The app also reads `status` during history polling to update `users/{uid}/histor
 
 ---
 
-### `sim_module/users/{uid}` (app writes)
+### `sim_module/ttgo_users/{uid}` (app writes)
 
 One document per Firebase Auth user, keyed by UID.
 
@@ -56,7 +56,7 @@ One document per Firebase Auth user, keyed by UID.
 
 ---
 
-### `sim_module/users/{uid}/history/{autoId}` (app writes)
+### `sim_module/ttgo_users/{uid}/history/{autoId}` (app writes)
 
 Per-user history of sent messages. Doc ID is Firestore auto-ID.
 
@@ -73,7 +73,7 @@ Per-user history of sent messages. Doc ID is Firestore auto-ID.
 
 ---
 
-### `sim_module/users/{uid}/auto_history/{autoId}` (V2)
+### `sim_module/ttgo_users/{uid}/auto_history/{autoId}` (V2)
 
 Arrival-triggered jobs.
 
@@ -118,7 +118,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // Users can only read/write their own document
-    match /sim_module/users/{uid}/{document=**} {
+    match /sim_module/ttgo_users/{uid}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
     // SMS jobs: any authenticated user can write (to enqueue); reads allowed too

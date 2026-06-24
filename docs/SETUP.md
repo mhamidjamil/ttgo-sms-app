@@ -34,7 +34,7 @@ Go to **Firestore → Rules** and paste:
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /sim_module/users/{uid}/{document=**} {
+    match /sim_module/ttgo_users/{uid}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
     match /sim_module/sms/sms_jobs/{phone} {
@@ -87,7 +87,7 @@ Edit `local.properties`:
 ```properties
 FIREBASE_PROJECT_ID=your-project-id   # from Firebase console → Project Settings
 SMS_JOBS_PATH=sim_module/sms/sms_jobs
-USERS_PATH=sim_module/users
+USERS_PATH=sim_module/ttgo_users
 DEVICE_DOC_PATH=sim_module/device
 UNVERIFIED_QUOTA=2
 PARTIAL_VERIFIED_QUOTA=4
@@ -125,7 +125,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 After installing:
 
 - [ ] Sign up with a Pakistani number (03XXXXXXXXX) and email
-- [ ] Check Firestore: `sim_module/users/{uid}` document created
+- [ ] Check Firestore: `sim_module/ttgo_users/{uid}` document created
 - [ ] OTP SMS arrives on the registered phone (requires TTGO device online)
 - [ ] Enter OTP → `phone_verified: true` in Firestore
 - [ ] Send a test SMS → `sim_module/sms/sms_jobs/{+923...}` document created with `status: "pending"`

@@ -18,7 +18,7 @@
 - **Phone number collection** — Pakistani mobile number (03XX format) collected at sign-up
 - **Pakistani-number-only enforcement** — app accepts `03XXXXXXXXX`, `923XXXXXXXXX`, or `+923XXXXXXXXX`; auto-normalizes to E.164 (`+923XXXXXXXXX`) before sending to Firestore; displays a clear error for any other format
 - **Daily SMS quota** with automatic midnight reset — quota sourced from `sim_module/device/free_sms_quota` (no hardcoded values; change it in Firebase without a new app release)
-- **Per-user SMS history** — stored in `sim_module/users/{uid}/history/`, independent of the shared `sms_jobs` collection so two users sending to the same number never overwrite each other's history
+- **Per-user SMS history** — stored in `sim_module/ttgo_users/{uid}/history/`, independent of the shared `sms_jobs` collection so two users sending to the same number never overwrite each other's history
 - **Live status polling** — history screen auto-refreshes pending/in-progress jobs every 10 s (configurable); per-item manual refresh button
 - **Status chips** — color-coded: pending (amber), in-progress (blue), sent (green), failed (red), blocked (orange)
 - **Configurable Firestore paths** — all collection paths in `local.properties` so a schema change is a one-line edit, not a code change
@@ -153,7 +153,7 @@ Detailed Firebase console steps → [`docs/SETUP.md`](docs/SETUP.md)
 |-----|---------|-------------|
 | `FIREBASE_PROJECT_ID` | — | Required. Firebase project ID. |
 | `SMS_JOBS_PATH` | `sim_module/sms/sms_jobs` | Firestore collection for outgoing SMS jobs. |
-| `USERS_PATH` | `sim_module/users` | Firestore collection for user documents. |
+| `USERS_PATH` | `sim_module/ttgo_users` | Firestore collection for user documents. |
 | `DEVICE_DOC_PATH` | `sim_module/device` | Firestore path to the device config document. |
 | `UNVERIFIED_QUOTA` | `2` | Daily SMS cap for accounts with no verifications. |
 | `PARTIAL_VERIFIED_QUOTA` | `4` | Daily SMS cap for accounts with one verification. |
@@ -166,7 +166,7 @@ Detailed Firebase console steps → [`docs/SETUP.md`](docs/SETUP.md)
 ## Running & Testing
 
 1. Sign up with a valid Pakistani number (03XXXXXXXXX) and an email address.
-2. Confirm the `sim_module/users/{uid}` document was created in Firebase console.
+2. Confirm the `sim_module/ttgo_users/{uid}` document was created in Firebase console.
 3. Check your phone for the OTP SMS (delivered via the TTGO device — it must be online).
 4. Send a test SMS — verify `sim_module/sms/sms_jobs/{normalizedNumber}` appears with `status: "pending"`.
 5. Open History — confirm the entry appears and status updates as the TTGO processes the job.

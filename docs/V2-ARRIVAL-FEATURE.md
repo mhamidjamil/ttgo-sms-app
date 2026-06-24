@@ -29,7 +29,7 @@ The `routine_triggered` flag in `auto_history` records whether the shortened wai
 
 ## Firestore Schema (V2 additions)
 
-### `sim_module/users/{uid}` — new fields
+### `sim_module/ttgo_users/{uid}` — new fields
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -44,7 +44,7 @@ The `routine_triggered` flag in `auto_history` records whether the shortened wai
 | `last_home_arrival_date` | string | "YYYY-MM-DD" cooldown guard |
 | `last_office_arrival_date` | string | "YYYY-MM-DD" cooldown guard |
 
-### `sim_module/users/{uid}/auto_history/{id}`
+### `sim_module/ttgo_users/{uid}/auto_history/{id}`
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -94,7 +94,7 @@ The service is started/stopped by the toggle in SettingsScreen. `ArrivalService.
 
 `RecordArrivalUseCase` → `SmsRepository.enqueueAutoArrivalSms` → Firestore batch:
 1. `sim_module/sms/sms_jobs/{guardianNumber}` — picked up and delivered by TTGO device
-2. `sim_module/users/{uid}/auto_history/{id}` — shown in the Auto tab
+2. `sim_module/ttgo_users/{uid}/auto_history/{id}` — shown in the Auto tab
 
 `enque_by` is `"app:{uid}:arrival"` — distinct from manual sends (`"app:{uid}"`) and OTP sends (`"app:{uid}:otp"`).
 

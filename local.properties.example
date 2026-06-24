@@ -6,7 +6,7 @@ FIREBASE_PROJECT_ID=your-firebase-project-id
 
 # Firestore paths (change only if you restructure sim_module)
 SMS_JOBS_PATH=sim_module/sms/sms_jobs
-USERS_PATH=sim_module/users
+USERS_PATH=sim_module/ttgo_users
 DEVICE_DOC_PATH=sim_module/device
 
 # Quota thresholds

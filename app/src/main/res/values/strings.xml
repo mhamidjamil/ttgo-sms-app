@@ -1,0 +1,35 @@
+<resources>
+    <string name="app_name">TextGate</string>
+    <string name="login">Login</string>
+    <string name="sign_up">Sign Up</string>
+    <string name="email">Email</string>
+    <string name="password">Password</string>
+    <string name="name">Name</string>
+    <string name="phone_number">Phone Number</string>
+    <string name="message">Message</string>
+    <string name="send_sms">Send SMS</string>
+    <string name="history">History</string>
+    <string name="profile">Profile</string>
+    <string name="send">Send</string>
+    <string name="verify_email">Verify Email</string>
+    <string name="resend_verification">Resend Verification Email</string>
+    <string name="sign_out">Sign Out</string>
+    <string name="sms_queued">SMS queued — the gateway will send it in a few seconds</string>
+    <string name="quota_remaining">%1$d / %2$d SMS remaining today</string>
+    <string name="quota_exhausted">Daily quota reached. Resets at midnight.</string>
+    <string name="unverified_banner">Email not verified — limited to %1$d SMS/day. Tap to resend.</string>
+    <string name="refresh_status">Refresh Status</string>
+    <string name="no_history">No messages sent yet</string>
+    <string name="arrival_monitoring_active">TextGate arrival monitoring active</string>
+
+    <!-- Phone verification (V1.5) -->
+    <string name="verify_phone">Verify Phone</string>
+    <string name="phone_verification_sent">Verification code sent to %1$s</string>
+    <string name="phone_verify_hint">Enter the 6-digit code sent to your phone</string>
+    <string name="phone_verify_code_label">Verification Code</string>
+    <string name="resend_code">Resend Code</string>
+    <string name="skip_verify_later">Skip — Verify Later</string>
+    <string name="phone_verified">Phone number verified</string>
+    <string name="phone_not_verified">Phone not verified</string>
+    <string name="invalid_pakistani_number">Enter a valid Pakistani number (e.g. 03001234567)</string>
+</resources>

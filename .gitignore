@@ -1,0 +1,24 @@
+# Gradle
+.gradle/
+build/
+*.gradle.kts.tmp
+
+# Android
+*.apk
+*.aar
+*.ap_
+*.dex
+*.class
+local.properties
+google-services.json
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Kotlin
+*.kotlin_module

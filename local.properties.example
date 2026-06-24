@@ -1,0 +1,26 @@
+# Copy this file to local.properties and fill in your values.
+# local.properties is gitignored and never committed.
+
+# Firebase
+FIREBASE_PROJECT_ID=your-firebase-project-id
+
+# Firestore paths (change only if you restructure sim_module)
+SMS_JOBS_PATH=sim_module/sms/sms_jobs
+USERS_PATH=sim_module/users
+DEVICE_DOC_PATH=sim_module/device
+
+# Quota thresholds
+# SMS/day for accounts with neither email nor phone verified
+UNVERIFIED_QUOTA=2
+# SMS/day for accounts with exactly one of email or phone verified
+PARTIAL_VERIFIED_QUOTA=4
+# Fully verified accounts receive assigned_quota from sim_module/device/free_sms_quota (default 10)
+
+# History auto-poll interval in seconds while the screen is visible
+HISTORY_POLL_INTERVAL_SECONDS=10
+
+# V2: WiFi arrival detection
+# Minutes the device must stay connected to the target BSSID before triggering
+WIFI_STABILITY_MINUTES=10
+# Floor for the adaptive wait (routine learning cannot reduce below this)
+MIN_WIFI_STABILITY_MINUTES=5

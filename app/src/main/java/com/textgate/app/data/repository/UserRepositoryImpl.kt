@@ -41,6 +41,16 @@ class UserRepositoryImpl(
 
     override suspend fun getCurrentUser(): User? {
         val fbUser = auth.currentUser() ?: return null
+        val existing = firestore.getUser(fbUser.uid).getOrNull()
+        if (existing != null) return existing.toDomain()
+        // Auto-heal: create the doc if it was never written (e.g. signed up before V1.5)
+        val quota = firestore.getDeviceFreeSmsQuota().getOrDefault(10)
+        firestore.createUser(
+            uid = fbUser.uid,
+            email = fbUser.email ?: "",
+            name = fbUser.displayName ?: fbUser.email?.substringBefore("@") ?: "",
+            quota = quota,
+        )
         return firestore.getUser(fbUser.uid).getOrNull()?.toDomain()
     }
 

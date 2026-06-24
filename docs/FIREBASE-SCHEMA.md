@@ -1,6 +1,6 @@
 # Firebase Schema
 
-All collections live inside the `sim_module/` root, shared with the TTGO T-Call v8 firmware.
+The TTGO firmware uses `sim_module/` in Firestore. The app adds its own top-level collection `ttgo_users` (outside `sim_module`) so the two namespaces never conflict.
 
 ---
 
@@ -28,13 +28,15 @@ Doc ID = E.164 phone number. One active job per number (device constraint).
 | `status` | string | both | `pending` → `in_progress` → `sent` / `failed` / `blocked` |
 | `enque_by` | string | app | `"app:{uid}"` for regular SMS; `"app:{uid}:otp"` for verification |
 
-The app also reads `status` during history polling to update `users/{uid}/history/`.
+The app also reads `status` during history polling to update `ttgo_users/{uid}/history/`.
 
 ---
 
-### `sim_module/ttgo_users/{uid}` (app writes)
+### `ttgo_users/{uid}` (app writes)
 
-One document per Firebase Auth user, keyed by UID.
+Top-level collection — one document per Firebase Auth user, keyed by UID.
+
+> **Why top-level?** Firestore collection paths must have an odd number of segments (1, 3, 5…). A path like `sim_module/ttgo_users` has 2 segments and would be a *document* reference, not a collection. Keeping users at the root as `ttgo_users` is the simplest valid choice and avoids collision with any existing `users` collection.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
@@ -54,9 +56,11 @@ One document per Firebase Auth user, keyed by UID.
 - `email_verified || phone_verified` → `PARTIAL_VERIFIED_QUOTA` (env, default 4)
 - neither → `UNVERIFIED_QUOTA` (env, default 2)
 
+**Auto-creation:** If a user logs in but their Firestore doc is missing, the app creates it automatically (quota sourced from `sim_module/device/free_sms_quota`).
+
 ---
 
-### `sim_module/ttgo_users/{uid}/history/{autoId}` (app writes)
+### `ttgo_users/{uid}/history/{autoId}` (app writes)
 
 Per-user history of sent messages. Doc ID is Firestore auto-ID.
 
@@ -69,11 +73,11 @@ Per-user history of sent messages. Doc ID is Firestore auto-ID.
 | `job_phone_key` | string | = `phone_number`; used to look up the job in `sms_jobs` |
 | `enque_by` | string | `"app:{uid}"` — cross-checked during polling to detect job overwrites |
 
-**Job-collision handling:** If another user sends to the same number, `sms_jobs/{phone}` is overwritten. When the app polls and finds `enque_by != "app:{uid}"`, it marks the history entry as `failed` (or leaves it `pending` until the device processes the new job). History is never overwritten — it is always the user's own record.
+**Job-collision handling:** If another user sends to the same number, `sms_jobs/{phone}` is overwritten. When the app polls and finds `enque_by != "app:{uid}"`, it marks the history entry as `failed`. History is never overwritten — it is always the user's own record.
 
 ---
 
-### `sim_module/ttgo_users/{uid}/auto_history/{autoId}` (V2)
+### `ttgo_users/{uid}/auto_history/{autoId}` (V2)
 
 Arrival-triggered jobs.
 
@@ -117,8 +121,8 @@ The app does **not** write to RTDB. RTDB is used exclusively by the TTGO firmwar
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Users can only read/write their own document
-    match /sim_module/ttgo_users/{uid}/{document=**} {
+    // Users can only read/write their own document and subcollections
+    match /ttgo_users/{uid}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
     // SMS jobs: any authenticated user can write (to enqueue); reads allowed too

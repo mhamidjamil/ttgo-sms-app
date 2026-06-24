@@ -4,6 +4,7 @@ import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.snapshots
 import com.textgate.app.core.utils.DateUtils
 import com.textgate.app.core.utils.Paths
@@ -115,14 +116,15 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         officeBssid: String,
         officeLabel: String,
     ): Result<Unit> = runCatching {
-        db.collection(Paths.USERS).document(uid).update(
+        db.collection(Paths.USERS).document(uid).set(
             mapOf(
                 "guardian_number" to guardianNumber,
                 "home_bssid" to homeBssid,
                 "home_label" to homeLabel,
                 "office_bssid" to officeBssid,
                 "office_label" to officeLabel,
-            )
+            ),
+            SetOptions.merge(),
         ).await()
     }
 

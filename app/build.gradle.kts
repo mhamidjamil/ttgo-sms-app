@@ -31,7 +31,7 @@ android {
         buildConfigField("String", "SMS_JOBS_PATH",
             "\"${localProps.getProperty("SMS_JOBS_PATH", "sim_module/sms/sms_jobs")}\"")
         buildConfigField("String", "USERS_PATH",
-            "\"${localProps.getProperty("USERS_PATH", "sim_module/ttgo_users")}\"")
+            "\"${localProps.getProperty("USERS_PATH", "ttgo_users")}\"")
         buildConfigField("String", "DEVICE_DOC_PATH",
             "\"${localProps.getProperty("DEVICE_DOC_PATH", "sim_module/device")}\"")
         buildConfigField("int", "UNVERIFIED_QUOTA",

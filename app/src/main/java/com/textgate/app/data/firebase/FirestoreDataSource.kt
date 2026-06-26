@@ -9,8 +9,16 @@ import com.google.firebase.firestore.snapshots
 import com.textgate.app.core.utils.DateUtils
 import com.textgate.app.core.utils.Paths
 import com.textgate.app.domain.model.Place
+import com.textgate.app.domain.model.LinkPermissions
+import com.textgate.app.domain.model.LinkState
+import com.textgate.app.domain.model.LocationRequest
+import com.textgate.app.domain.model.SettingsChange
+import com.textgate.app.data.model.AccountLinkDto
+import com.textgate.app.data.model.AlertSubscriptionDto
 import com.textgate.app.data.model.AutoHistoryEntryDto
 import com.textgate.app.data.model.HistoryEntryDto
+import com.textgate.app.data.model.LocationRequestDto
+import com.textgate.app.data.model.SettingsChangeDto
 import com.textgate.app.data.model.SmsJobDto
 import com.textgate.app.data.model.UserDto
 import kotlinx.coroutines.flow.Flow
@@ -21,6 +29,11 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
 
     // ── User ─────────────────────────────────────────────────────────────────
 
+    // Writes the document only when it does not exist yet. This used to be a
+    // plain set(), so every auto-heal run against an existing account replaced
+    // the whole document and wiped guardian_number, places, and the phone/email
+    // verification flags. The existence check and the write have to be in one
+    // transaction, or two devices signing in at once can still clobber it.
     suspend fun createUser(
         uid: String,
         email: String,
@@ -38,9 +51,15 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
             "last_quota_reset_date" to DateUtils.todayString(),
             "created_at" to Timestamp.now(),
         )
-        db.collection(Paths.USERS).document(uid).set(dto).await()
+        val ref = db.collection(Paths.USERS).document(uid)
+        db.runTransaction { tx ->
+            if (!tx.get(ref).exists()) tx.set(ref, dto)
+        }.await()
     }
 
+    // Success + null means the read worked and the document genuinely is not
+    // there. A read that FAILED comes back as a failed Result — callers must not
+    // collapse the two, because "missing" triggers a create and "failed" must not.
     suspend fun getUser(uid: String): Result<UserDto?> = runCatching {
         val snap = db.collection(Paths.USERS).document(uid).get().await()
         if (snap.exists()) snap.toObject(UserDto::class.java)?.copy(uid = snap.id) else null
@@ -165,6 +184,15 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
 
     // ── Location settings (V2) ────────────────────────────────────────────────
 
+    private fun placeMap(place: Place) = mapOf(
+        "id" to place.id, "label" to place.label, "bssid" to place.bssid,
+        "message" to place.message,
+        "wa_message" to place.waMessage,
+        "contacts" to place.contacts.map {
+            mapOf("name" to it.name, "number" to it.number)
+        },
+    )
+
     suspend fun savePlacesSettings(
         uid: String,
         guardianNumber: String,
@@ -173,20 +201,53 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         db.collection(Paths.USERS).document(uid).set(
             mapOf(
                 "guardian_number" to guardianNumber,
-                "places" to places.map { place ->
-                    mapOf(
-                        "id" to place.id, "label" to place.label, "bssid" to place.bssid,
-                        "message" to place.message,
-                        "wa_message" to place.waMessage,
-                        "contacts" to place.contacts.map {
-                            mapOf("name" to it.name, "number" to it.number)
-                        },
-                    )
-                },
+                "places" to places.map(::placeMap),
             ),
             SetOptions.merge(),
         ).await()
     }
+
+    // Places-only write, used when the place editor or the WiFi picker commits a
+    // single place. It deliberately leaves guardian_number alone: the guardian
+    // field is still being edited on screen and writing it here would save a
+    // half-typed number over the good one.
+    suspend fun savePlaces(uid: String, places: List<Place>): Result<Unit> = runCatching {
+        db.collection(Paths.USERS).document(uid)
+            .set(mapOf("places" to places.map(::placeMap)), SetOptions.merge()).await()
+    }
+
+    // ── Settings change history ───────────────────────────────────────────────
+
+    // Best-effort audit trail. A failure here must never fail the settings save
+    // that produced it, so the caller ignores the result.
+    suspend fun logSettingsChanges(uid: String, changes: List<SettingsChange>): Result<Unit> = runCatching {
+        if (changes.isEmpty()) return@runCatching
+        val now = Timestamp.now()
+        val col = db.collection(Paths.USERS).document(uid)
+            .collection(Paths.SETTINGS_HISTORY_SUB)
+        val batch = db.batch()
+        changes.forEach { change ->
+            batch.set(col.document(), mapOf(
+                "field" to change.field,
+                "old_value" to change.oldValue,
+                "new_value" to change.newValue,
+                "changed_at" to now,
+            ))
+        }
+        batch.commit().await()
+    }
+
+    fun getSettingsHistory(uid: String): Flow<List<SettingsChangeDto>> =
+        db.collection(Paths.USERS).document(uid)
+            .collection(Paths.SETTINGS_HISTORY_SUB)
+            .orderBy("changed_at", Query.Direction.DESCENDING)
+            .limit(200)
+            .snapshots()
+            .map { snap ->
+                snap.documents.mapNotNull { doc ->
+                    doc.toObject(SettingsChangeDto::class.java)?.copy(id = doc.id)
+                }
+            }
 
     suspend fun recordArrival(
         uid: String,
@@ -273,6 +334,34 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
             .collection(Paths.AUTO_HISTORY_SUB).document().set(autoDto).await()
     }
 
+    // Re-queues an arrival alert that failed. The gateway job doc is rewritten
+    // (one doc per number, so this replaces whatever is there) and the existing
+    // auto_history row goes back to pending rather than adding a duplicate.
+    // sent_at is deliberately left alone so the entry keeps its place in the list.
+    suspend fun retryAutoArrivalSms(
+        uid: String,
+        entryId: String,
+        phoneNumber: String,
+        message: String,
+    ): Result<Unit> = runCatching {
+        val enqueBy = "app:$uid:arrival"
+        val jobDto = mapOf(
+            "phone_number" to phoneNumber,
+            "message" to message,
+            "status" to "pending",
+            "enque_by" to enqueBy,
+            "created_at" to Timestamp.now(),
+        )
+        val batch = db.batch()
+        batch.set(db.collection(Paths.SMS_JOBS).document(phoneNumber), jobDto)
+        batch.update(
+            db.collection(Paths.USERS).document(uid)
+                .collection(Paths.AUTO_HISTORY_SUB).document(entryId),
+            mapOf("status" to "pending", "enque_by" to enqueBy),
+        )
+        batch.commit().await()
+    }
+
     suspend fun updateAutoHistoryStatus(
         uid: String,
         entryId: String,
@@ -346,5 +435,230 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         db.collection(Paths.USERS).document(uid)
             .collection(Paths.HISTORY_SUB).document(historyId)
             .update("status", status).await()
+    }
+
+    // Enqueues a message the app generated on the user's behalf (an unsubscribe
+    // notice, a location answer). No history entry and no quota change, because
+    // the user did not compose it.
+    suspend fun enqueueSystemNotice(
+        phoneNumber: String,
+        message: String,
+        enqueBy: String,
+    ): Result<Unit> = runCatching {
+        db.collection(Paths.SMS_JOBS).document(phoneNumber).set(
+            mapOf(
+                "phone_number" to phoneNumber,
+                "message" to message,
+                "status" to "pending",
+                "enque_by" to enqueBy,
+                "created_at" to Timestamp.now(),
+            )
+        ).await()
+    }
+
+    // ── Phone directory ───────────────────────────────────────────────────────
+
+    // A tiny public lookup table so an account can be found by its verified
+    // number when someone sends a link invite. It carries only uid and name, so
+    // the user documents themselves stay owner-only.
+    suspend fun publishPhoneDirectoryEntry(
+        phoneNumber: String,
+        uid: String,
+        name: String,
+    ): Result<Unit> = runCatching {
+        db.collection(Paths.PHONE_DIRECTORY).document(phoneNumber)
+            .set(mapOf("uid" to uid, "name" to name), SetOptions.merge()).await()
+    }
+
+    // Returns (uid, name) for a verified number, or null when nobody has claimed it.
+    suspend fun lookupPhoneDirectory(phoneNumber: String): Result<Pair<String, String>?> = runCatching {
+        val snap = db.collection(Paths.PHONE_DIRECTORY).document(phoneNumber).get().await()
+        val uid = snap.getString("uid") ?: return@runCatching null
+        uid to (snap.getString("name") ?: "")
+    }
+
+    // ── Recipient alert subscriptions ─────────────────────────────────────────
+
+    private fun subscriptionRef(recipientPhone: String, senderUid: String) =
+        db.collection(Paths.ALERT_SUBSCRIPTIONS).document(recipientPhone)
+            .collection(Paths.SENDERS_SUB).document(senderUid)
+
+    // Written on every arrival alert so the recipient can discover the link
+    // whenever they install the app. merge() never overwrites their own choice
+    // because `subscribed` is deliberately absent from this write.
+    suspend fun recordAlertSubscription(
+        recipientPhone: String,
+        senderUid: String,
+        senderName: String,
+        senderPhone: String,
+    ): Result<Unit> = runCatching {
+        subscriptionRef(recipientPhone, senderUid).set(
+            mapOf(
+                "sender_name" to senderName,
+                "sender_phone" to senderPhone,
+                "last_alert_at" to Timestamp.now(),
+            ),
+            SetOptions.merge(),
+        ).await()
+    }
+
+    // Absent document or absent field means the recipient never opted out, which
+    // is allowed. Only an explicit false blocks delivery.
+    suspend fun isAlertAllowed(recipientPhone: String, senderUid: String): Result<Boolean> = runCatching {
+        subscriptionRef(recipientPhone, senderUid).get().await().getBoolean("subscribed") ?: true
+    }
+
+    suspend fun setAlertSubscribed(
+        recipientPhone: String,
+        senderUid: String,
+        subscribed: Boolean,
+    ): Result<Unit> = runCatching {
+        subscriptionRef(recipientPhone, senderUid)
+            .set(mapOf("subscribed" to subscribed), SetOptions.merge()).await()
+    }
+
+    fun getAlertSubscriptions(recipientPhone: String): Flow<List<AlertSubscriptionDto>> =
+        db.collection(Paths.ALERT_SUBSCRIPTIONS).document(recipientPhone)
+            .collection(Paths.SENDERS_SUB)
+            .snapshots()
+            .map { snap ->
+                snap.documents.mapNotNull { doc ->
+                    doc.toObject(AlertSubscriptionDto::class.java)?.copy(senderUid = doc.id)
+                }
+            }
+
+    // ── Linked accounts ───────────────────────────────────────────────────────
+
+    private fun linkRef(ownerUid: String, otherUid: String) =
+        db.collection(Paths.USERS).document(ownerUid)
+            .collection(Paths.LINKS_SUB).document(otherUid)
+
+    // Both sides of a pairing are written at once so neither can be left with a
+    // dangling invite. My side records what I grant them; their side starts with
+    // no permissions until they accept and choose their own.
+    suspend fun createLinkInvite(
+        myUid: String,
+        myName: String,
+        myPhone: String,
+        otherUid: String,
+        otherName: String,
+        otherPhone: String,
+        permissions: LinkPermissions,
+    ): Result<Unit> = runCatching {
+        val batch = db.batch()
+        batch.set(linkRef(myUid, otherUid), mapOf(
+            "other_name" to otherName,
+            "other_phone" to otherPhone,
+            "state" to LinkState.PENDING_OUTGOING.firestoreValue,
+            "perm_auto_updates" to permissions.autoLocationUpdates,
+            "perm_request_location" to permissions.requestLocation,
+        ), SetOptions.merge())
+        batch.set(linkRef(otherUid, myUid), mapOf(
+            "other_name" to myName,
+            "other_phone" to myPhone,
+            "state" to LinkState.PENDING_INCOMING.firestoreValue,
+        ), SetOptions.merge())
+        batch.commit().await()
+    }
+
+    // Accepting flips both sides to active. Declining marks only my own side, so
+    // the inviter keeps a record of the outcome on theirs.
+    suspend fun setLinkState(
+        myUid: String,
+        otherUid: String,
+        state: LinkState,
+        alsoUpdateOtherSide: Boolean,
+    ): Result<Unit> = runCatching {
+        val batch = db.batch()
+        batch.set(linkRef(myUid, otherUid), mapOf("state" to state.firestoreValue), SetOptions.merge())
+        if (alsoUpdateOtherSide) {
+            batch.set(linkRef(otherUid, myUid), mapOf("state" to state.firestoreValue), SetOptions.merge())
+        }
+        batch.commit().await()
+    }
+
+    suspend fun setLinkPermissions(
+        myUid: String,
+        otherUid: String,
+        permissions: LinkPermissions,
+    ): Result<Unit> = runCatching {
+        linkRef(myUid, otherUid).set(
+            mapOf(
+                "perm_auto_updates" to permissions.autoLocationUpdates,
+                "perm_request_location" to permissions.requestLocation,
+            ),
+            SetOptions.merge(),
+        ).await()
+    }
+
+    // Removing takes out both sides; historical alerts stay untouched.
+    suspend fun deleteLink(myUid: String, otherUid: String): Result<Unit> = runCatching {
+        val batch = db.batch()
+        batch.delete(linkRef(myUid, otherUid))
+        batch.delete(linkRef(otherUid, myUid))
+        batch.commit().await()
+    }
+
+    fun getLinks(uid: String): Flow<List<AccountLinkDto>> =
+        db.collection(Paths.USERS).document(uid).collection(Paths.LINKS_SUB)
+            .snapshots()
+            .map { snap ->
+                snap.documents.mapNotNull { doc ->
+                    doc.toObject(AccountLinkDto::class.java)?.copy(otherUid = doc.id)
+                }
+            }
+
+    suspend fun getLinksOnce(uid: String): Result<List<AccountLinkDto>> = runCatching {
+        db.collection(Paths.USERS).document(uid).collection(Paths.LINKS_SUB)
+            .get().await().documents.mapNotNull { doc ->
+                doc.toObject(AccountLinkDto::class.java)?.copy(otherUid = doc.id)
+            }
+    }
+
+    // ── On-demand location requests ───────────────────────────────────────────
+
+    private fun locationRequests(targetUid: String) =
+        db.collection(Paths.USERS).document(targetUid).collection(Paths.LOCATION_REQUESTS_SUB)
+
+    // Returns the new request id so the asker can watch that one document for
+    // the answer instead of polling the whole collection.
+    suspend fun createLocationRequest(
+        targetUid: String,
+        requesterUid: String,
+        requesterName: String,
+    ): Result<String> = runCatching {
+        val ref = locationRequests(targetUid).document()
+        ref.set(mapOf(
+            "requester_uid" to requesterUid,
+            "requester_name" to requesterName,
+            "status" to LocationRequest.PENDING,
+            "answer" to "",
+            "created_at" to Timestamp.now(),
+        )).await()
+        ref.id
+    }
+
+    fun watchLocationRequest(targetUid: String, requestId: String): Flow<LocationRequestDto?> =
+        locationRequests(targetUid).document(requestId).snapshots()
+            .map { snap -> snap.toObject(LocationRequestDto::class.java)?.copy(id = snap.id) }
+
+    fun watchPendingLocationRequests(uid: String): Flow<List<LocationRequestDto>> =
+        locationRequests(uid).whereEqualTo("status", LocationRequest.PENDING)
+            .snapshots()
+            .map { snap ->
+                snap.documents.mapNotNull { doc ->
+                    doc.toObject(LocationRequestDto::class.java)?.copy(id = doc.id)
+                }
+            }
+
+    suspend fun answerLocationRequest(
+        uid: String,
+        requestId: String,
+        status: String,
+        answer: String,
+    ): Result<Unit> = runCatching {
+        locationRequests(uid).document(requestId).update(
+            mapOf("status" to status, "answer" to answer, "answered_at" to Timestamp.now())
+        ).await()
     }
 }

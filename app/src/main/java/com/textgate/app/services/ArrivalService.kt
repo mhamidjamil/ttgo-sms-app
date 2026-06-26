@@ -10,13 +10,15 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
-import android.net.wifi.WifiManager
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.textgate.app.R
 import com.textgate.app.core.utils.RoutineAnalyzer
 import com.textgate.app.core.utils.WifiConfig
+import com.textgate.app.core.utils.currentBssid
+import com.textgate.app.domain.repository.LinkRepository
 import com.textgate.app.domain.repository.UserRepository
+import com.textgate.app.domain.usecase.links.AnswerLocationRequestsUseCase
 import com.textgate.app.domain.usecase.location.RecordArrivalUseCase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +33,8 @@ class ArrivalService : Service() {
 
     private val userRepo: UserRepository by inject()
     private val recordArrival: RecordArrivalUseCase by inject()
+    private val linkRepo: LinkRepository by inject()
+    private val answerLocationRequest: AnswerLocationRequestsUseCase by inject()
     private val routineAnalyzer = RoutineAnalyzer()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -38,9 +42,6 @@ class ArrivalService : Service() {
 
     private val connectivityManager by lazy {
         getSystemService(ConnectivityManager::class.java)
-    }
-    private val wifiManager by lazy {
-        applicationContext.getSystemService(WifiManager::class.java)
     }
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
@@ -55,6 +56,7 @@ class ArrivalService : Service() {
         connectivityManager.registerNetworkCallback(buildNetworkRequest(), networkCallback)
         // Check current WiFi immediately in case already connected
         checkAndStartTimer()
+        watchLocationRequests()
     }
 
     override fun onDestroy() {
@@ -94,17 +96,26 @@ class ArrivalService : Service() {
         }
     }
 
+    // A linked account can ask where we are at any moment, so this listens for
+    // the whole life of the service rather than only on WiFi changes. The answer
+    // is resolved from the CURRENT network, so it has to be read per request.
+    private fun watchLocationRequests() {
+        scope.launch {
+            val uid = userRepo.currentFirebaseUser()?.uid ?: return@launch
+            linkRepo.watchPendingRequests(uid).collect { pending ->
+                pending.forEach { request ->
+                    answerLocationRequest(uid, request, getCurrentBssid())
+                }
+            }
+        }
+    }
+
     private fun cancelAllTimers() {
         stabilityJobs.values.forEach { it.cancel() }
         stabilityJobs.clear()
     }
 
-    @Suppress("DEPRECATION")
-    private fun getCurrentBssid(): String? = try {
-        wifiManager.connectionInfo?.bssid?.takeIf { it != "02:00:00:00:00:00" }
-    } catch (_: Exception) {
-        null
-    }
+    private fun getCurrentBssid(): String? = currentBssid(this)
 
     private fun buildNetworkRequest() = NetworkRequest.Builder()
         .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)

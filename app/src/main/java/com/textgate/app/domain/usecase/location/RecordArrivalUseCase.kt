@@ -2,29 +2,54 @@ package com.textgate.app.domain.usecase.location
 
 import com.textgate.app.core.utils.DateUtils
 import com.textgate.app.domain.model.PlaceContact
+import com.textgate.app.domain.repository.AlertRepository
+import com.textgate.app.domain.repository.LinkRepository
 import com.textgate.app.domain.repository.SmsRepository
 import com.textgate.app.domain.repository.UserRepository
 import com.textgate.app.domain.repository.WhatsAppRepository
+import com.textgate.app.domain.usecase.sms.EnqueueSmsUseCase
 
 class RecordArrivalUseCase(
     private val userRepo: UserRepository,
     private val smsRepo: SmsRepository,
     private val waRepo: WhatsAppRepository,
+    private val alertRepo: AlertRepository,
+    private val linkRepo: LinkRepository,
 ) {
+    companion object {
+        // Recipients can turn these alerts off themselves, so every message has
+        // to say so. Kept short on purpose: a 90-char place message plus the
+        // signature plus this still fits one 160-char GSM-7 segment.
+        const val MANAGE_FOOTER = "\n- Stop alerts: TextGate app"
+    }
+
     suspend operator fun invoke(uid: String, placeId: String, routineTriggered: Boolean): Result<Unit> = runCatching {
         val user = userRepo.getCurrentUser() ?: error("User not found")
         val place = user.places.find { it.id == placeId } ?: return@runCatching
 
-        // Per-place contacts; empty → the default guardian number (no name).
-        val recipients = place.contacts
-            .filter { it.number.isNotBlank() }
-            .ifEmpty { listOf(PlaceContact(name = "", number = user.guardianNumber)) }
-            .filter { it.number.isNotBlank() }
-            .distinctBy { it.number }
-        if (recipients.isEmpty()) return@runCatching
-
         val today = DateUtils.todayString()
         if (user.lastArrivalDateByPlace[placeId] == today) return@runCatching // one alert/day/place
+
+        // The default guardian is ALWAYS notified, plus every contact configured
+        // for this place, plus any linked account granted automatic updates. One
+        // SMS job per recipient, because the TTGO module sends one at a time.
+        // Named entries come first so a number that appears twice keeps its name.
+        val linked = linkRepo.activeLinks(uid)
+            .filter { it.permissions.autoLocationUpdates }
+            .map { PlaceContact(name = it.otherName, number = it.otherPhone) }
+        val candidates = (place.contacts + linked + PlaceContact(name = "", number = user.guardianNumber))
+            .filter { it.number.isNotBlank() }
+            .distinctBy { it.number }
+        // Anyone who unsubscribed in their own copy of the app is skipped.
+        val recipients = candidates.filter { alertRepo.isAllowed(it.number, uid) }
+        if (recipients.isEmpty()) {
+            // Everyone opted out: record the day anyway so the service stops
+            // re-checking this place until tomorrow.
+            if (candidates.isNotEmpty()) {
+                userRepo.recordArrival(uid, placeId, today, DateUtils.currentTimeHHmm())
+            }
+            return@runCatching
+        }
 
         // Capture the ARRIVAL time now — queueing can delay actual delivery by
         // minutes, and the receiver must see when the arrival happened, not
@@ -34,8 +59,14 @@ class RecordArrivalUseCase(
         // Per-place custom message, or the default arrival line — the event
         // timestamp is ALWAYS appended. WhatsApp can carry its own text.
         val defaultLine = "${user.name} arrived at $label"
-        val message = place.message.ifBlank { defaultLine } + " at $arrivalTime"
-        val waText = place.waMessage.ifBlank { place.message }.ifBlank { defaultLine } + " at $arrivalTime"
+        // Same accountability signature as a manual send: the SMS gateway number
+        // is shared between users, so an arrival alert has to name the verified
+        // sender it came from. Skipped only when there is no verified number yet.
+        val signature =
+            if (user.phoneNumber.isBlank()) "" else EnqueueSmsUseCase.signature(user.phoneNumber)
+        val suffix = " at $arrivalTime" + signature + MANAGE_FOOTER
+        val message = place.message.ifBlank { defaultLine } + suffix
+        val waText = place.waMessage.ifBlank { place.message }.ifBlank { defaultLine } + suffix
 
         // WhatsApp first when a gateway account is linked (free, no SMS quota);
         // fall back to the SMS gateway per recipient when unlinked or the send
@@ -68,6 +99,14 @@ class RecordArrivalUseCase(
                     routineTriggered = routineTriggered,
                 ).onSuccess { delivered++ }.onFailure { lastFailure = it }
             }
+            // Leaves a trail the recipient can find when they install the app,
+            // even if that is months from now.
+            alertRepo.recordSubscription(
+                recipientPhone = contact.number,
+                senderUid = uid,
+                senderName = user.name,
+                senderPhone = user.phoneNumber,
+            )
         }
         // Nobody reached → surface the error and leave the day unrecorded so the
         // service can retry. Partial success records the arrival, otherwise a

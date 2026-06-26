@@ -23,6 +23,12 @@ interface SmsRepository {
         routineTriggered: Boolean,
     ): Result<Unit>
     suspend fun updateAutoHistoryStatus(uid: String, entryId: String, status: String): Result<Unit>
+    suspend fun retryAutoArrivalSms(
+        uid: String,
+        entryId: String,
+        phoneNumber: String,
+        message: String,
+    ): Result<Unit>
     suspend fun enqueueAutoArrivalSms(
         uid: String,
         phoneNumber: String,

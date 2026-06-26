@@ -1,0 +1,46 @@
+package com.textgate.app.domain.repository
+
+import com.textgate.app.domain.model.AccountLink
+import com.textgate.app.domain.model.LinkPermissions
+import com.textgate.app.domain.model.LinkState
+import com.textgate.app.domain.model.LocationRequest
+import kotlinx.coroutines.flow.Flow
+
+interface LinkRepository {
+    // Publishes uid + name against a verified number so invites can find this
+    // account. Called once the number is verified.
+    suspend fun publishDirectoryEntry(phoneNumber: String, uid: String, name: String): Result<Unit>
+    // (uid, name) of whoever verified this number, or null when nobody has.
+    suspend fun lookupByPhone(phoneNumber: String): Result<Pair<String, String>?>
+
+    suspend fun invite(
+        myUid: String,
+        myName: String,
+        myPhone: String,
+        otherUid: String,
+        otherName: String,
+        otherPhone: String,
+        permissions: LinkPermissions,
+    ): Result<Unit>
+
+    suspend fun setState(
+        myUid: String,
+        otherUid: String,
+        state: LinkState,
+        alsoUpdateOtherSide: Boolean,
+    ): Result<Unit>
+
+    suspend fun setPermissions(myUid: String, otherUid: String, permissions: LinkPermissions): Result<Unit>
+    suspend fun remove(myUid: String, otherUid: String): Result<Unit>
+    fun getLinks(uid: String): Flow<List<AccountLink>>
+    // One-shot read of my approved links, for callers with no screen to keep a
+    // flow alive (the arrival service, the location-request answerer).
+    suspend fun activeLinks(uid: String): List<AccountLink>
+
+    // On-demand location: the asker creates a request in the target's own
+    // subcollection and watches that one document for the answer.
+    suspend fun requestLocation(targetUid: String, requesterUid: String, requesterName: String): Result<String>
+    fun watchLocationRequest(targetUid: String, requestId: String): Flow<LocationRequest?>
+    fun watchPendingRequests(uid: String): Flow<List<LocationRequest>>
+    suspend fun answerRequest(uid: String, requestId: String, status: String, answer: String): Result<Unit>
+}

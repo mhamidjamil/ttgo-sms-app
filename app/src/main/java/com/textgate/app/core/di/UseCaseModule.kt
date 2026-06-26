@@ -6,8 +6,12 @@ import com.textgate.app.domain.usecase.auth.SignInUseCase
 import com.textgate.app.domain.usecase.auth.SignUpUseCase
 import com.textgate.app.domain.usecase.auth.VerifyEmailOtpUseCase
 import com.textgate.app.domain.usecase.auth.VerifyPhoneOtpUseCase
+import com.textgate.app.domain.usecase.alerts.UnsubscribeFromSenderUseCase
 import com.textgate.app.domain.usecase.auto.GetAutoHistoryUseCase
 import com.textgate.app.domain.usecase.auto.RefreshAutoJobStatusUseCase
+import com.textgate.app.domain.usecase.auto.RetryAutoArrivalUseCase
+import com.textgate.app.domain.usecase.links.AnswerLocationRequestsUseCase
+import com.textgate.app.domain.usecase.links.InviteLinkUseCase
 import com.textgate.app.domain.usecase.location.RecordArrivalUseCase
 import com.textgate.app.domain.usecase.location.SavePlacesUseCase
 import com.textgate.app.domain.usecase.quota.CheckAndResetQuotaUseCase
@@ -32,10 +36,15 @@ val useCaseModule = module {
     factory { GetHistoryUseCase(get()) }
     factory { RefreshJobStatusUseCase(get()) }
     factory { SendPhoneOtpUseCase(get(), get(), get(), get()) }
-    factory { VerifyPhoneOtpUseCase(get()) }
+    factory { VerifyPhoneOtpUseCase(get(), get()) }
     // V2
     factory { SavePlacesUseCase(get()) }
-    factory { RecordArrivalUseCase(get(), get(), get()) }
+    factory { RecordArrivalUseCase(get(), get(), get(), get(), get()) }
     factory { GetAutoHistoryUseCase(get()) }
     factory { RefreshAutoJobStatusUseCase(get()) }
+    factory { RetryAutoArrivalUseCase(get()) }
+    // Alert subscriptions + linked accounts
+    factory { UnsubscribeFromSenderUseCase(get()) }
+    factory { InviteLinkUseCase(get(), get(), get()) }
+    factory { AnswerLocationRequestsUseCase(get(), get()) }
 }

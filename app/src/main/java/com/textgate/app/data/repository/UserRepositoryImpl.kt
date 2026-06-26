@@ -1,12 +1,18 @@
 package com.textgate.app.data.repository
 
+import android.util.Log
 import com.google.firebase.auth.FirebaseUser
 import com.textgate.app.data.firebase.FirebaseAuthDataSource
 import com.textgate.app.data.firebase.FirestoreDataSource
 import com.textgate.app.data.local.PreferencesDataSource
 import com.textgate.app.domain.model.Place
+import com.textgate.app.domain.model.SettingsChange
 import com.textgate.app.domain.model.User
 import com.textgate.app.domain.repository.UserRepository
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+
+private const val TAG = "UserRepository"
 
 class UserRepositoryImpl(
     private val auth: FirebaseAuthDataSource,
@@ -50,9 +56,17 @@ class UserRepositoryImpl(
 
     override suspend fun getCurrentUser(): User? {
         val fbUser = auth.currentUser() ?: return null
-        val existing = firestore.getUser(fbUser.uid).getOrNull()
+        // A FAILED read must never fall through to the auto-heal write below.
+        // getOrNull() used to flatten "read failed" and "doc missing" into null,
+        // so any offline/timeout read (the arrival service does one on every WiFi
+        // connect) re-created the document and wiped the saved settings.
+        val existing = firestore.getUser(fbUser.uid).getOrElse { error ->
+            Log.w(TAG, "user doc read failed for ${fbUser.uid}, skipping auto-heal", error)
+            return null
+        }
         if (existing != null) return existing.toDomain()
         // Auto-heal: create the doc if it was never written (e.g. signed up before V1.5)
+        Log.i(TAG, "user doc missing for ${fbUser.uid}, creating it")
         val quota = firestore.getDeviceFreeSmsQuota().getOrDefault(10)
         firestore.createUser(
             uid = fbUser.uid,
@@ -96,8 +110,17 @@ class UserRepositoryImpl(
 
     // ── Phone verification (V1.5) ─────────────────────────────────────────────
 
-    override suspend fun savePhoneNumber(uid: String, phoneNumber: String) =
-        firestore.savePhoneNumber(uid, phoneNumber)
+    // Saving a number also clears phone_verified, so it is audited: this is the
+    // one legitimate path that can un-verify a phone, and the audit line tells
+    // the two cases apart when a user reports "my number un-verified itself".
+    override suspend fun savePhoneNumber(uid: String, phoneNumber: String): Result<Unit> {
+        val previous = firestore.getUser(uid).getOrNull()
+        val result = firestore.savePhoneNumber(uid, phoneNumber)
+        if (result.isSuccess && previous?.phoneNumber != phoneNumber) {
+            logChange(uid, "Phone number", previous?.phoneNumber.orEmpty(), phoneNumber)
+        }
+        return result
+    }
 
     override suspend fun savePhoneOtp(uid: String, otp: String) =
         firestore.savePhoneOtp(uid, otp)
@@ -105,8 +128,10 @@ class UserRepositoryImpl(
     override suspend fun getPhoneOtp(uid: String) =
         firestore.getPhoneOtp(uid)
 
-    override suspend fun markPhoneVerified(uid: String) =
-        firestore.markPhoneVerified(uid)
+    override suspend fun markPhoneVerified(uid: String): Result<Unit> =
+        firestore.markPhoneVerified(uid).onSuccess {
+            logChange(uid, "Phone verified", "no", "yes")
+        }
 
     // ── Email verification (OTP) ──────────────────────────────────────────────
 
@@ -116,8 +141,14 @@ class UserRepositoryImpl(
     override suspend fun getEmailOtp(uid: String) =
         firestore.getEmailOtp(uid)
 
-    override suspend fun markEmailVerified(uid: String) =
-        firestore.markEmailVerified(uid)
+    override suspend fun markEmailVerified(uid: String): Result<Unit> =
+        firestore.markEmailVerified(uid).onSuccess {
+            logChange(uid, "Email verified", "no", "yes")
+        }
+
+    private suspend fun logChange(uid: String, field: String, old: String, new: String) {
+        firestore.logSettingsChanges(uid, listOf(SettingsChange(field = field, oldValue = old, newValue = new)))
+    }
 
     // ── Arrival monitoring (V2) ───────────────────────────────────────────────
 
@@ -127,6 +158,15 @@ class UserRepositoryImpl(
         places: List<Place>,
     ) = firestore.savePlacesSettings(uid, guardianNumber, places)
 
+    override suspend fun savePlaces(uid: String, places: List<Place>) =
+        firestore.savePlaces(uid, places)
+
     override suspend fun recordArrival(uid: String, placeId: String, date: String, currentTime: String) =
         firestore.recordArrival(uid, placeId, date, currentTime)
+
+    override suspend fun logSettingsChanges(uid: String, changes: List<SettingsChange>) =
+        firestore.logSettingsChanges(uid, changes)
+
+    override fun getSettingsHistory(uid: String): Flow<List<SettingsChange>> =
+        firestore.getSettingsHistory(uid).map { list -> list.map { it.toDomain() } }
 }

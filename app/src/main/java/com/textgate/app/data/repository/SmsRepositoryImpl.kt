@@ -48,6 +48,13 @@ class SmsRepositoryImpl(private val firestore: FirestoreDataSource) : SmsReposit
     override suspend fun updateAutoHistoryStatus(uid: String, entryId: String, status: String): Result<Unit> =
         firestore.updateAutoHistoryStatus(uid, entryId, status)
 
+    override suspend fun retryAutoArrivalSms(
+        uid: String,
+        entryId: String,
+        phoneNumber: String,
+        message: String,
+    ): Result<Unit> = firestore.retryAutoArrivalSms(uid, entryId, phoneNumber, message)
+
     override fun getAutoHistory(uid: String): Flow<List<AutoHistoryEntry>> =
         firestore.getAutoHistory(uid).map { list -> list.map { it.toDomain() } }
 }

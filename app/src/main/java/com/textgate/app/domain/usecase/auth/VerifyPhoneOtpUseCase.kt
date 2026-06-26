@@ -1,8 +1,12 @@
 package com.textgate.app.domain.usecase.auth
 
+import com.textgate.app.domain.repository.LinkRepository
 import com.textgate.app.domain.repository.UserRepository
 
-class VerifyPhoneOtpUseCase(private val userRepo: UserRepository) {
+class VerifyPhoneOtpUseCase(
+    private val userRepo: UserRepository,
+    private val linkRepo: LinkRepository,
+) {
 
     companion object {
         // Codes are valid for 1 hour after being sent.
@@ -17,5 +21,13 @@ class VerifyPhoneOtpUseCase(private val userRepo: UserRepository) {
         }
         if (stored != inputCode.trim()) error("Incorrect code. Please try again.")
         userRepo.markPhoneVerified(uid).getOrThrow()
+        // Claim the number in the public lookup table so link invites can find
+        // this account. Best effort: a directory write must never undo a
+        // verification that already succeeded.
+        userRepo.getCurrentUser()?.let { user ->
+            if (user.phoneNumber.isNotBlank()) {
+                linkRepo.publishDirectoryEntry(user.phoneNumber, uid, user.name)
+            }
+        }
     }
 }

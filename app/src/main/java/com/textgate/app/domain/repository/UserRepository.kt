@@ -2,7 +2,9 @@ package com.textgate.app.domain.repository
 
 import com.google.firebase.auth.FirebaseUser
 import com.textgate.app.domain.model.Place
+import com.textgate.app.domain.model.SettingsChange
 import com.textgate.app.domain.model.User
+import kotlinx.coroutines.flow.Flow
 
 interface UserRepository {
     suspend fun signIn(email: String, password: String): Result<FirebaseUser>
@@ -38,5 +40,11 @@ interface UserRepository {
         guardianNumber: String,
         places: List<Place>,
     ): Result<Unit>
+    // Places only — leaves guardian_number untouched (used by the place editor).
+    suspend fun savePlaces(uid: String, places: List<Place>): Result<Unit>
     suspend fun recordArrival(uid: String, placeId: String, date: String, currentTime: String): Result<Unit>
+
+    // Settings audit trail
+    suspend fun logSettingsChanges(uid: String, changes: List<SettingsChange>): Result<Unit>
+    fun getSettingsHistory(uid: String): Flow<List<SettingsChange>>
 }

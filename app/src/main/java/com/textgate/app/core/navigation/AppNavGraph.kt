@@ -5,7 +5,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Icon
@@ -22,13 +22,15 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.textgate.app.presentation.alerts.AlertSourcesScreen
 import com.textgate.app.presentation.auth.LoginScreen
 import com.textgate.app.presentation.auth.PhoneVerifyScreen
 import com.textgate.app.presentation.auth.SignupScreen
-import com.textgate.app.presentation.auto.AutoScreen
 import com.textgate.app.presentation.history.HistoryScreen
+import com.textgate.app.presentation.links.LinkedAccountsScreen
 import com.textgate.app.presentation.profile.ProfileScreen
 import com.textgate.app.presentation.send.SendScreen
+import com.textgate.app.presentation.settings.SettingsHistoryScreen
 import com.textgate.app.presentation.settings.SettingsScreen
 import com.textgate.app.presentation.whatsapp.WhatsAppScreen
 
@@ -41,7 +43,7 @@ private data class BottomNavItem(
 private val bottomNavItems = listOf(
     BottomNavItem(Screen.Send, "Send", Icons.Default.Send),
     BottomNavItem(Screen.History, "History", Icons.Default.History),
-    BottomNavItem(Screen.Auto, "Auto", Icons.Default.Notifications),
+    BottomNavItem(Screen.Arrival, "Arrival", Icons.Default.LocationOn),
     BottomNavItem(Screen.Profile, "Profile", Icons.Default.Person),
 )
 
@@ -119,7 +121,13 @@ fun AppNavGraph(startDestination: String) {
             }
             composable(Screen.Send.route) { SendScreen() }
             composable(Screen.History.route) { HistoryScreen() }
-            composable(Screen.Auto.route) { AutoScreen() }
+            // A bottom-bar destination, so no back arrow — onBack is null here.
+            composable(Screen.Arrival.route) {
+                SettingsScreen(
+                    onBack = null,
+                    onViewChangeHistory = { navController.navigate(Screen.SettingsHistory.route) },
+                )
+            }
             composable(Screen.Profile.route) {
                 ProfileScreen(
                     onSignOut = {
@@ -130,19 +138,31 @@ fun AppNavGraph(startDestination: String) {
                     onVerifyPhone = {
                         navController.navigate(Screen.PhoneVerify.route)
                     },
-                    onNavigateToSettings = {
-                        navController.navigate(Screen.Settings.route)
+                    onNavigateToChangeHistory = {
+                        navController.navigate(Screen.SettingsHistory.route)
                     },
                     onNavigateToWhatsApp = {
                         navController.navigate(Screen.WhatsApp.route)
                     },
+                    onNavigateToAlertSources = {
+                        navController.navigate(Screen.AlertSources.route)
+                    },
+                    onNavigateToLinkedAccounts = {
+                        navController.navigate(Screen.LinkedAccounts.route)
+                    },
                 )
             }
-            composable(Screen.Settings.route) {
-                SettingsScreen(onBack = { navController.popBackStack() })
+            composable(Screen.SettingsHistory.route) {
+                SettingsHistoryScreen(onBack = { navController.popBackStack() })
             }
             composable(Screen.WhatsApp.route) {
                 WhatsAppScreen(onBack = { navController.popBackStack() })
+            }
+            composable(Screen.AlertSources.route) {
+                AlertSourcesScreen(onBack = { navController.popBackStack() })
+            }
+            composable(Screen.LinkedAccounts.route) {
+                LinkedAccountsScreen(onBack = { navController.popBackStack() })
             }
         }
     }

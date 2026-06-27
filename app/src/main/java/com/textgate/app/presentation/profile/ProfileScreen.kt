@@ -32,8 +32,10 @@ import org.koin.androidx.compose.koinViewModel
 fun ProfileScreen(
     onSignOut: () -> Unit,
     onVerifyPhone: () -> Unit,
-    onNavigateToSettings: () -> Unit = {},
+    onNavigateToChangeHistory: () -> Unit = {},
     onNavigateToWhatsApp: () -> Unit = {},
+    onNavigateToAlertSources: () -> Unit = {},
+    onNavigateToLinkedAccounts: () -> Unit = {},
     viewModel: ProfileViewModel = koinViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -52,8 +54,10 @@ fun ProfileScreen(
             scope.launch { viewModel.signOut(); onSignOut() }
         },
         onVerifyPhone = onVerifyPhone,
-        onNavigateToSettings = onNavigateToSettings,
+        onNavigateToChangeHistory = onNavigateToChangeHistory,
         onNavigateToWhatsApp = onNavigateToWhatsApp,
+        onNavigateToAlertSources = onNavigateToAlertSources,
+        onNavigateToLinkedAccounts = onNavigateToLinkedAccounts,
         onSendEmailCode = viewModel::sendEmailCode,
         onVerifyEmailCode = viewModel::verifyEmailCode,
         onUpdateName = viewModel::updateName,
@@ -65,8 +69,10 @@ private fun ProfileContent(
     uiState: ProfileUiState,
     onSignOut: () -> Unit,
     onVerifyPhone: () -> Unit,
-    onNavigateToSettings: () -> Unit,
+    onNavigateToChangeHistory: () -> Unit = {},
     onNavigateToWhatsApp: () -> Unit = {},
+    onNavigateToAlertSources: () -> Unit = {},
+    onNavigateToLinkedAccounts: () -> Unit = {},
     onSendEmailCode: () -> Unit = {},
     onVerifyEmailCode: (String) -> Unit = {},
     onUpdateName: (String) -> Unit = {},
@@ -225,18 +231,63 @@ private fun ProfileContent(
 
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Arrival Monitoring", style = MaterialTheme.typography.titleMedium)
+                        Text("Settings History", style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "Set up guardian SMS notifications when you arrive home or at office",
+                            "See when a setting changed and what it changed to. Arrival monitoring " +
+                                "itself now lives in the Arrival tab.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                         )
                         Spacer(Modifier.height(10.dp))
                         OutlinedButton(
-                            onClick = onNavigateToSettings,
+                            onClick = onNavigateToChangeHistory,
                             modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Setup Arrival Settings (V2)") }
+                        ) { Text("View Change History") }
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Linked Accounts", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Share your arrival status with people you trust, and choose what each " +
+                                "of them is allowed to see.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedButton(
+                            onClick = onNavigateToLinkedAccounts,
+                            enabled = user.phoneVerified,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Manage Linked Accounts") }
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Alerts You Receive", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            if (user.phoneVerified) {
+                                "People sending you automated location alerts. You can stop any of " +
+                                    "them yourself."
+                            } else {
+                                "Verify your phone number to see who is sending you automated alerts."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedButton(
+                            onClick = onNavigateToAlertSources,
+                            enabled = user.phoneVerified,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Manage Incoming Alerts") }
                     }
                 }
 
@@ -404,7 +455,7 @@ private fun ProfileVerifiedPreview() {
     TextGateTheme {
         ProfileContent(
             uiState = ProfileUiState(user = previewUser, effectiveQuota = 10),
-            onSignOut = {}, onVerifyPhone = {}, onNavigateToSettings = {},
+            onSignOut = {}, onVerifyPhone = {},
         )
     }
 }
@@ -418,7 +469,7 @@ private fun ProfileUnverifiedPreview() {
                 user = previewUser.copy(emailVerified = false, phoneVerified = false),
                 effectiveQuota = 2,
             ),
-            onSignOut = {}, onVerifyPhone = {}, onNavigateToSettings = {},
+            onSignOut = {}, onVerifyPhone = {},
         )
     }
 }
@@ -429,7 +480,7 @@ private fun ProfileLoadingPreview() {
     TextGateTheme {
         ProfileContent(
             uiState = ProfileUiState(isLoading = true),
-            onSignOut = {}, onVerifyPhone = {}, onNavigateToSettings = {},
+            onSignOut = {}, onVerifyPhone = {},
         )
     }
 }

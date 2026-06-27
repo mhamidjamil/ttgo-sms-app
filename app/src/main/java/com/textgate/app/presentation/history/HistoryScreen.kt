@@ -15,29 +15,67 @@ import com.textgate.app.core.theme.*
 import com.textgate.app.core.utils.DateUtils
 import com.textgate.app.domain.model.HistoryEntry
 import com.textgate.app.domain.model.SmsStatus
+import com.textgate.app.presentation.auto.AutoHistorySection
 import org.koin.androidx.compose.koinViewModel
 
+private enum class HistoryFilter(val label: String) {
+    MANUAL("Manual"),
+    AUTOMATED("Automated"),
+}
+
+/**
+ * Single History page for both message types. Manual and automated messages are
+ * both history, so they share one destination and a filter instead of two tabs.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen(viewModel: HistoryViewModel = koinViewModel()) {
+    var filter by remember { mutableStateOf(HistoryFilter.MANUAL) }
+
+    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Text("History", style = MaterialTheme.typography.headlineMedium)
+        Spacer(Modifier.height(10.dp))
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            HistoryFilter.entries.forEachIndexed { index, option ->
+                SegmentedButton(
+                    selected = filter == option,
+                    onClick = { filter = option },
+                    shape = SegmentedButtonDefaults.itemShape(index, HistoryFilter.entries.size),
+                ) { Text(option.label) }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        when (filter) {
+            // Each half keeps its own ViewModel, so switching the filter does not
+            // reload the other list or restart its status polling.
+            HistoryFilter.MANUAL -> ManualHistorySection(viewModel)
+            HistoryFilter.AUTOMATED -> AutoHistorySection()
+        }
+    }
+}
+
+@Composable
+private fun ManualHistorySection(viewModel: HistoryViewModel) {
     val uiState by viewModel.uiState.collectAsState()
     DisposableEffect(Unit) {
         viewModel.startPolling()
         onDispose { viewModel.stopPolling() }
     }
-    HistoryContent(
-        uiState = uiState,
-        onRefresh = viewModel::refreshEntry,
-    )
+    ManualHistoryContent(uiState = uiState, onRefresh = viewModel::refreshEntry)
 }
 
 @Composable
-private fun HistoryContent(
+private fun ManualHistoryContent(
     uiState: HistoryUiState,
     onRefresh: (HistoryEntry) -> Unit,
 ) {
-    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Text("SMS History", style = MaterialTheme.typography.headlineMedium)
-        Spacer(Modifier.height(8.dp))
+    Column(Modifier.fillMaxSize()) {
+        Text(
+            "Messages you composed and sent yourself",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+        )
+        Spacer(Modifier.height(12.dp))
         when {
             uiState.isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
@@ -126,7 +164,7 @@ private val sampleEntries = listOf(
 @Composable
 private fun HistoryWithEntriesPreview() {
     TextGateTheme {
-        HistoryContent(uiState = HistoryUiState(entries = sampleEntries, isLoading = false), onRefresh = {})
+        ManualHistoryContent(uiState = HistoryUiState(entries = sampleEntries, isLoading = false), onRefresh = {})
     }
 }
 
@@ -134,7 +172,7 @@ private fun HistoryWithEntriesPreview() {
 @Composable
 private fun HistoryEmptyPreview() {
     TextGateTheme {
-        HistoryContent(uiState = HistoryUiState(entries = emptyList(), isLoading = false), onRefresh = {})
+        ManualHistoryContent(uiState = HistoryUiState(entries = emptyList(), isLoading = false), onRefresh = {})
     }
 }
 
@@ -142,6 +180,6 @@ private fun HistoryEmptyPreview() {
 @Composable
 private fun HistoryLoadingPreview() {
     TextGateTheme {
-        HistoryContent(uiState = HistoryUiState(isLoading = true), onRefresh = {})
+        ManualHistoryContent(uiState = HistoryUiState(isLoading = true), onRefresh = {})
     }
 }

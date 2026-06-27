@@ -8,6 +8,7 @@ import com.textgate.app.domain.model.SmsStatus
 import com.textgate.app.domain.repository.UserRepository
 import com.textgate.app.domain.usecase.auto.GetAutoHistoryUseCase
 import com.textgate.app.domain.usecase.auto.RefreshAutoJobStatusUseCase
+import com.textgate.app.domain.usecase.auto.RetryAutoArrivalUseCase
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,12 +22,14 @@ data class AutoUiState(
     val entries: List<AutoHistoryEntry> = emptyList(),
     val isLoading: Boolean = true,
     val error: String? = null,
+    val busyIds: Set<String> = emptySet(),
 )
 
 class AutoViewModel(
     private val userRepo: UserRepository,
     private val getAutoHistory: GetAutoHistoryUseCase,
     private val refreshStatus: RefreshAutoJobStatusUseCase,
+    private val retryArrival: RetryAutoArrivalUseCase,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AutoUiState())
@@ -61,6 +64,36 @@ class AutoViewModel(
     }
 
     fun stopPolling() { pollJob?.cancel(); pollJob = null }
+
+    // Manual reload of one entry, matching the refresh button on manual history.
+    fun refreshEntry(entry: AutoHistoryEntry) {
+        val uid = userRepo.currentFirebaseUser()?.uid ?: return
+        viewModelScope.launch {
+            markBusy(entry.id, true)
+            refreshStatus(uid, entry).onFailure {
+                _uiState.value = _uiState.value.copy(error = it.message ?: "Could not refresh status")
+            }
+            markBusy(entry.id, false)
+        }
+    }
+
+    fun retryEntry(entry: AutoHistoryEntry) {
+        val uid = userRepo.currentFirebaseUser()?.uid ?: return
+        viewModelScope.launch {
+            markBusy(entry.id, true)
+            retryArrival(uid, entry).onFailure {
+                _uiState.value = _uiState.value.copy(error = it.message ?: "Could not retry")
+            }
+            markBusy(entry.id, false)
+        }
+    }
+
+    fun clearError() { _uiState.value = _uiState.value.copy(error = null) }
+
+    private fun markBusy(id: String, busy: Boolean) {
+        val ids = _uiState.value.busyIds
+        _uiState.value = _uiState.value.copy(busyIds = if (busy) ids + id else ids - id)
+    }
 
     private suspend fun refreshPendingEntries() {
         val uid = userRepo.currentFirebaseUser()?.uid ?: return

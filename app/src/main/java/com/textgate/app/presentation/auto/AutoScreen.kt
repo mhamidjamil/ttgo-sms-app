@@ -3,6 +3,8 @@ package com.textgate.app.presentation.auto
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,23 +19,32 @@ import com.textgate.app.domain.model.SmsStatus
 import org.koin.androidx.compose.koinViewModel
 import java.util.Date
 
+/**
+ * Automated half of the merged History page. Polls job statuses while visible so
+ * "Pending" chips resolve to sent/failed instead of sticking forever, and offers
+ * per-entry reload and retry just like the manual list.
+ */
 @Composable
-fun AutoScreen(viewModel: AutoViewModel = koinViewModel()) {
+fun AutoHistorySection(viewModel: AutoViewModel = koinViewModel()) {
     val uiState by viewModel.uiState.collectAsState()
-    // Poll job statuses while the screen is visible — same as the History page —
-    // so "Pending" chips resolve to sent/failed instead of sticking forever.
     DisposableEffect(Unit) {
         viewModel.startPolling()
         onDispose { viewModel.stopPolling() }
     }
-    AutoContent(uiState = uiState)
+    AutoContent(
+        uiState = uiState,
+        onRefresh = viewModel::refreshEntry,
+        onRetry = viewModel::retryEntry,
+    )
 }
 
 @Composable
-private fun AutoContent(uiState: AutoUiState) {
-    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Text("Auto Notifications", style = MaterialTheme.typography.headlineMedium)
-        Spacer(Modifier.height(4.dp))
+private fun AutoContent(
+    uiState: AutoUiState,
+    onRefresh: (AutoHistoryEntry) -> Unit,
+    onRetry: (AutoHistoryEntry) -> Unit,
+) {
+    Column(Modifier.fillMaxSize()) {
         Text(
             "Notifications sent to your contacts when you arrive at a saved place",
             style = MaterialTheme.typography.bodySmall,
@@ -54,7 +65,7 @@ private fun AutoContent(uiState: AutoUiState) {
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "Set up arrival monitoring in Profile → Settings",
+                        "Set up arrival monitoring in the Arrival tab",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
                     )
@@ -62,7 +73,12 @@ private fun AutoContent(uiState: AutoUiState) {
             }
             else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(uiState.entries, key = { it.id }) { entry ->
-                    AutoEntryCard(entry = entry)
+                    AutoEntryCard(
+                        entry = entry,
+                        isBusy = entry.id in uiState.busyIds,
+                        onRefresh = { onRefresh(entry) },
+                        onRetry = { onRetry(entry) },
+                    )
                 }
             }
         }
@@ -70,7 +86,12 @@ private fun AutoContent(uiState: AutoUiState) {
 }
 
 @Composable
-private fun AutoEntryCard(entry: AutoHistoryEntry) {
+private fun AutoEntryCard(
+    entry: AutoHistoryEntry,
+    isBusy: Boolean,
+    onRefresh: () -> Unit,
+    onRetry: () -> Unit,
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -78,7 +99,6 @@ private fun AutoEntryCard(entry: AutoHistoryEntry) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 // Stored label (any custom place); legacy entries only have the id.
@@ -93,8 +113,19 @@ private fun AutoEntryCard(entry: AutoHistoryEntry) {
                     "Arrived at $locationLabel",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
                 )
                 StatusChip(entry.status)
+                // WhatsApp deliveries have no gateway job to poll, so no reload.
+                if (entry.channel == "sms") {
+                    IconButton(onClick = onRefresh, enabled = !isBusy) {
+                        if (isBusy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        else Icon(
+                            Icons.Default.Refresh, contentDescription = "Refresh status",
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
             }
             Spacer(Modifier.height(6.dp))
             Text(
@@ -136,6 +167,13 @@ private fun AutoEntryCard(entry: AutoHistoryEntry) {
                     }
                 }
             }
+            val canRetry = entry.channel == "sms" &&
+                (entry.status == SmsStatus.FAILED || entry.status == SmsStatus.BLOCKED ||
+                    entry.status == SmsStatus.UNKNOWN)
+            if (canRetry) {
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = onRetry, enabled = !isBusy) { Text("Retry") }
+            }
         }
     }
 }
@@ -173,22 +211,35 @@ private val sampleAutoEntries = listOf(
         sentAt = Date(), status = SmsStatus.SENT, jobPhoneKey = "+923001234567",
         message = "Alice arrived at Ali's home at 7:42 PM", routineTriggered = false,
     ),
+    AutoHistoryEntry(
+        id = "3", location = "home", locationLabel = "Home", channel = "sms",
+        sentAt = Date(), status = SmsStatus.FAILED, jobPhoneKey = "+923009876543",
+        message = "Alice arrived at Home at 6:10 PM", routineTriggered = false,
+    ),
 )
 
 @Preview(showBackground = true, name = "Auto — With arrivals")
 @Composable
 private fun AutoWithEntriesPreview() {
-    TextGateTheme { AutoContent(uiState = AutoUiState(entries = sampleAutoEntries)) }
+    TextGateTheme {
+        AutoContent(uiState = AutoUiState(entries = sampleAutoEntries, isLoading = false),
+            onRefresh = {}, onRetry = {})
+    }
 }
 
 @Preview(showBackground = true, name = "Auto — Empty")
 @Composable
 private fun AutoEmptyPreview() {
-    TextGateTheme { AutoContent(uiState = AutoUiState(entries = emptyList())) }
+    TextGateTheme {
+        AutoContent(uiState = AutoUiState(entries = emptyList(), isLoading = false),
+            onRefresh = {}, onRetry = {})
+    }
 }
 
 @Preview(showBackground = true, name = "Auto — Loading")
 @Composable
 private fun AutoLoadingPreview() {
-    TextGateTheme { AutoContent(uiState = AutoUiState(isLoading = true)) }
+    TextGateTheme {
+        AutoContent(uiState = AutoUiState(isLoading = true), onRefresh = {}, onRetry = {})
+    }
 }

@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -36,10 +37,15 @@ import com.textgate.app.services.ArrivalService
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 
+/**
+ * Arrival monitoring settings. Reached as its own bottom-bar tab, where there is
+ * nothing to go back to — pass a null [onBack] to hide the back arrow.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    onBack: () -> Unit,
+    onBack: (() -> Unit)? = null,
+    onViewChangeHistory: () -> Unit = {},
     viewModel: SettingsViewModel = koinViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -94,7 +100,7 @@ fun SettingsScreen(
 
     LaunchedEffect(uiState.saveSuccess) {
         if (uiState.saveSuccess) {
-            snackbarHostState.showSnackbar("Settings saved")
+            snackbarHostState.showSnackbar("Saved")
             viewModel.clearSuccess()
         }
     }
@@ -167,6 +173,7 @@ fun SettingsScreen(
         },
         onSave = { guardian -> viewModel.save(guardian) },
         onBack = onBack,
+        onViewChangeHistory = onViewChangeHistory,
     )
 }
 
@@ -184,7 +191,8 @@ private fun SettingsContent(
     isMonitoring: Boolean,
     onMonitoringToggle: (Boolean) -> Unit,
     onSave: (String) -> Unit,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)? = null,
+    onViewChangeHistory: () -> Unit = {},
 ) {
     val phoneNormalizer = remember { PhoneNormalizer() }
     val guardianError = phoneNormalizer.validationError(guardianNumber)
@@ -194,10 +202,17 @@ private fun SettingsContent(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Arrival Settings") },
+                title = { Text("Arrival Monitoring") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    if (onBack != null) {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    }
+                },
+                actions = {
+                    IconButton(onClick = onViewChangeHistory) {
+                        Icon(Icons.Default.History, contentDescription = "Change history")
                     }
                 },
             )
@@ -216,7 +231,7 @@ private fun SettingsContent(
         ) {
             SectionTitle("Default Guardian")
             Text(
-                "Used for places that have no contacts of their own",
+                "Always notified, on top of any contacts a place has of its own",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
@@ -235,7 +250,7 @@ private fun SettingsContent(
             Spacer(Modifier.height(20.dp))
             SectionTitle("Places")
             Text(
-                "Tap a place to manage its contacts and arrival message.",
+                "Tap a place to manage its contacts and arrival message. Place edits save immediately.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
@@ -298,7 +313,7 @@ private fun SettingsContent(
                     CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp,
                         color = MaterialTheme.colorScheme.onPrimary)
                 } else {
-                    Text("Save Settings", style = MaterialTheme.typography.titleLarge)
+                    Text("Save Guardian Number", style = MaterialTheme.typography.titleLarge)
                 }
             }
             Spacer(Modifier.height(16.dp))
@@ -337,9 +352,9 @@ private fun PlaceCard(
                             append(" · ")
                             append(
                                 when (place.contacts.size) {
-                                    0 -> "default guardian"
-                                    1 -> "1 contact"
-                                    else -> "${place.contacts.size} contacts"
+                                    0 -> "guardian only"
+                                    1 -> "guardian + 1 contact"
+                                    else -> "guardian + ${place.contacts.size} contacts"
                                 }
                             )
                             if (place.message.isNotBlank()) append(" · custom message")
@@ -426,8 +441,8 @@ private fun PlaceEditorDialog(
                 Text("Contacts", style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary)
                 Text(
-                    if (contacts.isEmpty()) "None yet — the default guardian will be notified."
-                    else "Everyone below is notified when you arrive here.",
+                    "The default guardian is always notified. Anyone added below is notified too, " +
+                        "one message each.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 )

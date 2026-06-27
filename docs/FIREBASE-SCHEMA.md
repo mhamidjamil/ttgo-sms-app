@@ -120,6 +120,97 @@ Arrival-triggered jobs.
 
 ---
 
+### `ttgo_users/{uid}/settings_history/{autoId}`
+
+Audit trail of settings edits, so a value that disappears on its own can be
+traced to whatever wrote it. Newest 200 entries are shown in the app.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `field` | string | Human label, e.g. `"Guardian number"`, `"Home WiFi"`, `"Arrival monitoring"` |
+| `old_value` | string | Value before the change (`""` when it was unset) |
+| `new_value` | string | Value after the change |
+| `changed_at` | timestamp | When the change was written |
+
+Recorded for: the guardian number, per-place name / BSSID / message / contacts,
+places added and removed, the arrival-monitoring switch, the phone number, and
+the phone/email verification flags.
+
+---
+
+### `ttgo_users/{uid}/links/{otherUid}`
+
+One side of a linked-account pairing. Each user keeps their own document for the
+same pairing, so revoking is always a write to your own side.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `other_name` | string | Display name of the other account |
+| `other_phone` | string | E.164 number of the other account |
+| `state` | string | `pending_outgoing` (I invited them) / `pending_incoming` (they invited me) / `active` / `declined` |
+| `perm_auto_updates` | bool | They receive MY arrival alerts automatically |
+| `perm_request_location` | bool | They may ask where I am right now |
+
+Permissions on my document describe what the other person may do with **my**
+location. A link does nothing until both sides are `active`.
+
+---
+
+### `ttgo_users/{uid}/location_requests/{autoId}`
+
+On-demand "where are you?" asks, written by the requester into the **target's**
+subcollection and answered by the target's device.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `requester_uid` | string | Who is asking |
+| `requester_name` | string | Their display name, for the target's records |
+| `status` | string | `pending` → `answered` / `denied` |
+| `answer` | string | Human-readable place name only, e.g. `"Hamid is at Office."` — never a BSSID, never coordinates |
+| `created_at` | timestamp | When the request was made |
+| `answered_at` | timestamp | When the target's device replied |
+
+Answered by `ArrivalService` while monitoring is on, and by `MainActivity` when
+the app is opened. A request with no permission behind it is set to `denied`
+rather than ignored, so the asker's screen stops waiting.
+
+---
+
+### `alert_subscriptions/{recipient_phone}/senders/{senderUid}` (top-level)
+
+Recipient-owned control over automated location alerts. Keyed by the recipient's
+E.164 number rather than their uid, so the record can be created long before that
+person installs the app and found again as soon as they verify the same number.
+
+| Field | Type | Written by | Description |
+|-------|------|-----------|-------------|
+| `sender_name` | string | sender | Display name shown to the recipient |
+| `sender_phone` | string | sender | Sender's verified number, used for the unsubscribe notice |
+| `subscribed` | bool | recipient | Absent until the recipient makes a choice; **absent reads as subscribed** |
+| `last_alert_at` | timestamp | sender | Most recent alert sent to this number |
+
+Delivery is skipped only on an explicit `subscribed: false`. On unsubscribe the
+recipient's app enqueues a courtesy SMS back to the sender
+(`enque_by = "app:{recipientUid}:unsub"`, no history entry, no quota change) and
+the record is deactivated rather than deleted.
+
+---
+
+### `phone_directory/{phone_number}` (top-level)
+
+Minimal public lookup table so a link invite can find an account by its verified
+number without opening up the user documents.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `uid` | string | Account that verified this number |
+| `name` | string | Display name |
+
+Written once, when the phone OTP is confirmed. It deliberately carries nothing
+else, so `ttgo_users/{uid}` can stay owner-only.
+
+---
+
 ## Realtime Database (RTDB)
 
 The app does **not** write to RTDB. RTDB is used exclusively by the TTGO firmware for rate-limit counters, telemetry, and runtime settings (`/ttgo_tcall/settings/runtime`).
@@ -128,14 +219,54 @@ The app does **not** write to RTDB. RTDB is used exclusively by the TTGO firmwar
 
 ## Security Rules (recommended)
 
+> **These must be updated in the Firebase console** for linked accounts and
+> recipient-managed alerts to work. Linking and on-demand location requests are
+> cross-user by design, so the blanket owner-only rule on `ttgo_users/**` blocks
+> them. The two carve-outs below are deliberately narrow: the other party can
+> only touch the single document that names them.
+
 ```js
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Users can only read/write their own document and subcollections
+    // Linked accounts: my own side is mine, and the person a link names may
+    // write ONLY that one document (to accept, decline, or remove the pairing).
+    match /ttgo_users/{uid}/links/{otherUid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if request.auth != null &&
+        (request.auth.uid == uid || request.auth.uid == otherUid);
+    }
+
+    // On-demand location requests live in the TARGET's subcollection. The target
+    // reads and answers them; a linked account may create one and read back only
+    // its own request.
+    match /ttgo_users/{uid}/location_requests/{requestId} {
+      allow read, update, delete: if request.auth != null &&
+        (request.auth.uid == uid || resource.data.requester_uid == request.auth.uid);
+      allow create: if request.auth != null &&
+        request.resource.data.requester_uid == request.auth.uid;
+    }
+
+    // Everything else under a user document stays owner-only. Keep this AFTER
+    // the two rules above; Firestore grants access if any rule matches.
     match /ttgo_users/{uid}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
+
+    // Alert subscriptions are keyed by phone number, not uid, because the record
+    // is created before the recipient has an account. Any signed-in user may
+    // write (senders record the relationship, recipients set `subscribed`).
+    match /alert_subscriptions/{phone}/senders/{senderUid} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Public number-to-account lookup for link invites. Carries only uid + name.
+    match /phone_directory/{phone} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null &&
+        request.resource.data.uid == request.auth.uid;
+    }
+
     // SMS jobs: any authenticated user can write (to enqueue); reads allowed too
     match /sim_module/sms/sms_jobs/{phone} {
       allow read, write: if request.auth != null;
@@ -148,3 +279,8 @@ service cloud.firestore {
   }
 }
 ```
+
+**Known limitation:** `alert_subscriptions` is writable by any signed-in user, so
+one user could in principle flip another recipient's flag. Tightening that needs
+a verified-phone claim (a Cloud Function setting a custom claim at OTP time),
+which this app does not have yet.

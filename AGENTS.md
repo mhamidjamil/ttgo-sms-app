@@ -21,12 +21,12 @@
 - ViewModels keep immutable `data class *UiState` in `MutableStateFlow`, expose `StateFlow` via `asStateFlow()`, and launch work in `viewModelScope`.
 - Firestore DTOs live in `data/model` and map to domain with `toDomain()`. Use `@PropertyName` for snake_case Firestore fields, as in `UserDto` and `HistoryEntryDto`.
 - Phone inputs must pass through `PhoneNormalizer`; only Pakistani mobile formats `03...`, `923...`, and `+923...` are accepted and normalized to `+923XXXXXXXXX`.
-- Navigation is centralized in `core/navigation/AppNavGraph.kt`; bottom tabs are `Send`, `History`, `Auto`, and `Profile`, while auth/settings routes are outside the bottom bar.
+- Navigation is centralized in `core/navigation/AppNavGraph.kt`; bottom tabs are `Send`, `History`, `Arrival`, and `Profile`, while auth and the detail screens (settings history, WhatsApp, incoming alerts, linked accounts) are outside the bottom bar. `History` carries a Manual/Automated filter rather than a separate Auto tab.
 
 ## Versioning
 - App version is in `app/build.gradle.kts`: `versionCode` (integer, bumped for each release) and `versionName` (semver string, e.g. `1.0.1`).
 - **Whenever you make any solid changes or bug fixes, always bump `versionCode` by 1 and update `versionName` appropriately** (patch bump for fixes, minor for features). The version is displayed at the bottom of the Send screen via `BuildConfig.VERSION_NAME`.
-- Current version: `1.0.1` (versionCode=2).
+- Current version: `1.1.0` (versionCode=3).
 
 ## Developer Workflow
 - This repo may not include `gradle/wrapper/gradle-wrapper.jar`; Android Studio can generate/download it, or run `gradle wrapper --gradle-version 8.4` if local Gradle is installed.

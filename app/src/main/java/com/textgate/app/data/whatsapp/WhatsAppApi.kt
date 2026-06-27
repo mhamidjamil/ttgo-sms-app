@@ -185,6 +185,13 @@ class WhatsAppApi(private val configProvider: WaConfigProvider) {
                 put("phoneNumber", phoneDigits)
                 put("message", message)
                 recipientName?.let { put("recipientName", it) }
+                // Everything this app sends is somebody waiting: a test the user
+                // just pressed, or an arrival alert that is worthless an hour
+                // late. That is the gateway's fast lane, which overtakes queued
+                // campaign traffic and keeps its own reserved headroom. Without
+                // this the alerts queue behind other people's uploads and are
+                // capped at the slower campaign allowance.
+                put("priority", "high")
             }.toString()
 
             if (cred.isPair) {
@@ -252,6 +259,7 @@ class WhatsAppApi(private val configProvider: WaConfigProvider) {
                 put("phoneNumber", phoneDigits)
                 put("message", message)
                 recipientName?.let { put("recipientName", it) }
+                put("priority", "high")
             }
             val (code, body) = request(base, "POST", "/v1/messages/shared/send", cred.headers(), payload.toString())
             if (code !in 200..299) throw mapError(code, body)

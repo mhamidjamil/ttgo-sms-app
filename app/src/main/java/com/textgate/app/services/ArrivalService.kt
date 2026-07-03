@@ -34,7 +34,7 @@ class ArrivalService : Service() {
     private val routineAnalyzer = RoutineAnalyzer()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val stabilityJobs = mutableMapOf<String, Job>() // location → countdown job
+    private val stabilityJobs = mutableMapOf<String, Job>() // place id → countdown job
 
     private val connectivityManager by lazy {
         getSystemService(ConnectivityManager::class.java)
@@ -72,25 +72,24 @@ class ArrivalService : Service() {
             val user = userRepo.getCurrentUser() ?: return@launch
             val uid = userRepo.currentFirebaseUser()?.uid ?: return@launch
 
-            val location = when (currentBssid) {
-                user.homeBssid.ifBlank { null } -> "home"
-                user.officeBssid.ifBlank { null } -> "office"
-                else -> return@launch
-            }
+            // Match against ANY saved place (home/office seeded + user-added).
+            val place = user.places.firstOrNull {
+                it.bssid.isNotBlank() && it.bssid.equals(currentBssid, ignoreCase = true)
+            } ?: return@launch
 
-            if (stabilityJobs.containsKey(location)) return@launch // timer already running
+            if (stabilityJobs.containsKey(place.id)) return@launch // timer already running
 
-            val arrivalTimes = if (location == "home") user.arrivalHomeTimes else user.arrivalOfficeTimes
+            val arrivalTimes = user.arrivalTimesByPlace[place.id] ?: emptyList()
             val waitMinutes = routineAnalyzer.effectiveWait(arrivalTimes, WifiConfig.STABILITY_MINUTES)
             val routineTriggered = waitMinutes < WifiConfig.STABILITY_MINUTES
 
-            stabilityJobs[location] = launch {
+            stabilityJobs[place.id] = launch {
                 delay(waitMinutes * 60_000L)
                 // Verify still on same BSSID after stability period
                 if (getCurrentBssid() == currentBssid) {
-                    recordArrival(uid, location, routineTriggered)
+                    recordArrival(uid, place.id, routineTriggered)
                 }
-                stabilityJobs.remove(location)
+                stabilityJobs.remove(place.id)
             }
         }
     }

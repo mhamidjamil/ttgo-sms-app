@@ -1,6 +1,7 @@
 package com.textgate.app.domain.repository
 
 import com.google.firebase.auth.FirebaseUser
+import com.textgate.app.domain.model.Place
 import com.textgate.app.domain.model.User
 
 interface UserRepository {
@@ -25,14 +26,7 @@ interface UserRepository {
     suspend fun getPhoneOtp(uid: String): Result<Pair<String, Long>?>
     suspend fun markPhoneVerified(uid: String): Result<Unit>
 
-    // Arrival monitoring (V2)
-    suspend fun saveLocationSettings(
-        uid: String,
-        guardianNumber: String,
-        homeBssid: String,
-        homeLabel: String,
-        officeBssid: String,
-        officeLabel: String,
-    ): Result<Unit>
-    suspend fun recordArrival(uid: String, location: String, date: String, currentTime: String): Result<Unit>
+    // Arrival monitoring (V2) — dynamic place list
+    suspend fun savePlacesSettings(uid: String, guardianNumber: String, places: List<Place>): Result<Unit>
+    suspend fun recordArrival(uid: String, placeId: String, date: String, currentTime: String): Result<Unit>
 }

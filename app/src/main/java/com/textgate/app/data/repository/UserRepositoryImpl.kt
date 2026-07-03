@@ -4,6 +4,7 @@ import com.google.firebase.auth.FirebaseUser
 import com.textgate.app.data.firebase.FirebaseAuthDataSource
 import com.textgate.app.data.firebase.FirestoreDataSource
 import com.textgate.app.data.local.PreferencesDataSource
+import com.textgate.app.domain.model.Place
 import com.textgate.app.domain.model.User
 import com.textgate.app.domain.repository.UserRepository
 
@@ -92,15 +93,9 @@ class UserRepositoryImpl(
 
     // ── Arrival monitoring (V2) ───────────────────────────────────────────────
 
-    override suspend fun saveLocationSettings(
-        uid: String,
-        guardianNumber: String,
-        homeBssid: String,
-        homeLabel: String,
-        officeBssid: String,
-        officeLabel: String,
-    ) = firestore.saveLocationSettings(uid, guardianNumber, homeBssid, homeLabel, officeBssid, officeLabel)
+    override suspend fun savePlacesSettings(uid: String, guardianNumber: String, places: List<Place>) =
+        firestore.savePlacesSettings(uid, guardianNumber, places)
 
-    override suspend fun recordArrival(uid: String, location: String, date: String, currentTime: String) =
-        firestore.recordArrival(uid, location, date, currentTime)
+    override suspend fun recordArrival(uid: String, placeId: String, date: String, currentTime: String) =
+        firestore.recordArrival(uid, placeId, date, currentTime)
 }

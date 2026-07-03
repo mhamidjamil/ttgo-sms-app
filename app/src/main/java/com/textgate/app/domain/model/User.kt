@@ -13,6 +13,11 @@ data class User(
 
     // V2: arrival monitoring
     val guardianNumber: String = "",
+    // Dynamic place list (home/office seeded; users add more). Legacy fixed
+    // home/office fields below are kept only so old documents migrate cleanly.
+    val places: List<Place> = emptyList(),
+    val arrivalTimesByPlace: Map<String, List<String>> = emptyMap(),
+    val lastArrivalDateByPlace: Map<String, String> = emptyMap(),
     val homeBssid: String = "",
     val homeLabel: String = "",
     val officeBssid: String = "",

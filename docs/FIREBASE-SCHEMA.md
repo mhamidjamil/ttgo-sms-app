@@ -64,6 +64,21 @@ Top-level collection — one document per Firebase Auth user, keyed by UID.
 
 **Auto-creation:** If a user logs in but their Firestore doc is missing, the app creates it automatically (quota sourced from `sim_module/device/free_sms_quota`).
 
+**V2 dynamic places** (arrival monitoring):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `guardian_number` | string | E.164 recipient of arrival notifications |
+| `places` | array | `[{id, label, bssid, message}]` — `home`/`office` are seeded ids; users add more. `message` is an optional custom arrival text (blank → "<name> arrived at <label>") |
+| `arrival_times` | map | `{placeId: ["HH:mm", …]}` — last 30 arrivals per place (routine learning) |
+| `last_arrival_dates` | map | `{placeId: "YYYY-MM-DD"}` — one-notification-per-day guard per place |
+
+Legacy fixed fields (`home_bssid`, `home_label`, `office_bssid`, `office_label`,
+`arrival_home_times`, `arrival_office_times`, `last_home_arrival_date`,
+`last_office_arrival_date`) are still read for MIGRATION only: when `places` is
+absent they seed the home/office entries; the next save writes `places` and the
+legacy fields stop mattering.
+
 ---
 
 ### `ttgo_users/{uid}/history/{autoId}` (app writes)
@@ -89,29 +104,12 @@ Arrival-triggered jobs.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `location` | string | `"office"` or `"home"` |
+| `location` | string | Place id (`"home"`, `"office"`, or a custom `place_*` id) |
 | `sent_at` | timestamp | When the arrival SMS was enqueued |
 | `status` | string | Same status values as history |
 | `job_phone_key` | string | Phone number of the guardian |
 | `message` | string | `"{name} arrived at {label} N minutes ago"` |
 | `routine_triggered` | bool | `true` if routine learning reduced the wait |
-
----
-
-### V2 user doc additions
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `guardian_number` | string | E.164 guardian phone for arrival alerts |
-| `home_bssid` | string | `"AA:BB:CC:DD:EE:FF"` — WiFi MAC for home |
-| `home_label` | string | Human label shown in the alert (e.g. `"Home"`) |
-| `office_bssid` | string | WiFi MAC for office |
-| `office_label` | string | Human label (e.g. `"Office"`) |
-| `wifi_stability_minutes` | int | Per-user override of the stability timer |
-| `arrival_home_times` | string[] | Last 30 arrival HH:mm strings (oldest rotated out) |
-| `arrival_office_times` | string[] | Same for office |
-| `last_home_arrival_date` | string | `"YYYY-MM-DD"` cooldown guard |
-| `last_office_arrival_date` | string | Same for office |
 
 ---
 

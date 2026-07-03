@@ -13,7 +13,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -26,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.textgate.app.core.theme.TextGateTheme
 import com.textgate.app.core.utils.PhoneNormalizer
+import com.textgate.app.domain.model.Place
 import com.textgate.app.services.ArrivalService
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
@@ -42,14 +45,10 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
 
     var guardianNumber by remember(uiState.guardianNumber) { mutableStateOf(uiState.guardianNumber) }
-    var homeBssid by remember(uiState.homeBssid) { mutableStateOf(uiState.homeBssid) }
-    var homeLabel by remember(uiState.homeLabel) { mutableStateOf(uiState.homeLabel) }
-    var officeBssid by remember(uiState.officeBssid) { mutableStateOf(uiState.officeBssid) }
-    var officeLabel by remember(uiState.officeLabel) { mutableStateOf(uiState.officeLabel) }
 
     var scanResults by remember { mutableStateOf<List<ScanResult>>(emptyList()) }
     var showScanDialog by remember { mutableStateOf(false) }
-    var scanTarget by remember { mutableStateOf("home") }
+    var scanTargetPlaceId by remember { mutableStateOf<String?>(null) }
     var isMonitoring by remember { mutableStateOf(ArrivalService.isRunning) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -88,12 +87,15 @@ fun SettingsScreen(
         WifiPickerDialog(
             results = scanResults,
             onSelect = { result ->
-                if (scanTarget == "home") {
-                    homeBssid = result.BSSID
-                    if (homeLabel.isBlank()) homeLabel = result.SSID.ifBlank { result.BSSID }
-                } else {
-                    officeBssid = result.BSSID
-                    if (officeLabel.isBlank()) officeLabel = result.SSID.ifBlank { result.BSSID }
+                val targetId = scanTargetPlaceId
+                val place = uiState.places.firstOrNull { it.id == targetId }
+                if (place != null) {
+                    viewModel.updatePlace(
+                        place.copy(
+                            bssid = result.BSSID,
+                            label = place.label.ifBlank { result.SSID.ifBlank { result.BSSID } },
+                        )
+                    )
                 }
                 showScanDialog = false
             },
@@ -106,12 +108,16 @@ fun SettingsScreen(
         snackbarHostState = snackbarHostState,
         guardianNumber = guardianNumber,
         onGuardianChange = { guardianNumber = it },
-        homeBssid = homeBssid,
-        homeLabel = homeLabel,
-        onHomeLabelChange = { homeLabel = it },
-        officeBssid = officeBssid,
-        officeLabel = officeLabel,
-        onOfficeLabelChange = { officeLabel = it },
+        onPlaceChange = viewModel::updatePlace,
+        onAddPlace = viewModel::addPlace,
+        onRemovePlace = viewModel::removePlace,
+        onScanPlace = { placeId ->
+            scanTargetPlaceId = placeId
+            requestScanOrLaunch(context, permissionLauncher) {
+                scanResults = scanWifi(context)
+                showScanDialog = true
+            }
+        },
         isMonitoring = isMonitoring,
         onMonitoringToggle = { enabled ->
             if (enabled) {
@@ -128,23 +134,7 @@ fun SettingsScreen(
                 ArrivalService.stop(context)
             }
         },
-        onScanHome = {
-            scanTarget = "home"
-            requestScanOrLaunch(context, permissionLauncher) {
-                scanResults = scanWifi(context)
-                showScanDialog = true
-            }
-        },
-        onScanOffice = {
-            scanTarget = "office"
-            requestScanOrLaunch(context, permissionLauncher) {
-                scanResults = scanWifi(context)
-                showScanDialog = true
-            }
-        },
-        onSave = { guardian, hBssid, hLabel, oBssid, oLabel ->
-            viewModel.saveSettings(guardian, hBssid, hLabel, oBssid, oLabel)
-        },
+        onSave = { guardian -> viewModel.save(guardian) },
         onBack = onBack,
     )
 }
@@ -156,17 +146,13 @@ private fun SettingsContent(
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     guardianNumber: String,
     onGuardianChange: (String) -> Unit,
-    homeBssid: String,
-    homeLabel: String,
-    onHomeLabelChange: (String) -> Unit,
-    officeBssid: String,
-    officeLabel: String,
-    onOfficeLabelChange: (String) -> Unit,
+    onPlaceChange: (Place) -> Unit,
+    onAddPlace: () -> Unit,
+    onRemovePlace: (String) -> Unit,
+    onScanPlace: (String) -> Unit,
     isMonitoring: Boolean,
     onMonitoringToggle: (Boolean) -> Unit,
-    onScanHome: () -> Unit,
-    onScanOffice: () -> Unit,
-    onSave: (String, String, String, String, String) -> Unit,
+    onSave: (String) -> Unit,
     onBack: () -> Unit,
 ) {
     val phoneNormalizer = remember { PhoneNormalizer() }
@@ -180,7 +166,7 @@ private fun SettingsContent(
                 title = { Text("Arrival Settings") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
             )
@@ -199,7 +185,7 @@ private fun SettingsContent(
         ) {
             SectionTitle("Guardian Contact")
             Text(
-                "SMS will be sent to this number on arrival",
+                "Arrival notifications go to this number (WhatsApp when linked, SMS otherwise)",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
@@ -216,18 +202,32 @@ private fun SettingsContent(
             )
 
             Spacer(Modifier.height(20.dp))
-            SectionTitle("Home WiFi")
-            BssidRow(
-                bssid = homeBssid, label = homeLabel, onLabelChange = onHomeLabelChange,
-                onScan = onScanHome,
+            SectionTitle("Places")
+            Text(
+                "Home and Office are always available; add any other place (friend's home, gym, …). " +
+                    "Each place can have its own arrival message.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
+            Spacer(Modifier.height(8.dp))
 
-            Spacer(Modifier.height(20.dp))
-            SectionTitle("Office WiFi")
-            BssidRow(
-                bssid = officeBssid, label = officeLabel, onLabelChange = onOfficeLabelChange,
-                onScan = onScanOffice,
-            )
+            uiState.places.forEach { place ->
+                key(place.id) {
+                    PlaceCard(
+                        place = place,
+                        onChange = onPlaceChange,
+                        onScan = { onScanPlace(place.id) },
+                        onRemove = if (Place.isDefaultId(place.id)) null else ({ onRemovePlace(place.id) }),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                }
+            }
+
+            OutlinedButton(onClick = onAddPlace, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.Add, contentDescription = null, Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Add Place")
+            }
 
             Spacer(Modifier.height(20.dp))
             SectionTitle("Monitoring")
@@ -259,7 +259,7 @@ private fun SettingsContent(
             Button(
                 onClick = {
                     val normalized = phoneNormalizer.normalize(guardianNumber) ?: guardianNumber
-                    onSave(normalized, homeBssid, homeLabel, officeBssid, officeLabel)
+                    onSave(normalized)
                 },
                 enabled = guardianError == null && !uiState.isSaving,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -283,32 +283,63 @@ private fun SectionTitle(text: String) {
 }
 
 @Composable
-private fun BssidRow(
-    bssid: String,
-    label: String,
-    onLabelChange: (String) -> Unit,
+private fun PlaceCard(
+    place: Place,
+    onChange: (Place) -> Unit,
     onScan: () -> Unit,
+    onRemove: (() -> Unit)?,
 ) {
-    OutlinedTextField(
-        value = label, onValueChange = onLabelChange,
-        label = { Text("Location label (e.g. My Home)") }, singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-    )
-    Spacer(Modifier.height(6.dp))
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        OutlinedTextField(
-            value = bssid, onValueChange = {}, label = { Text("BSSID (MAC)") },
-            readOnly = true, singleLine = true,
-            placeholder = { Text("Tap Scan to select") }, modifier = Modifier.weight(1f),
-        )
-        OutlinedButton(onClick = onScan) {
-            Icon(Icons.Default.Wifi, contentDescription = null, Modifier.size(18.dp))
-            Spacer(Modifier.width(4.dp))
-            Text("Scan")
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = place.label,
+                    onValueChange = { onChange(place.copy(label = it)) },
+                    label = { Text("Place name") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("e.g. Ali's home") },
+                )
+                if (onRemove != null) {
+                    IconButton(onClick = onRemove) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "Remove place",
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    value = place.bssid,
+                    onValueChange = {},
+                    label = { Text("WiFi BSSID") },
+                    readOnly = true, singleLine = true,
+                    placeholder = { Text("Tap Scan to select") },
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedButton(onClick = onScan) {
+                    Icon(Icons.Default.Wifi, contentDescription = null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Scan")
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            OutlinedTextField(
+                value = place.message,
+                onValueChange = { if (it.length <= 90) onChange(place.copy(message = it)) },
+                label = { Text("Custom arrival message (optional)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Default: \"<your name> arrived at ${place.label.ifBlank { "place" }}\"") },
+                supportingText = { Text("${place.message.length}/90") },
+            )
         }
     }
 }
@@ -373,6 +404,12 @@ private fun hasPermission(context: Context, permission: String): Boolean =
 
 // ── Preview helpers ───────────────────────────────────────────────────────────
 
+private val previewPlaces = listOf(
+    Place(Place.HOME_ID, "My Home", "AA:BB:CC:DD:EE:01"),
+    Place(Place.OFFICE_ID, "Office", "AA:BB:CC:DD:EE:02"),
+    Place("place_1", "Ali's home", "AA:BB:CC:DD:EE:03", "Reached Ali's place safely"),
+)
+
 @Preview(showBackground = true, name = "Settings — Loading")
 @Composable
 private fun SettingsLoadingPreview() {
@@ -380,46 +417,41 @@ private fun SettingsLoadingPreview() {
         SettingsContent(
             uiState = SettingsUiState(isLoading = true),
             guardianNumber = "", onGuardianChange = {},
-            homeBssid = "", homeLabel = "", onHomeLabelChange = {},
-            officeBssid = "", officeLabel = "", onOfficeLabelChange = {},
+            onPlaceChange = {}, onAddPlace = {}, onRemovePlace = {}, onScanPlace = {},
             isMonitoring = false, onMonitoringToggle = {},
-            onScanHome = {}, onScanOffice = {},
-            onSave = { _, _, _, _, _ -> }, onBack = {},
+            onSave = {}, onBack = {},
         )
     }
 }
 
-@Preview(showBackground = true, name = "Settings — Form filled")
+@Preview(showBackground = true, name = "Settings — Places filled")
 @Composable
 private fun SettingsFilledPreview() {
     TextGateTheme {
         SettingsContent(
             uiState = SettingsUiState(
-                guardianNumber = "03001234567", homeBssid = "AA:BB:CC:DD:EE:01",
-                homeLabel = "My Home", officeBssid = "AA:BB:CC:DD:EE:02", officeLabel = "Office",
+                isLoading = false,
+                guardianNumber = "03001234567",
+                places = previewPlaces,
             ),
             guardianNumber = "03001234567", onGuardianChange = {},
-            homeBssid = "AA:BB:CC:DD:EE:01", homeLabel = "My Home", onHomeLabelChange = {},
-            officeBssid = "AA:BB:CC:DD:EE:02", officeLabel = "Office", onOfficeLabelChange = {},
+            onPlaceChange = {}, onAddPlace = {}, onRemovePlace = {}, onScanPlace = {},
             isMonitoring = true, onMonitoringToggle = {},
-            onScanHome = {}, onScanOffice = {},
-            onSave = { _, _, _, _, _ -> }, onBack = {},
+            onSave = {}, onBack = {},
         )
     }
 }
 
-@Preview(showBackground = true, name = "Settings — Monitoring off / empty")
+@Preview(showBackground = true, name = "Settings — Defaults only")
 @Composable
 private fun SettingsEmptyPreview() {
     TextGateTheme {
         SettingsContent(
-            uiState = SettingsUiState(),
+            uiState = SettingsUiState(isLoading = false, places = Place.defaults()),
             guardianNumber = "", onGuardianChange = {},
-            homeBssid = "", homeLabel = "", onHomeLabelChange = {},
-            officeBssid = "", officeLabel = "", onOfficeLabelChange = {},
+            onPlaceChange = {}, onAddPlace = {}, onRemovePlace = {}, onScanPlace = {},
             isMonitoring = false, onMonitoringToggle = {},
-            onScanHome = {}, onScanOffice = {},
-            onSave = { _, _, _, _, _ -> }, onBack = {},
+            onSave = {}, onBack = {},
         )
     }
 }

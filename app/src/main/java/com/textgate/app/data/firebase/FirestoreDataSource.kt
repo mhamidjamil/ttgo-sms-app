@@ -8,6 +8,7 @@ import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.snapshots
 import com.textgate.app.core.utils.DateUtils
 import com.textgate.app.core.utils.Paths
+import com.textgate.app.domain.model.Place
 import com.textgate.app.data.model.AutoHistoryEntryDto
 import com.textgate.app.data.model.HistoryEntryDto
 import com.textgate.app.data.model.SmsJobDto
@@ -117,21 +118,17 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
 
     // ── Location settings (V2) ────────────────────────────────────────────────
 
-    suspend fun saveLocationSettings(
+    suspend fun savePlacesSettings(
         uid: String,
         guardianNumber: String,
-        homeBssid: String,
-        homeLabel: String,
-        officeBssid: String,
-        officeLabel: String,
+        places: List<Place>,
     ): Result<Unit> = runCatching {
         db.collection(Paths.USERS).document(uid).set(
             mapOf(
                 "guardian_number" to guardianNumber,
-                "home_bssid" to homeBssid,
-                "home_label" to homeLabel,
-                "office_bssid" to officeBssid,
-                "office_label" to officeLabel,
+                "places" to places.map {
+                    mapOf("id" to it.id, "label" to it.label, "bssid" to it.bssid, "message" to it.message)
+                },
             ),
             SetOptions.merge(),
         ).await()
@@ -139,19 +136,20 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
 
     suspend fun recordArrival(
         uid: String,
-        location: String,
+        placeId: String,
         date: String,
         currentTime: String,
     ): Result<Unit> = runCatching {
         val ref = db.collection(Paths.USERS).document(uid)
         db.runTransaction { tx ->
             val snap = tx.get(ref)
-            val timesField = if (location == "home") "arrival_home_times" else "arrival_office_times"
-            val dateField = if (location == "home") "last_home_arrival_date" else "last_office_arrival_date"
             @Suppress("UNCHECKED_CAST")
-            val existing = (snap.get(timesField) as? List<String>) ?: emptyList()
-            val updated = (existing + currentTime).takeLast(30)
-            tx.update(ref, mapOf(dateField to date, timesField to updated))
+            val allTimes = (snap.get("arrival_times") as? Map<String, List<String>>) ?: emptyMap()
+            val updated = ((allTimes[placeId] ?: emptyList()) + currentTime).takeLast(30)
+            tx.update(ref, mapOf(
+                "last_arrival_dates.$placeId" to date,
+                "arrival_times.$placeId" to updated,
+            ))
         }.await()
     }
 

@@ -46,6 +46,8 @@
 
 ### V2 — Automated Arrival Notifications (WiFi-Based)
 
+- **Dynamic places** — Home and Office are seeded; add unlimited custom places (friend's home, gym, …) each with its own WiFi BSSID and an optional custom arrival message; delete custom places any time
+
 - **BSSID-based location detection** — stores home and office WiFi BSSIDs (MAC addresses), not SSIDs, to prevent spoofing
 - **Stability timer** — must stay connected to the target BSSID for N minutes (configurable) before triggering; a quick pass-through does not fire
 - **One notification per day per location** — daily cooldown guard prevents multiple alerts

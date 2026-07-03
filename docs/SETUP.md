@@ -89,8 +89,16 @@ FIREBASE_PROJECT_ID=your-project-id   # from Firebase console → Project Settin
 SMS_JOBS_PATH=sim_module/sms/sms_jobs
 USERS_PATH=sim_module/ttgo_users
 DEVICE_DOC_PATH=sim_module/device
-UNVERIFIED_QUOTA=2
-PARTIAL_VERIFIED_QUOTA=4
+# Quota: phone unverified -> 0 SMS/day; verified -> free_sms_quota (device doc)
+# SMTP (optional, for "Request more SMS" admin emails):
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM_EMAIL=
+SMTP_SENDER_NAME=TextGate
+ADMIN_EMAIL=
 HISTORY_POLL_INTERVAL_SECONDS=10
 WIFI_STABILITY_MINUTES=10
 MIN_WIFI_STABILITY_MINUTES=5

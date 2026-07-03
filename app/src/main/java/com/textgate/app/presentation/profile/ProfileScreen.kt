@@ -127,7 +127,7 @@ private fun ProfileContent(
                                 fontWeight = FontWeight.SemiBold,
                             )
                             Text(
-                                "Verify both email and phone to unlock ${user.assignedQuota} SMS/day.",
+                                "Email verification is needed for WhatsApp linking and admin contact (it does not affect your SMS quota).",
                                 style = MaterialTheme.typography.bodySmall,
                             )
                             Spacer(Modifier.height(8.dp))
@@ -156,16 +156,14 @@ private fun ProfileContent(
                     ) {
                         Column {
                             Text(
-                                "⚠ Phone not verified",
+                                "⚠ Phone not verified — sending is disabled",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.SemiBold,
                             )
-                            if (user.phoneNumber.isNotBlank()) {
-                                Text(
-                                    "${user.phoneNumber} — tap below to enter your verification code.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                            }
+                            Text(
+                                "Verify your number to unlock ${user.assignedQuota} SMS/day.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
                             Spacer(Modifier.height(8.dp))
                             OutlinedButton(onClick = onVerifyPhone) { Text("Verify Phone Number") }
                         }

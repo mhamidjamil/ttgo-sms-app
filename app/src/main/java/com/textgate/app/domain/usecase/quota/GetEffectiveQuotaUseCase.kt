@@ -1,15 +1,15 @@
 package com.textgate.app.domain.usecase.quota
 
-import com.textgate.app.BuildConfig
 import com.textgate.app.domain.model.User
 
 class GetEffectiveQuotaUseCase {
-    // both verified  → full assigned quota (e.g. 10 SMS/day)
-    // one verified   → partial quota     (e.g.  4 SMS/day)
-    // none verified  → minimum quota     (e.g.  2 SMS/day)
-    operator fun invoke(user: User): Int = when {
-        user.emailVerified && user.phoneVerified -> user.assignedQuota
-        user.emailVerified || user.phoneVerified -> BuildConfig.PARTIAL_VERIFIED_QUOTA
-        else -> BuildConfig.UNVERIFIED_QUOTA
-    }
+    // Phone verification gates sending entirely:
+    //   phone verified   → full assigned quota (e.g. 10 SMS/day from the device doc)
+    //   phone unverified → 0 (must verify the number before sending anything —
+    //                      messages carry a "Sent by <number>" signature, so an
+    //                      unverified sender identity is never allowed)
+    // Email verification does NOT affect the SMS quota; it is required only for
+    // WhatsApp linking and admin contact.
+    operator fun invoke(user: User): Int =
+        if (user.phoneVerified) user.assignedQuota else 0
 }

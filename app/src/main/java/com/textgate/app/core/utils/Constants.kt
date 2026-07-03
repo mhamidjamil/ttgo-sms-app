@@ -12,8 +12,8 @@ object Paths {
 }
 
 object Quota {
-    val UNVERIFIED: Int = BuildConfig.UNVERIFIED_QUOTA
-    val PARTIAL_VERIFIED: Int = BuildConfig.PARTIAL_VERIFIED_QUOTA
+    // Phone unverified → 0 SMS/day (hard rule, not configurable); phone verified
+    // → assigned_quota from the device doc. See GetEffectiveQuotaUseCase.
     val HISTORY_POLL_SECONDS: Int = BuildConfig.HISTORY_POLL_INTERVAL_SECONDS
 }
 

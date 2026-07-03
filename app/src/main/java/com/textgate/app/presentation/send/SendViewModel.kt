@@ -7,6 +7,7 @@ import com.textgate.app.domain.repository.UserRepository
 import com.textgate.app.domain.usecase.quota.CheckAndResetQuotaUseCase
 import com.textgate.app.domain.usecase.quota.DecrementQuotaUseCase
 import com.textgate.app.domain.usecase.quota.GetEffectiveQuotaUseCase
+import com.textgate.app.domain.usecase.quota.RequestMoreSmsUseCase
 import com.textgate.app.domain.usecase.sms.EnqueueSmsUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,6 +21,8 @@ data class SendUiState(
     val isSending: Boolean = false,
     val error: String? = null,
     val sentMessage: String? = null,
+    val isRequestingMore: Boolean = false,
+    val requestMoreResult: String? = null,
 ) {
     // How many SMS were sent today = assigned minus what's left.
     // Comparing sentToday against effectiveQuota correctly caps unverified users:
@@ -36,6 +39,7 @@ class SendViewModel(
     private val getEffectiveQuota: GetEffectiveQuotaUseCase,
     private val decrementQuota: DecrementQuotaUseCase,
     private val enqueueSms: EnqueueSmsUseCase,
+    private val requestMoreSms: RequestMoreSmsUseCase,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SendUiState())
@@ -84,6 +88,29 @@ class SendViewModel(
         }
     }
 
+    // "Request more SMS" — emails the admin with the user's identity so the
+    // daily quota can be raised.
+    fun requestMore() {
+        val user = _uiState.value.user ?: return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isRequestingMore = true, requestMoreResult = null)
+            requestMoreSms(user)
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(
+                        isRequestingMore = false,
+                        requestMoreResult = "Request sent — the admin will review it soon.",
+                    )
+                }
+                .onFailure {
+                    _uiState.value = _uiState.value.copy(
+                        isRequestingMore = false,
+                        requestMoreResult = it.message ?: "Failed to send the request",
+                    )
+                }
+        }
+    }
+
     fun clearSentMessage() { _uiState.value = _uiState.value.copy(sentMessage = null) }
     fun clearError() { _uiState.value = _uiState.value.copy(error = null) }
+    fun clearRequestMoreResult() { _uiState.value = _uiState.value.copy(requestMoreResult = null) }
 }

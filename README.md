@@ -123,8 +123,7 @@ Full field reference → [`docs/FIREBASE-SCHEMA.md`](docs/FIREBASE-SCHEMA.md)
    | `SMS_JOBS_PATH` | Firestore path to sms_jobs collection |
    | `USERS_PATH` | Firestore path to users collection |
    | `DEVICE_DOC_PATH` | Firestore path to the device document |
-   | `UNVERIFIED_QUOTA` | SMS/day for accounts with neither verified (default 2) |
-   | `PARTIAL_VERIFIED_QUOTA` | SMS/day for accounts with one verified (default 4) |
+   | `SMTP_*` / `ADMIN_EMAIL` | Optional mailer config for "Request more SMS" admin emails |
    | `HISTORY_POLL_INTERVAL_SECONDS` | Auto-poll interval in seconds (default 10) |
    | `WIFI_STABILITY_MINUTES` | V2: minutes before arrival trigger (default 10) |
    | `MIN_WIFI_STABILITY_MINUTES` | V2: minimum adaptive wait in minutes (default 5) |
@@ -155,8 +154,8 @@ Detailed Firebase console steps → [`docs/SETUP.md`](docs/SETUP.md)
 | `SMS_JOBS_PATH` | `sim_module/sms/sms_jobs` | Firestore collection for outgoing SMS jobs. |
 | `USERS_PATH` | `sim_module/ttgo_users` | Firestore collection for user documents. |
 | `DEVICE_DOC_PATH` | `sim_module/device` | Firestore path to the device config document. |
-| `UNVERIFIED_QUOTA` | `2` | Daily SMS cap for accounts with no verifications. |
-| `PARTIAL_VERIFIED_QUOTA` | `4` | Daily SMS cap for accounts with one verification. |
+| `SMTP_HOST/PORT/SECURE/USER/PASS/FROM_EMAIL/SENDER_NAME` | blank | SMTP mailer for admin "request more" emails (blank = disabled; values are compiled into the APK — use a low-privilege account). |
+| `ADMIN_EMAIL` | blank | Recipient of quota-increase requests. |
 | `HISTORY_POLL_INTERVAL_SECONDS` | `10` | How often the History screen polls pending jobs. |
 | `WIFI_STABILITY_MINUTES` | `10` | V2: minutes of stable WiFi connection before arrival SMS fires. |
 | `MIN_WIFI_STABILITY_MINUTES` | `5` | V2: minimum wait the routine-learning algorithm can reduce to. |
@@ -170,8 +169,8 @@ Detailed Firebase console steps → [`docs/SETUP.md`](docs/SETUP.md)
 3. Check your phone for the OTP SMS (delivered via the TTGO device — it must be online).
 4. Send a test SMS — verify `sim_module/sms/sms_jobs/{normalizedNumber}` appears with `status: "pending"`.
 5. Open History — confirm the entry appears and status updates as the TTGO processes the job.
-6. Confirm an unverified account is capped at `UNVERIFIED_QUOTA` sends/day.
-7. Verify email and phone — confirm quota rises to `assigned_quota`.
+6. Confirm an account with an unverified phone cannot send at all (0 SMS/day).
+7. Verify the phone — confirm quota rises to `assigned_quota` (default 10/day).
 
 ---
 

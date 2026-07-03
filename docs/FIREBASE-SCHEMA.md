@@ -56,9 +56,11 @@ Top-level collection — one document per Firebase Auth user, keyed by UID.
 | `created_at` | timestamp | — | Server timestamp set at sign-up |
 
 **Effective quota** (computed in app, never stored):
-- `email_verified && phone_verified` → `assigned_quota`
-- `email_verified || phone_verified` → `PARTIAL_VERIFIED_QUOTA` (env, default 4)
-- neither → `UNVERIFIED_QUOTA` (env, default 2)
+- `phone_verified` → `assigned_quota` (default 10/day from the device doc)
+- phone NOT verified → **0** (sending disabled — messages carry a "Sent by
+  <number>" signature, so an unverified sender identity is never allowed)
+- `email_verified` does not affect the SMS quota (needed only for WhatsApp
+  linking and admin contact)
 
 **Auto-creation:** If a user logs in but their Firestore doc is missing, the app creates it automatically (quota sourced from `sim_module/device/free_sms_quota`).
 

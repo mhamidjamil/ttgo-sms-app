@@ -27,6 +27,8 @@ fun SendScreen(viewModel: SendViewModel = koinViewModel()) {
         uiState = uiState,
         onSend = viewModel::send,
         onClearMessage = viewModel::clearSentMessage,
+        onRequestMore = viewModel::requestMore,
+        onClearRequestMoreResult = viewModel::clearRequestMoreResult,
     )
 }
 
@@ -35,6 +37,8 @@ private fun SendContent(
     uiState: SendUiState,
     onSend: (String, String) -> Unit,
     onClearMessage: () -> Unit,
+    onRequestMore: () -> Unit = {},
+    onClearRequestMoreResult: () -> Unit = {},
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val phoneNormalizer = remember { PhoneNormalizer() }
@@ -43,6 +47,12 @@ private fun SendContent(
         uiState.sentMessage?.let {
             snackbarHostState.showSnackbar(it)
             onClearMessage()
+        }
+    }
+    LaunchedEffect(uiState.requestMoreResult) {
+        uiState.requestMoreResult?.let {
+            snackbarHostState.showSnackbar(it)
+            onClearRequestMoreResult()
         }
     }
 
@@ -61,11 +71,7 @@ private fun SendContent(
             Spacer(Modifier.height(8.dp))
 
             val user = uiState.user
-            if (user != null && (!user.emailVerified || !user.phoneVerified)) {
-                val unverified = buildList {
-                    if (!user.emailVerified) add("email")
-                    if (!user.phoneVerified) add("phone")
-                }
+            if (user != null && !user.phoneVerified) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -74,7 +80,7 @@ private fun SendContent(
                         .padding(12.dp),
                 ) {
                     Text(
-                        "⚠ ${unverified.joinToString(" & ").replaceFirstChar { it.uppercaseChar() }} not verified — limited to ${uiState.effectiveQuota} SMS/day.",
+                        "⚠ Phone not verified — sending is disabled (0 SMS/day). Verify your number from Profile to unlock ${user.assignedQuota} SMS/day.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -93,7 +99,20 @@ private fun SendContent(
                     color = if (uiState.canSendMore) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.error,
                 )
-                Spacer(Modifier.height(16.dp))
+                if (user.phoneVerified) {
+                    TextButton(
+                        onClick = onRequestMore,
+                        enabled = !uiState.isRequestingMore,
+                        modifier = Modifier.align(Alignment.End),
+                    ) {
+                        if (uiState.isRequestingMore) {
+                            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        } else {
+                            Text("Request more SMS/day")
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
             }
 
             var phone by remember { mutableStateOf("") }
@@ -184,12 +203,12 @@ private fun SendQuotaLowPreview() {
     }
 }
 
-@Preview(showBackground = true, name = "Send — Unverified (2 SMS cap)")
+@Preview(showBackground = true, name = "Send — Phone unverified (0 SMS)")
 @Composable
 private fun SendUnverifiedPreview() {
     TextGateTheme {
         SendContent(
-            uiState = SendUiState(user = unverifiedUser, effectiveQuota = 2),
+            uiState = SendUiState(user = unverifiedUser, effectiveQuota = 0),
             onSend = { _, _ -> }, onClearMessage = {},
         )
     }

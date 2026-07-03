@@ -11,6 +11,7 @@ import com.textgate.app.domain.usecase.location.SaveLocationSettingsUseCase
 import com.textgate.app.domain.usecase.quota.CheckAndResetQuotaUseCase
 import com.textgate.app.domain.usecase.quota.DecrementQuotaUseCase
 import com.textgate.app.domain.usecase.quota.GetEffectiveQuotaUseCase
+import com.textgate.app.domain.usecase.quota.RequestMoreSmsUseCase
 import com.textgate.app.domain.usecase.sms.EnqueueSmsUseCase
 import com.textgate.app.domain.usecase.sms.GetHistoryUseCase
 import com.textgate.app.domain.usecase.sms.RefreshJobStatusUseCase
@@ -23,6 +24,7 @@ val useCaseModule = module {
     factory { CheckAndResetQuotaUseCase(get()) }
     factory { GetEffectiveQuotaUseCase() }
     factory { DecrementQuotaUseCase(get()) }
+    factory { RequestMoreSmsUseCase(get()) }
     factory { EnqueueSmsUseCase(get(), get()) }
     factory { GetHistoryUseCase(get()) }
     factory { RefreshJobStatusUseCase(get()) }

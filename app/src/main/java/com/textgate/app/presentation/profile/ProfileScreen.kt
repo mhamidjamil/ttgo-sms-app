@@ -26,6 +26,7 @@ fun ProfileScreen(
     onSignOut: () -> Unit,
     onVerifyPhone: () -> Unit,
     onNavigateToSettings: () -> Unit = {},
+    onNavigateToWhatsApp: () -> Unit = {},
     viewModel: ProfileViewModel = koinViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -35,6 +36,7 @@ fun ProfileScreen(
         onSignOut = { scope.launch { viewModel.signOut(); onSignOut() } },
         onVerifyPhone = onVerifyPhone,
         onNavigateToSettings = onNavigateToSettings,
+        onNavigateToWhatsApp = onNavigateToWhatsApp,
         onResendVerification = viewModel::resendVerification,
     )
 }
@@ -45,6 +47,7 @@ private fun ProfileContent(
     onSignOut: () -> Unit,
     onVerifyPhone: () -> Unit,
     onNavigateToSettings: () -> Unit,
+    onNavigateToWhatsApp: () -> Unit = {},
     onResendVerification: () -> Unit,
 ) {
     var showSignOutDialog by remember { mutableStateOf(false) }
@@ -220,6 +223,29 @@ private fun ProfileContent(
                             onClick = onNavigateToSettings,
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("Setup Arrival Settings (V2)") }
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("WhatsApp", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            if (user.emailVerified) {
+                                "Link your WhatsApp gateway account to send arrival notifications for free (no SMS quota)."
+                            } else {
+                                "Verify your email first — WhatsApp linking requires a verified email."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedButton(
+                            onClick = onNavigateToWhatsApp,
+                            enabled = user.emailVerified,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("WhatsApp Settings") }
                     }
                 }
 

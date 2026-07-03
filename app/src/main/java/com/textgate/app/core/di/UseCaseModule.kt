@@ -32,6 +32,6 @@ val useCaseModule = module {
     factory { VerifyPhoneOtpUseCase(get()) }
     // V2
     factory { SaveLocationSettingsUseCase(get()) }
-    factory { RecordArrivalUseCase(get(), get()) }
+    factory { RecordArrivalUseCase(get(), get(), get()) }
     factory { GetAutoHistoryUseCase(get()) }
 }

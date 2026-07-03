@@ -37,6 +37,13 @@
 - **Profile page verification banners** — separate banners for unverified email and unverified phone, each with an action button
 - **Skip option** — phone verify can be skipped; sending stays disabled until verified from Profile
 
+### WhatsApp Integration
+
+- **Arrival notifications via WhatsApp** — link a personal API key from the self-hosted baileys gateway (register on the service dashboard, scan QR, paste key) and arrival messages go out over WhatsApp for free, falling back to SMS automatically
+- **Email-verified gate** — WhatsApp settings unlock after email verification
+- **In-app guide + status + test send** — Profile → WhatsApp Settings; see [`docs/WHATSAPP.md`](docs/WHATSAPP.md)
+- Service URL configurable via `WHATSAPP_SERVICE_URL` (TODO(@dev): make dynamic via Firebase so URL changes don't need a rebuild)
+
 ### V2 — Automated Arrival Notifications (WiFi-Based)
 
 - **BSSID-based location detection** — stores home and office WiFi BSSIDs (MAC addresses), not SSIDs, to prevent spoofing

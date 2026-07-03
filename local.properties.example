@@ -30,6 +30,12 @@ SMTP_SENDER_NAME=TextGate
 # Where quota-increase requests are sent
 ADMIN_EMAIL=
 
+# WhatsApp gateway (baileys service) base URL. Users register on the service
+# dashboard themselves, link WhatsApp by QR, and paste their API key into the app.
+# TODO(@dev): not permanent — make this dynamic via Firebase so URL changes
+# don't require an app rebuild.
+WHATSAPP_SERVICE_URL=https://ww.innovorix.com
+
 # History auto-poll interval in seconds while the screen is visible
 HISTORY_POLL_INTERVAL_SECONDS=10
 

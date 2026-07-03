@@ -7,6 +7,7 @@ import com.textgate.app.presentation.history.HistoryViewModel
 import com.textgate.app.presentation.profile.ProfileViewModel
 import com.textgate.app.presentation.send.SendViewModel
 import com.textgate.app.presentation.settings.SettingsViewModel
+import com.textgate.app.presentation.whatsapp.WhatsAppViewModel
 import org.koin.androidx.viewmodel.dsl.viewModel
 import org.koin.dsl.module
 
@@ -19,4 +20,5 @@ val viewModelModule = module {
     // V2
     viewModel { AutoViewModel(get(), get()) }
     viewModel { SettingsViewModel(get(), get()) }
+    viewModel { WhatsAppViewModel(get(), get()) }
 }

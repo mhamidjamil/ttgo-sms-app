@@ -9,4 +9,5 @@ sealed class Screen(val route: String) {
     data object Auto : Screen("auto")
     data object Profile : Screen("profile")
     data object Settings : Screen("settings")
+    data object WhatsApp : Screen("whatsapp")
 }

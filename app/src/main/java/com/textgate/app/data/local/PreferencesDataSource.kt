@@ -14,6 +14,10 @@ class PreferencesDataSource(private val context: Context) {
 
     companion object {
         private val KEY_CACHED_UID = stringPreferencesKey("cached_uid")
+        // WhatsApp gateway link — the API key is a secret, so it lives in local
+        // DataStore only (never in Firestore).
+        private val KEY_WA_API_KEY = stringPreferencesKey("wa_api_key")
+        private val KEY_WA_SESSION_ID = stringPreferencesKey("wa_session_id")
     }
 
     suspend fun getCachedUid(): String? =
@@ -21,6 +25,26 @@ class PreferencesDataSource(private val context: Context) {
 
     suspend fun setCachedUid(uid: String) {
         context.dataStore.edit { it[KEY_CACHED_UID] = uid }
+    }
+
+    suspend fun getWaApiKey(): String? =
+        context.dataStore.data.first()[KEY_WA_API_KEY]
+
+    suspend fun getWaSessionId(): String? =
+        context.dataStore.data.first()[KEY_WA_SESSION_ID]
+
+    suspend fun setWaLink(apiKey: String, sessionId: String) {
+        context.dataStore.edit {
+            it[KEY_WA_API_KEY] = apiKey
+            it[KEY_WA_SESSION_ID] = sessionId
+        }
+    }
+
+    suspend fun clearWaLink() {
+        context.dataStore.edit {
+            it.remove(KEY_WA_API_KEY)
+            it.remove(KEY_WA_SESSION_ID)
+        }
     }
 
     suspend fun clearAll() {

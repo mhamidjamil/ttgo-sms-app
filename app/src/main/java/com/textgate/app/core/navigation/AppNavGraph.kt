@@ -30,6 +30,7 @@ import com.textgate.app.presentation.history.HistoryScreen
 import com.textgate.app.presentation.profile.ProfileScreen
 import com.textgate.app.presentation.send.SendScreen
 import com.textgate.app.presentation.settings.SettingsScreen
+import com.textgate.app.presentation.whatsapp.WhatsAppScreen
 
 private data class BottomNavItem(
     val screen: Screen,
@@ -132,10 +133,16 @@ fun AppNavGraph(startDestination: String) {
                     onNavigateToSettings = {
                         navController.navigate(Screen.Settings.route)
                     },
+                    onNavigateToWhatsApp = {
+                        navController.navigate(Screen.WhatsApp.route)
+                    },
                 )
             }
             composable(Screen.Settings.route) {
                 SettingsScreen(onBack = { navController.popBackStack() })
+            }
+            composable(Screen.WhatsApp.route) {
+                WhatsAppScreen(onBack = { navController.popBackStack() })
             }
         }
     }

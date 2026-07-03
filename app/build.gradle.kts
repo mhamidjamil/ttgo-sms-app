@@ -62,6 +62,15 @@ android {
             "\"${localProps.getProperty("SMTP_SENDER_NAME", "TextGate")}\"")
         buildConfigField("String", "ADMIN_EMAIL",
             "\"${localProps.getProperty("ADMIN_EMAIL", "")}\"")
+
+        // WhatsApp gateway (baileys service). Users register on the service's
+        // own dashboard, link WhatsApp by QR, and paste their personal API key
+        // into the app.
+        // TODO(@dev): this URL is NOT permanent and can change — load it
+        // dynamically from Firebase (e.g. RTDB /ttgo_tcall/settings/runtime or
+        // Remote Config) so a URL change doesn't require rebuilding the app.
+        buildConfigField("String", "WHATSAPP_SERVICE_URL",
+            "\"${localProps.getProperty("WHATSAPP_SERVICE_URL", "https://ww.innovorix.com")}\"")
     }
 
     buildTypes {

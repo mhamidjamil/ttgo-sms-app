@@ -29,11 +29,11 @@ android {
         vectorDrawables { useSupportLibrary = true }
 
         buildConfigField("String", "SMS_JOBS_PATH",
-            "\"${localProps.getProperty("SMS_JOBS_PATH", "sim_module/sms/sms_jobs")}\"")
+            "\"${localProps.getProperty("SMS_JOBS_PATH", "sim_module/sms/sms_jobs").removeSurrounding("\"")}\"")
         buildConfigField("String", "USERS_PATH",
-            "\"${localProps.getProperty("USERS_PATH", "ttgo_users")}\"")
+            "\"${localProps.getProperty("USERS_PATH", "ttgo_users").removeSurrounding("\"")}\"")
         buildConfigField("String", "DEVICE_DOC_PATH",
-            "\"${localProps.getProperty("DEVICE_DOC_PATH", "sim_module/device")}\"")
+            "\"${localProps.getProperty("DEVICE_DOC_PATH", "sim_module/device").removeSurrounding("\"")}\"")
         buildConfigField("int", "HISTORY_POLL_INTERVAL_SECONDS",
             localProps.getProperty("HISTORY_POLL_INTERVAL_SECONDS", "10"))
         buildConfigField("int", "WIFI_STABILITY_MINUTES",
@@ -47,21 +47,21 @@ android {
         // SECURITY NOTE: these values are compiled into the APK — use a
         // low-privilege mail account, never your personal password.
         buildConfigField("String", "SMTP_HOST",
-            "\"${localProps.getProperty("SMTP_HOST", "")}\"")
+            "\"${localProps.getProperty("SMTP_HOST", "").removeSurrounding("\"")}\"")
         buildConfigField("int", "SMTP_PORT",
             localProps.getProperty("SMTP_PORT", "587"))
         buildConfigField("boolean", "SMTP_SECURE",
             localProps.getProperty("SMTP_SECURE", "false"))
         buildConfigField("String", "SMTP_USER",
-            "\"${localProps.getProperty("SMTP_USER", "")}\"")
+            "\"${localProps.getProperty("SMTP_USER", "").removeSurrounding("\"")}\"")
         buildConfigField("String", "SMTP_PASS",
-            "\"${localProps.getProperty("SMTP_PASS", "")}\"")
+            "\"${localProps.getProperty("SMTP_PASS", "").removeSurrounding("\"")}\"")
         buildConfigField("String", "SMTP_FROM_EMAIL",
-            "\"${localProps.getProperty("SMTP_FROM_EMAIL", "")}\"")
+            "\"${localProps.getProperty("SMTP_FROM_EMAIL", "").removeSurrounding("\"")}\"")
         buildConfigField("String", "SMTP_SENDER_NAME",
-            "\"${localProps.getProperty("SMTP_SENDER_NAME", "TextGate")}\"")
+            "\"${localProps.getProperty("SMTP_SENDER_NAME", "TextGate").removeSurrounding("\"")}\"")
         buildConfigField("String", "ADMIN_EMAIL",
-            "\"${localProps.getProperty("ADMIN_EMAIL", "")}\"")
+            "\"${localProps.getProperty("ADMIN_EMAIL", "").removeSurrounding("\"")}\"")
 
         // WhatsApp gateway (baileys service). Users register on the service's
         // own dashboard, link WhatsApp by QR, and paste their personal API key
@@ -70,7 +70,7 @@ android {
         // dynamically from Firebase (e.g. RTDB /ttgo_tcall/settings/runtime or
         // Remote Config) so a URL change doesn't require rebuilding the app.
         buildConfigField("String", "WHATSAPP_SERVICE_URL",
-            "\"${localProps.getProperty("WHATSAPP_SERVICE_URL", "https://ww.innovorix.com")}\"")
+            "\"${localProps.getProperty("WHATSAPP_SERVICE_URL", "https://ww.innovorix.com").removeSurrounding("\"")}\"")
     }
 
     buildTypes {
@@ -98,7 +98,14 @@ android {
 
     composeOptions { kotlinCompilerExtensionVersion = "1.5.8" }
 
-    packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "/META-INF/NOTICE.md"
+            excludes += "/META-INF/LICENSE.md"
+            excludes += "/META-INF/DEPENDENCIES"
+        }
+    }
 }
 
 dependencies {

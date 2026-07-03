@@ -32,6 +32,9 @@ class ProfileViewModel(
 
     private fun load() {
         viewModelScope.launch {
+            // Refresh email verification first: without a reload, a link clicked
+            // after sign-in is never noticed until the user logs out and back in.
+            userRepo.refreshEmailVerified()
             val user = userRepo.getCurrentUser()
             val quota = user?.let { getEffectiveQuota(it) } ?: 0
             _uiState.value = ProfileUiState(user = user, effectiveQuota = quota, isLoading = false)

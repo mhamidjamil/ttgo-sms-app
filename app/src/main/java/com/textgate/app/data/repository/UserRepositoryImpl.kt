@@ -63,6 +63,15 @@ class UserRepositoryImpl(
     override suspend fun syncEmailVerified(uid: String, verified: Boolean) =
         firestore.syncEmailVerified(uid, verified)
 
+    override suspend fun refreshEmailVerified(): Result<Boolean> = runCatching {
+        // Reload the cached Firebase user so a verification link clicked AFTER
+        // sign-in is noticed without a re-login, then mirror it to Firestore.
+        auth.reload().getOrThrow()
+        val fbUser = auth.currentUser() ?: error("No authenticated user")
+        firestore.syncEmailVerified(fbUser.uid, fbUser.isEmailVerified).getOrThrow()
+        fbUser.isEmailVerified
+    }
+
     override fun isLoggedIn() = auth.isLoggedIn()
 
     override fun currentFirebaseUser() = auth.currentUser()

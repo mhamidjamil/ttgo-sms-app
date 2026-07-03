@@ -12,6 +12,9 @@ interface UserRepository {
     suspend fun updateQuotaReset(uid: String, remainingQuota: Int, resetDate: String): Result<Unit>
     suspend fun decrementRemainingQuota(uid: String): Result<Unit>
     suspend fun syncEmailVerified(uid: String, verified: Boolean): Result<Unit>
+    // Reloads the Firebase user and mirrors isEmailVerified to Firestore.
+    // Returns the fresh verification status.
+    suspend fun refreshEmailVerified(): Result<Boolean>
     fun isLoggedIn(): Boolean
     fun currentFirebaseUser(): FirebaseUser?
 

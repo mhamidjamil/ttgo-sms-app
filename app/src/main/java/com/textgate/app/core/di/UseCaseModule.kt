@@ -26,7 +26,7 @@ val useCaseModule = module {
     factory { EnqueueSmsUseCase(get(), get()) }
     factory { GetHistoryUseCase(get()) }
     factory { RefreshJobStatusUseCase(get()) }
-    factory { SendPhoneOtpUseCase(get(), get()) }
+    factory { SendPhoneOtpUseCase(get(), get(), get()) }
     factory { VerifyPhoneOtpUseCase(get()) }
     // V2
     factory { SaveLocationSettingsUseCase(get()) }

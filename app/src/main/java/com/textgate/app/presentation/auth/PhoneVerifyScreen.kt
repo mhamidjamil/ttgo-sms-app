@@ -1,7 +1,9 @@
 package com.textgate.app.presentation.auth
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -10,7 +12,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.textgate.app.BuildConfig
 import com.textgate.app.core.theme.TextGateTheme
 import org.koin.androidx.compose.koinViewModel
 
@@ -24,8 +25,8 @@ fun PhoneVerifyScreen(
     LaunchedEffect(uiState.success) { if (uiState.success) onVerified() }
     PhoneVerifyContent(
         uiState = uiState,
+        onSendCode = viewModel::sendCode,
         onVerify = viewModel::verify,
-        onResend = viewModel::resend,
         onSkip = onSkip,
     )
 }
@@ -33,33 +34,69 @@ fun PhoneVerifyScreen(
 @Composable
 private fun PhoneVerifyContent(
     uiState: PhoneVerifyUiState,
+    onSendCode: (String) -> Unit,
     onVerify: (String) -> Unit,
-    onResend: () -> Unit,
     onSkip: () -> Unit,
 ) {
+    var phone by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
+    // Prefill the phone field once the stored number loads (don't clobber edits).
+    var prefilled by remember { mutableStateOf(false) }
+    LaunchedEffect(uiState.phoneNumber) {
+        if (!prefilled && uiState.phoneNumber.isNotBlank()) {
+            phone = uiState.phoneNumber
+            prefilled = true
+        }
+    }
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(24.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text("Verify Phone", style = MaterialTheme.typography.headlineLarge)
         Spacer(Modifier.height(8.dp))
-        val displayPhone = uiState.phoneNumber.ifBlank { "your phone" }
         Text(
-            "A 6-digit code was sent to $displayPhone via your SMS gateway.",
+            if (uiState.codeSent) {
+                "A 6-digit code was sent to ${uiState.phoneNumber} via your SMS gateway. It is valid for 1 hour."
+            } else {
+                "Enter your phone number and request a code. Verifying your number is required before you can send any SMS."
+            },
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
         )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Verifying unlocks ${BuildConfig.PARTIAL_VERIFIED_QUOTA}+ SMS/day (up to your full quota when email is also verified).",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-            textAlign = TextAlign.Center,
+        Spacer(Modifier.height(24.dp))
+
+        OutlinedTextField(
+            value = phone,
+            onValueChange = { phone = it },
+            label = { Text("Phone Number") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("03001234567") },
         )
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(12.dp))
+        Button(
+            onClick = { onSendCode(phone) },
+            enabled = phone.isNotBlank() && !uiState.isSending && !uiState.isLoading,
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+        ) {
+            if (uiState.isSending) {
+                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onPrimary)
+            } else {
+                Text(if (uiState.codeSent) "Resend Code" else "Send Code")
+            }
+        }
+
+        Spacer(Modifier.height(24.dp))
+        HorizontalDivider()
+        Spacer(Modifier.height(24.dp))
+
         OutlinedTextField(
             value = code,
             onValueChange = { if (it.length <= 6 && it.all { c -> c.isDigit() }) code = it },
@@ -71,17 +108,18 @@ private fun PhoneVerifyContent(
         )
         uiState.error?.let {
             Spacer(Modifier.height(8.dp))
-            Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center)
         }
-        if (uiState.resendSuccess) {
+        if (uiState.codeSent && uiState.error == null) {
             Spacer(Modifier.height(8.dp))
-            Text("New code sent!", color = MaterialTheme.colorScheme.secondary,
+            Text("Code sent — check your messages.", color = MaterialTheme.colorScheme.secondary,
                 style = MaterialTheme.typography.bodySmall)
         }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(16.dp))
         Button(
             onClick = { onVerify(code) },
-            enabled = code.length == 6 && !uiState.isLoading,
+            enabled = code.length == 6 && !uiState.isLoading && !uiState.isSending,
             modifier = Modifier.fillMaxWidth().height(48.dp),
         ) {
             if (uiState.isLoading) {
@@ -92,32 +130,30 @@ private fun PhoneVerifyContent(
             }
         }
         Spacer(Modifier.height(12.dp))
-        TextButton(onClick = onResend, enabled = !uiState.isLoading) { Text("Resend Code") }
-        Spacer(Modifier.height(12.dp))
         OutlinedButton(onClick = onSkip, modifier = Modifier.fillMaxWidth()) {
-            Text("Skip — Verify Later (${BuildConfig.UNVERIFIED_QUOTA} SMS/day until verified)")
+            Text("Skip — Verify Later (0 SMS/day until verified)")
         }
     }
 }
 
-@Preview(showBackground = true, name = "Phone Verify — Default")
+@Preview(showBackground = true, name = "Phone Verify — Before send")
 @Composable
 private fun PhoneVerifyPreview() {
     TextGateTheme {
         PhoneVerifyContent(
             uiState = PhoneVerifyUiState(phoneNumber = "+923001234567"),
-            onVerify = {}, onResend = {}, onSkip = {},
+            onSendCode = {}, onVerify = {}, onSkip = {},
         )
     }
 }
 
-@Preview(showBackground = true, name = "Phone Verify — Loading")
+@Preview(showBackground = true, name = "Phone Verify — Code sent")
 @Composable
-private fun PhoneVerifyLoadingPreview() {
+private fun PhoneVerifySentPreview() {
     TextGateTheme {
         PhoneVerifyContent(
-            uiState = PhoneVerifyUiState(isLoading = true, phoneNumber = "+923001234567"),
-            onVerify = {}, onResend = {}, onSkip = {},
+            uiState = PhoneVerifyUiState(phoneNumber = "+923001234567", codeSent = true),
+            onSendCode = {}, onVerify = {}, onSkip = {},
         )
     }
 }
@@ -127,8 +163,11 @@ private fun PhoneVerifyLoadingPreview() {
 private fun PhoneVerifyErrorPreview() {
     TextGateTheme {
         PhoneVerifyContent(
-            uiState = PhoneVerifyUiState(phoneNumber = "+923001234567", error = "Incorrect code. Try again."),
-            onVerify = {}, onResend = {}, onSkip = {},
+            uiState = PhoneVerifyUiState(
+                phoneNumber = "+923001234567",
+                error = "This code has expired (valid for 1 hour) — request a new one",
+            ),
+            onSendCode = {}, onVerify = {}, onSkip = {},
         )
     }
 }

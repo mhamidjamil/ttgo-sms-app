@@ -1,19 +1,27 @@
 package com.textgate.app.domain.usecase.auth
 
+import com.textgate.app.core.utils.PhoneNormalizer
 import com.textgate.app.domain.repository.SmsRepository
 import com.textgate.app.domain.repository.UserRepository
 
 class SendPhoneOtpUseCase(
     private val userRepo: UserRepository,
     private val smsRepo: SmsRepository,
+    private val phoneNormalizer: PhoneNormalizer,
 ) {
-    // Generates a 6-digit OTP, stores it in Firestore, and enqueues an OTP SMS
-    // to the user's own phone via the TTGO gateway.
-    // OTP does not expire — user can verify anytime from the app.
+    // Generates a 6-digit OTP, stores it (with creation time — codes expire after
+    // 1 hour), and enqueues a priority OTP SMS to the user's own phone via the
+    // TTGO gateway (kind:"otp" → device sends it before regular jobs).
     suspend operator fun invoke(uid: String, phoneNumber: String): Result<Unit> = runCatching {
+        val normalized = phoneNormalizer.normalize(phoneNumber)
+            ?: error("Enter a valid Pakistani mobile number (e.g. 03001234567)")
         val otp = (100000..999999).random().toString()
-        userRepo.savePhoneNumber(uid, phoneNumber).getOrThrow()
+        userRepo.savePhoneNumber(uid, normalized).getOrThrow()
         userRepo.savePhoneOtp(uid, otp).getOrThrow()
-        smsRepo.enqueueOtpSms(uid, phoneNumber, "Your TextGate verification code: $otp").getOrThrow()
+        smsRepo.enqueueOtpSms(
+            uid,
+            normalized,
+            "TextGate verification code: $otp\nValid for 1 hour. Do not share this code.",
+        ).getOrThrow()
     }
 }

@@ -79,12 +79,15 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
 
     suspend fun savePhoneOtp(uid: String, otp: String): Result<Unit> = runCatching {
         db.collection(Paths.USERS).document(uid)
-            .update("phone_otp", otp).await()
+            .update("phone_otp", otp, "phone_otp_created_at", Timestamp.now()).await()
     }
 
-    suspend fun getPhoneOtp(uid: String): Result<String?> = runCatching {
+    // Returns code + creation time (millis) so the caller can enforce expiry.
+    suspend fun getPhoneOtp(uid: String): Result<Pair<String, Long>?> = runCatching {
         val snap = db.collection(Paths.USERS).document(uid).get().await()
-        snap.getString("phone_otp")
+        val code = snap.getString("phone_otp") ?: return@runCatching null
+        val createdAt = snap.getTimestamp("phone_otp_created_at")?.toDate()?.time ?: 0L
+        code to createdAt
     }
 
     suspend fun markPhoneVerified(uid: String): Result<Unit> = runCatching {
@@ -92,16 +95,22 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
             mapOf(
                 "phone_verified" to true,
                 "phone_otp" to FieldValue.delete(),
+                "phone_otp_created_at" to FieldValue.delete(),
             )
         ).await()
     }
 
-    // Enqueues an OTP verification SMS directly — no history entry, no quota change
+    // Enqueues an OTP verification SMS directly — no history entry, no quota change.
+    // kind:"otp" makes the TTGO device process it BEFORE regular jobs, send it
+    // immediately (no anti-ban gap), and bypass the SIM-package-expired gate.
     suspend fun enqueueOtpSms(phoneNumber: String, message: String, enqueBy: String): Result<Unit> = runCatching {
         val jobDto = mapOf(
+            "phone_number" to phoneNumber,
             "message" to message,
             "status" to "pending",
             "enque_by" to enqueBy,
+            "kind" to "otp",
+            "created_at" to Timestamp.now(),
         )
         db.collection(Paths.SMS_JOBS).document(phoneNumber).set(jobDto).await()
     }

@@ -24,9 +24,12 @@ Doc ID = E.164 phone number. One active job per number (device constraint).
 
 | Field | Type | Written by | Description |
 |-------|------|-----------|-------------|
+| `phone_number` | string | app | E.164 recipient (same value as the doc ID) |
 | `message` | string | app | SMS body |
 | `status` | string | both | `pending` → `in_progress` → `sent` / `failed` / `blocked` |
 | `enque_by` | string | app | `"app:{uid}"` for regular SMS; `"app:{uid}:otp"` for verification |
+| `kind` | string | app | `"otp"` on verification jobs — the device processes these BEFORE regular jobs, sends immediately (no anti-ban gap), and bypasses the SIM-package-expired gate |
+| `created_at` | timestamp | app | Server timestamp at enqueue |
 
 The app also reads `status` during history polling to update `ttgo_users/{uid}/history/`.
 
@@ -46,6 +49,7 @@ Top-level collection — one document per Firebase Auth user, keyed by UID.
 | `phone_number` | string | `""` | Pakistani mobile in E.164 (`+923XXXXXXXXX`) |
 | `phone_verified` | bool | `false` | Set to `true` after OTP confirmation |
 | `phone_otp` | string | (deleted on verify) | Stored 6-digit OTP; field removed once verified |
+| `phone_otp_created_at` | timestamp | (deleted on verify) | When the OTP was issued — codes expire after **1 hour** |
 | `assigned_quota` | int | from device | Full daily SMS allowance (copied from `free_sms_quota`) |
 | `remaining_quota` | int | = assigned | Decremented per send; reset to `assigned_quota` each new day |
 | `last_quota_reset_date` | string | today | `"YYYY-MM-DD"` — compared to today on app open to detect a new day |

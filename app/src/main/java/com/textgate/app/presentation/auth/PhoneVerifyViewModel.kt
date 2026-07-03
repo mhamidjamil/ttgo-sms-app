@@ -12,10 +12,14 @@ import kotlinx.coroutines.launch
 
 data class PhoneVerifyUiState(
     val isLoading: Boolean = false,
+    val isSending: Boolean = false,
     val error: String? = null,
     val success: Boolean = false,
     val phoneNumber: String = "",
-    val resendSuccess: Boolean = false,
+    // True once a code has actually been enqueued in this session — gates the
+    // "code was sent" copy in the UI (it used to claim a code was sent when
+    // nothing had been enqueued at all).
+    val codeSent: Boolean = false,
 )
 
 class PhoneVerifyViewModel(
@@ -36,8 +40,44 @@ class PhoneVerifyViewModel(
         }
     }
 
+    // Explicit send — called from the "Send Code" / "Resend Code" buttons with
+    // whatever phone number is currently in the input field. Never a silent
+    // no-op: every failure path surfaces an error message.
+    fun sendCode(phone: String) {
+        val uid = userRepo.currentFirebaseUser()?.uid
+        if (uid == null) {
+            _uiState.value = _uiState.value.copy(error = "Not signed in — please log in again")
+            return
+        }
+        if (phone.isBlank()) {
+            _uiState.value = _uiState.value.copy(error = "Enter your phone number first")
+            return
+        }
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isSending = true, error = null)
+            sendPhoneOtp(uid, phone)
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(
+                        isSending = false,
+                        codeSent = true,
+                        phoneNumber = phone,
+                    )
+                }
+                .onFailure {
+                    _uiState.value = _uiState.value.copy(
+                        isSending = false,
+                        error = it.message ?: "Failed to send code",
+                    )
+                }
+        }
+    }
+
     fun verify(code: String) {
-        val uid = userRepo.currentFirebaseUser()?.uid ?: return
+        val uid = userRepo.currentFirebaseUser()?.uid
+        if (uid == null) {
+            _uiState.value = _uiState.value.copy(error = "Not signed in — please log in again")
+            return
+        }
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             verifyPhoneOtp(uid, code)
@@ -46,23 +86,6 @@ class PhoneVerifyViewModel(
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         error = it.message ?: "Verification failed",
-                    )
-                }
-        }
-    }
-
-    fun resend() {
-        val uid = userRepo.currentFirebaseUser()?.uid ?: return
-        val phone = _uiState.value.phoneNumber
-        if (phone.isBlank()) return
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null, resendSuccess = false)
-            sendPhoneOtp(uid, phone)
-                .onSuccess { _uiState.value = _uiState.value.copy(isLoading = false, resendSuccess = true) }
-                .onFailure {
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        error = it.message ?: "Failed to resend code",
                     )
                 }
         }

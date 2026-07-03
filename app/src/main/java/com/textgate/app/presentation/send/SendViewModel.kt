@@ -69,7 +69,7 @@ class SendViewModel(
         }
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isSending = true, error = null)
-            enqueueSms(user.uid, phone, message)
+            enqueueSms(user.uid, phone, message, senderPhone = user.phoneNumber)
                 .onSuccess {
                     decrementQuota(user.uid)
                     val updated = user.copy(remainingQuota = (user.remainingQuota - 1).coerceAtLeast(0))

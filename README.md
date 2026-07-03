@@ -14,7 +14,7 @@
 ### V1 — Core SMS Queue Client
 
 - **Firebase Auth** — email + password sign-up and sign-in
-- **Email verification flow** — unverified accounts have a reduced daily quota
+- **Email verification flow** — required for WhatsApp linking and admin contact (does not affect SMS quota)
 - **Phone number collection** — Pakistani mobile number (03XX format) collected at sign-up
 - **Pakistani-number-only enforcement** — app accepts `03XXXXXXXXX`, `923XXXXXXXXX`, or `+923XXXXXXXXX`; auto-normalizes to E.164 (`+923XXXXXXXXX`) before sending to Firestore; displays a clear error for any other format
 - **Daily SMS quota** with automatic midnight reset — quota sourced from `sim_module/device/free_sms_quota` (no hardcoded values; change it in Firebase without a new app release)
@@ -24,17 +24,18 @@
 - **Configurable Firestore paths** — all collection paths in `local.properties` so a schema change is a one-line edit, not a code change
 - **Quota guard** — send button disabled when daily quota is exhausted; clear progress bar shows remaining SMS
 
-### V1.5 — Phone Number Verification + 3-Tier Quota
+### V1.5 — Phone Number Verification + Phone-Gated Quota
 
-- **3-tier daily quota**:
-  - Both email + phone verified → full assigned quota (default 10)
-  - Either email or phone verified → partial quota (default 4)
-  - Neither verified → minimum quota (default 2)
-- **Phone OTP verification** — after sign-up, a 6-digit code is queued as an SMS job to the user's own number via the TTGO gateway; user enters the code in-app to verify
-- **No OTP expiry** — the code stays valid until used (intentional design)
-- **Resend code** — user can request a new code any time from the verify screen or from Profile
+- **Phone-gated daily quota**:
+  - Phone verified → full assigned quota (default 10/day from the device doc)
+  - Phone NOT verified → **0 SMS/day** (sending disabled — sender identity must be verified)
+  - Email verification does not affect the SMS quota (needed for WhatsApp linking + admin contact)
+- **Phone OTP verification** — enter your number on the verify screen and request a 6-digit code; it is queued as a priority SMS job (`kind: "otp"`) that the TTGO device sends before all other jobs
+- **1-hour OTP expiry** — codes expire 60 minutes after being sent; request a new one any time
+- **Message signature** — every manual SMS gets `- Sent by <verified number> via TextGate` appended automatically for accountability on the shared gateway number; user text is capped at 90 chars so the total stays inside one 160-char SMS segment
+- **Request more SMS** — one tap emails the admin (SMTP) with your account details to request a quota increase
 - **Profile page verification banners** — separate banners for unverified email and unverified phone, each with an action button
-- **Skip option** — phone verify can be skipped; verified later from the Profile screen
+- **Skip option** — phone verify can be skipped; sending stays disabled until verified from Profile
 
 ### V2 — Automated Arrival Notifications (WiFi-Based)
 

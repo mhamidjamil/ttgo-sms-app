@@ -18,6 +18,7 @@ import com.textgate.app.core.theme.WarningAmber
 import com.textgate.app.core.theme.WarningAmberBorder
 import com.textgate.app.core.utils.PhoneNormalizer
 import com.textgate.app.domain.model.User
+import com.textgate.app.domain.usecase.sms.EnqueueSmsUseCase
 import org.koin.androidx.compose.koinViewModel
 
 @Composable
@@ -130,14 +131,17 @@ private fun SendContent(
                 supportingText = phoneError?.let { { Text(it) } },
             )
             Spacer(Modifier.height(12.dp))
+            val maxChars = EnqueueSmsUseCase.MAX_USER_MESSAGE_CHARS
             OutlinedTextField(
                 value = message,
-                onValueChange = { if (it.length <= 500) message = it },
+                onValueChange = { if (it.length <= maxChars) message = it },
                 label = { Text("Message") },
                 minLines = 4,
                 maxLines = 8,
                 modifier = Modifier.fillMaxWidth(),
-                supportingText = { Text("${message.length}/500") },
+                supportingText = {
+                    Text("${message.length}/$maxChars — a \"Sent by ${uiState.user?.phoneNumber ?: "your number"} via TextGate\" signature is added automatically")
+                },
             )
 
             uiState.error?.let {

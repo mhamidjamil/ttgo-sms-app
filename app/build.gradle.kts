@@ -63,14 +63,14 @@ android {
         buildConfigField("String", "ADMIN_EMAIL",
             "\"${localProps.getProperty("ADMIN_EMAIL", "").removeSurrounding("\"")}\"")
 
-        // WhatsApp gateway (baileys service). Users register on the service's
-        // own dashboard, link WhatsApp by QR, and paste their personal API key
-        // into the app.
-        // TODO(@dev): this URL is NOT permanent and can change — load it
-        // dynamically from Firebase (e.g. RTDB /ttgo_tcall/settings/runtime or
-        // Remote Config) so a URL change doesn't require rebuilding the app.
+        // WhatsApp gateway (baileys service). Both values are REMOTE-FIRST at
+        // runtime: fields wa_service_url / wa_sso_secret on the Firestore device
+        // doc override these compile-time defaults, so rotating the URL or the
+        // SSO secret is a config edit (Firestore + service .env) — no rebuild.
         buildConfigField("String", "WHATSAPP_SERVICE_URL",
             "\"${localProps.getProperty("WHATSAPP_SERVICE_URL", "https://ww.innovorix.com").removeSurrounding("\"")}\"")
+        buildConfigField("String", "WHATSAPP_SSO_SECRET",
+            "\"${localProps.getProperty("WHATSAPP_SSO_SECRET", "").removeSurrounding("\"")}\"")
     }
 
     buildTypes {

@@ -30,11 +30,13 @@ SMTP_SENDER_NAME=TextGate
 # Where quota-increase requests are sent
 ADMIN_EMAIL=
 
-# WhatsApp gateway (baileys service) base URL. Users register on the service
-# dashboard themselves, link WhatsApp by QR, and paste their API key into the app.
-# TODO(@dev): not permanent — make this dynamic via Firebase so URL changes
-# don't require an app rebuild.
+# WhatsApp gateway (baileys service). Accounts are provisioned automatically
+# via SSO once the user verifies phone + email — no manual signup.
+# BOTH values are remote-first: Firestore device-doc fields wa_service_url /
+# wa_sso_secret override them at runtime, so rotation = config edit, no rebuild.
 WHATSAPP_SERVICE_URL=https://ww.innovorix.com
+# Must match SSO_SERVICE_SECRET in the baileys service .env. Blank = SSO off.
+WHATSAPP_SSO_SECRET=
 
 # History auto-poll interval in seconds while the screen is visible
 HISTORY_POLL_INTERVAL_SECONDS=10

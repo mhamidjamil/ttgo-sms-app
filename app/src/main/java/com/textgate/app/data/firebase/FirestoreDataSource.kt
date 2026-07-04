@@ -71,6 +71,14 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         snap.getLong(Paths.FREE_SMS_QUOTA_FIELD)?.toInt() ?: 10
     }
 
+    // WhatsApp gateway overrides on the device doc: (wa_service_url, wa_sso_secret).
+    // Either may be null/blank — the caller falls back to BuildConfig. Kept in
+    // Firestore so URL + secret rotate with a config edit, not an app rebuild.
+    suspend fun getWaGatewayOverrides(): Result<Pair<String?, String?>> = runCatching {
+        val snap = db.document(Paths.DEVICE_DOC).get().await()
+        snap.getString("wa_service_url") to snap.getString("wa_sso_secret")
+    }
+
     // ── Phone verification (V1.5) ─────────────────────────────────────────────
 
     suspend fun savePhoneNumber(uid: String, phoneNumber: String): Result<Unit> = runCatching {

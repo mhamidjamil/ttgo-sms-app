@@ -4,6 +4,7 @@ import com.textgate.app.data.repository.SmsRepositoryImpl
 import com.textgate.app.data.repository.ThrottleRepositoryImpl
 import com.textgate.app.data.repository.UserRepositoryImpl
 import com.textgate.app.data.repository.WhatsAppRepositoryImpl
+import com.textgate.app.data.whatsapp.WaConfigProvider
 import com.textgate.app.data.whatsapp.WhatsAppApi
 import com.textgate.app.domain.repository.SmsRepository
 import com.textgate.app.domain.repository.ThrottleRepository
@@ -14,7 +15,8 @@ import org.koin.dsl.module
 val repositoryModule = module {
     single<UserRepository> { UserRepositoryImpl(get(), get(), get()) }
     single<SmsRepository> { SmsRepositoryImpl(get()) }
-    single { WhatsAppApi() }
+    single { WaConfigProvider(get()) }
+    single { WhatsAppApi(get()) }
     single<WhatsAppRepository> { WhatsAppRepositoryImpl(get(), get()) }
     single<ThrottleRepository> { ThrottleRepositoryImpl(get()) }
 }

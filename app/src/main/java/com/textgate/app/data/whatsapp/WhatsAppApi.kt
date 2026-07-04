@@ -11,6 +11,12 @@ data class WaSessionStatus(
     val phoneNumber: String?,
 )
 
+data class WaProvisionResult(
+    val apiKey: String,
+    val sessionId: String,
+    val sharedSessionId: String,
+)
+
 /**
  * Thin client for the baileys WhatsApp gateway. Auth is the user's personal
  * API key sent as an `x-api-key` header (no Bearer prefix). Sends return 202
@@ -41,6 +47,39 @@ class WhatsAppApi(private val configProvider: WaConfigProvider) {
             else Result.failure(IllegalStateException(MAINTENANCE_MESSAGE))
         } catch (_: Exception) {
             Result.failure(IllegalStateException(MAINTENANCE_MESSAGE))
+        }
+    }
+
+    /**
+     * SSO provisioning: creates/links a PRE-VERIFIED gateway account for a user
+     * whose email + phone this app has already verified. Auth is the dedicated
+     * x-service-key (SSO secret) — never a user API key. Returns the personal
+     * API key + the phone-derived session id. Idempotent server-side.
+     */
+    suspend fun provision(
+        email: String,
+        phoneNumber: String,
+        displayName: String?,
+    ): Result<WaProvisionResult> = withContext(Dispatchers.IO) {
+        runCatching {
+            val cfg = configProvider.get()
+            check(cfg.ssoSecret.isNotBlank()) { "WhatsApp SSO is not configured in this build" }
+            val payload = JSONObject().apply {
+                put("email", email)
+                put("phoneNumber", phoneNumber)
+                displayName?.takeIf { it.isNotBlank() }?.let { put("displayName", it) }
+            }
+            val (code, body) = request(
+                cfg.serviceUrl, "POST", "/sso/provision",
+                mapOf("x-service-key" to cfg.ssoSecret), payload.toString(),
+            )
+            if (code !in 200..299) throw mapError(code, body)
+            val json = JSONObject(body)
+            WaProvisionResult(
+                apiKey = json.getString("apiKey"),
+                sessionId = json.getString("sessionId"),
+                sharedSessionId = json.optString("sharedSessionId").ifBlank { "shared" },
+            )
         }
     }
 

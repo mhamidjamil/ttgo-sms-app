@@ -148,6 +148,17 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         db.collection(Paths.SMS_JOBS).document(phoneNumber).set(jobDto).await()
     }
 
+    // ── WhatsApp gateway link (SSO) ───────────────────────────────────────────
+
+    suspend fun saveWaLink(uid: String, apiKey: String, sessionId: String): Result<Unit> = runCatching {
+        db.collection(Paths.USERS).document(uid)
+            .update("wa_api_key", apiKey, "wa_session_id", sessionId).await()
+    }
+
+    suspend fun saveWaMode(uid: String, mode: String): Result<Unit> = runCatching {
+        db.collection(Paths.USERS).document(uid).update("wa_mode", mode).await()
+    }
+
     // ── Location settings (V2) ────────────────────────────────────────────────
 
     suspend fun savePlacesSettings(

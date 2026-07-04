@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.textgate.app.domain.repository.OtpChannel
 import com.textgate.app.domain.repository.ThrottleRepository
 import com.textgate.app.domain.repository.UserRepository
+import com.textgate.app.domain.repository.WhatsAppRepository
 import com.textgate.app.domain.usecase.auth.SendPhoneOtpUseCase
 import com.textgate.app.domain.usecase.auth.VerifyPhoneOtpUseCase
 import kotlinx.coroutines.Job
@@ -36,6 +37,7 @@ class PhoneVerifyViewModel(
     private val verifyPhoneOtp: VerifyPhoneOtpUseCase,
     private val sendPhoneOtp: SendPhoneOtpUseCase,
     private val throttle: ThrottleRepository,
+    private val waRepo: WhatsAppRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PhoneVerifyUiState())
@@ -113,7 +115,13 @@ class PhoneVerifyViewModel(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             verifyPhoneOtp(uid, code)
-                .onSuccess { _uiState.value = PhoneVerifyUiState(success = true) }
+                .onSuccess {
+                    // Best-effort SSO: once BOTH verifications are done this
+                    // provisions the WhatsApp gateway account in the background.
+                    // Failures are silent here — the WhatsApp screen surfaces them.
+                    launch { waRepo.ensureProvisioned() }
+                    _uiState.value = PhoneVerifyUiState(success = true)
+                }
                 .onFailure {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,

@@ -15,8 +15,9 @@ class PreferencesDataSource(private val context: Context) {
 
     companion object {
         private val KEY_CACHED_UID = stringPreferencesKey("cached_uid")
-        // WhatsApp gateway link — the API key is a secret, so it lives in local
-        // DataStore only (never in Firestore).
+        // WhatsApp gateway link — local cache of the per-user key/session. The
+        // source of truth is the Firestore user doc (owner-only via rules), so
+        // the link survives reinstall/sign-out and other devices.
         private val KEY_WA_API_KEY = stringPreferencesKey("wa_api_key")
         private val KEY_WA_SESSION_ID = stringPreferencesKey("wa_session_id")
         // Anti-spam state (send-OTP cooldowns) — keyed per channel ("phone"/"email").

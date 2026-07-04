@@ -11,6 +11,8 @@ The TTGO firmware uses `sim_module/` in Firestore. The app adds its own top-leve
 | Field | Type | Written by | Description |
 |-------|------|-----------|-------------|
 | `free_sms_quota` | int | TTGO dashboard | Default assigned quota for new users |
+| `wa_service_url` | string | admin | Optional override of the WhatsApp gateway base URL (rotation without app rebuild) |
+| `wa_sso_secret` | string | admin | Optional override of the SSO provisioning secret (must match the gateway's `SSO_SERVICE_SECRET`) |
 | `active` | bool | TTGO dashboard | Master send switch |
 | `blocked*` | array | TTGO dashboard | Block lists |
 
@@ -56,6 +58,9 @@ Top-level collection — one document per Firebase Auth user, keyed by UID.
 | `remaining_quota` | int | = assigned | Decremented per send; reset to `assigned_quota` each new day |
 | `last_quota_reset_date` | string | today | `"YYYY-MM-DD"` — compared to today on app open to detect a new day |
 | `created_at` | timestamp | — | Server timestamp set at sign-up |
+| `wa_api_key` | string | `""` | Personal WhatsApp-gateway API key, auto-provisioned via SSO once phone + email are verified (owner-only via rules) |
+| `wa_session_id` | string | `""` | Gateway session id = the user's verified phone digits (e.g. `923001234567`) |
+| `wa_mode` | string | `"shared"` | WhatsApp sending mode: `shared` (app's number) or `own` (user-linked WhatsApp) |
 
 **Effective quota** (computed in app, never stored):
 - `phone_verified` → `assigned_quota` (default 10/day from the device doc)

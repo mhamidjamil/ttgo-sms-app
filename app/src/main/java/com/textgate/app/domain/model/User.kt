@@ -11,6 +11,12 @@ data class User(
     val remainingQuota: Int,
     val lastQuotaResetDate: String,
 
+    // WhatsApp gateway link (SSO-provisioned once phone + email are verified).
+    val waApiKey: String = "",
+    val waSessionId: String = "",
+    // "shared" (default — app's WhatsApp number) | "own" (user-linked WhatsApp)
+    val waMode: String = "shared",
+
     // V2: arrival monitoring
     val guardianNumber: String = "",
     // Additional saved guardian numbers (E.164) selectable per place.

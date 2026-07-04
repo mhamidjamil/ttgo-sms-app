@@ -49,6 +49,14 @@ data class UserDto(
     @get:PropertyName("last_office_arrival_date") @set:PropertyName("last_office_arrival_date")
     var lastOfficeArrivalDate: String = "",
 
+    // WhatsApp gateway link (SSO)
+    @get:PropertyName("wa_api_key") @set:PropertyName("wa_api_key")
+    var waApiKey: String = "",
+    @get:PropertyName("wa_session_id") @set:PropertyName("wa_session_id")
+    var waSessionId: String = "",
+    @get:PropertyName("wa_mode") @set:PropertyName("wa_mode")
+    var waMode: String = "shared",
+
     // Dynamic places: [{id,label,bssid,message}] + per-place arrival state maps.
     @get:PropertyName("places") @set:PropertyName("places")
     var places: List<Map<String, Any>> = emptyList(),
@@ -96,6 +104,9 @@ data class UserDto(
             assignedQuota = assignedQuota,
             remainingQuota = remainingQuota,
             lastQuotaResetDate = lastQuotaResetDate,
+            waApiKey = waApiKey,
+            waSessionId = waSessionId,
+            waMode = waMode.ifBlank { "shared" },
             guardianNumber = guardianNumber,
             guardianNumbers = guardianNumbers,
             places = placeList,

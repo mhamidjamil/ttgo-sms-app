@@ -6,6 +6,7 @@ import com.textgate.app.domain.model.User
 import com.textgate.app.domain.repository.OtpChannel
 import com.textgate.app.domain.repository.ThrottleRepository
 import com.textgate.app.domain.repository.UserRepository
+import com.textgate.app.domain.repository.WhatsAppRepository
 import com.textgate.app.domain.usecase.auth.SendEmailOtpUseCase
 import com.textgate.app.domain.usecase.auth.VerifyEmailOtpUseCase
 import com.textgate.app.domain.usecase.quota.GetEffectiveQuotaUseCase
@@ -39,6 +40,7 @@ class ProfileViewModel(
     private val sendEmailOtp: SendEmailOtpUseCase,
     private val verifyEmailOtp: VerifyEmailOtpUseCase,
     private val throttle: ThrottleRepository,
+    private val waRepo: WhatsAppRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ProfileUiState())
@@ -103,6 +105,8 @@ class ProfileViewModel(
             _uiState.value = _uiState.value.copy(isVerifyingEmail = true, emailVerifyError = null)
             verifyEmailOtp(user.uid, code)
                 .onSuccess {
+                    // Best-effort SSO provisioning (no-ops until phone is verified too).
+                    launch { waRepo.ensureProvisioned() }
                     _uiState.value = _uiState.value.copy(
                         isVerifyingEmail = false,
                         emailCodeSent = false,

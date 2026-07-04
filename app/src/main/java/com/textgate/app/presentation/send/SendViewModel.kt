@@ -85,7 +85,7 @@ class SendViewModel(
                     _uiState.value = SendUiState(
                         user = updated,
                         effectiveQuota = _uiState.value.effectiveQuota,
-                        sentMessage = "SMS queued — the gateway will send it in a few seconds",
+                        sentMessage = "Message queued successfully.",
                     )
                 }
                 .onFailure {

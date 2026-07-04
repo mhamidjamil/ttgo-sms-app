@@ -1,5 +1,6 @@
 package com.textgate.app.presentation.send
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -10,6 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -43,7 +45,11 @@ private fun SendContent(
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val phoneNormalizer = remember { PhoneNormalizer() }
+    val context = LocalContext.current
     var showRequestDialog by remember { mutableStateOf(false) }
+    // Hoisted so the queued-toast effect can clear the field for the next message.
+    var phone by remember { mutableStateOf("") }
+    var message by remember { mutableStateOf("") }
 
     if (showRequestDialog) {
         RequestMoreDialog(
@@ -58,7 +64,10 @@ private fun SendContent(
 
     LaunchedEffect(uiState.sentMessage) {
         uiState.sentMessage?.let {
-            snackbarHostState.showSnackbar(it)
+            // Queued: toast + clear the message box so the next text can be
+            // typed immediately (the recipient number is kept on purpose).
+            message = ""
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
             onClearMessage()
         }
     }
@@ -129,8 +138,6 @@ private fun SendContent(
                 Spacer(Modifier.height(8.dp))
             }
 
-            var phone by remember { mutableStateOf("") }
-            var message by remember { mutableStateOf("") }
             val phoneError = phoneNormalizer.validationError(phone)
 
             OutlinedTextField(

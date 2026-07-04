@@ -21,7 +21,7 @@ import org.koin.dsl.module
 val useCaseModule = module {
     factory { SignInUseCase(get()) }
     factory { SignUpUseCase(get()) }
-    factory { SendEmailOtpUseCase(get(), get()) }
+    factory { SendEmailOtpUseCase(get(), get(), get()) }
     factory { VerifyEmailOtpUseCase(get()) }
     factory { CheckAndResetQuotaUseCase(get()) }
     factory { GetEffectiveQuotaUseCase() }
@@ -30,7 +30,7 @@ val useCaseModule = module {
     factory { EnqueueSmsUseCase(get(), get()) }
     factory { GetHistoryUseCase(get()) }
     factory { RefreshJobStatusUseCase(get()) }
-    factory { SendPhoneOtpUseCase(get(), get(), get()) }
+    factory { SendPhoneOtpUseCase(get(), get(), get(), get()) }
     factory { VerifyPhoneOtpUseCase(get()) }
     // V2
     factory { SavePlacesUseCase(get()) }

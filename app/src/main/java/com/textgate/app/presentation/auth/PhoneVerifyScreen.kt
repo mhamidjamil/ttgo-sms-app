@@ -1,5 +1,6 @@
 package com.textgate.app.presentation.auth
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -8,6 +9,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -22,7 +24,14 @@ fun PhoneVerifyScreen(
     viewModel: PhoneVerifyViewModel = koinViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
     LaunchedEffect(uiState.success) { if (uiState.success) onVerified() }
+    LaunchedEffect(uiState.toastMessage) {
+        uiState.toastMessage?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            viewModel.clearToast()
+        }
+    }
     PhoneVerifyContent(
         uiState = uiState,
         onSendCode = viewModel::sendCode,
@@ -82,14 +91,16 @@ private fun PhoneVerifyContent(
         Spacer(Modifier.height(12.dp))
         Button(
             onClick = { onSendCode(phone) },
-            enabled = phone.isNotBlank() && !uiState.isSending && !uiState.isLoading,
+            enabled = phone.isNotBlank() && !uiState.isSending && !uiState.isLoading &&
+                uiState.cooldownSeconds == 0,
             modifier = Modifier.fillMaxWidth().height(48.dp),
         ) {
-            if (uiState.isSending) {
-                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp,
+            when {
+                uiState.isSending -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp,
                     color = MaterialTheme.colorScheme.onPrimary)
-            } else {
-                Text(if (uiState.codeSent) "Resend Code" else "Send Code")
+                uiState.cooldownSeconds > 0 -> Text("Resend in ${uiState.cooldownSeconds}s")
+                uiState.codeSent -> Text("Resend Code")
+                else -> Text("Send Code")
             }
         }
 

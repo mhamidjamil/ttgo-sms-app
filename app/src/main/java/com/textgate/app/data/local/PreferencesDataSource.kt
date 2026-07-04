@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.first
@@ -18,6 +19,15 @@ class PreferencesDataSource(private val context: Context) {
         // DataStore only (never in Firestore).
         private val KEY_WA_API_KEY = stringPreferencesKey("wa_api_key")
         private val KEY_WA_SESSION_ID = stringPreferencesKey("wa_session_id")
+        // Anti-spam state (send-OTP cooldowns) — keyed per channel ("phone"/"email").
+        private fun otpSentAtKey(channel: String) = longPreferencesKey("last_otp_sent_at_$channel")
+    }
+
+    suspend fun getOtpSentAt(channel: String): Long? =
+        context.dataStore.data.first()[otpSentAtKey(channel)]
+
+    suspend fun setOtpSentAt(channel: String, atMillis: Long) {
+        context.dataStore.edit { it[otpSentAtKey(channel)] = atMillis }
     }
 
     suspend fun getCachedUid(): String? =

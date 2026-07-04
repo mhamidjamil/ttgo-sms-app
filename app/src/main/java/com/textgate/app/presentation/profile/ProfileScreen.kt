@@ -1,5 +1,6 @@
 package com.textgate.app.presentation.profile
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -12,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
@@ -33,6 +35,13 @@ fun ProfileScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    LaunchedEffect(uiState.toastMessage) {
+        uiState.toastMessage?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            viewModel.clearToast()
+        }
+    }
     ProfileContent(
         uiState = uiState,
         onSignOut = { scope.launch { viewModel.signOut(); onSignOut() } },
@@ -271,12 +280,16 @@ private fun EmailVerifyBanner(
             Spacer(Modifier.height(8.dp))
             OutlinedButton(
                 onClick = onSendEmailCode,
-                enabled = !uiState.isSendingEmailCode && !uiState.isVerifyingEmail,
+                enabled = !uiState.isSendingEmailCode && !uiState.isVerifyingEmail &&
+                    uiState.emailCooldownSeconds == 0,
             ) {
-                if (uiState.isSendingEmailCode) {
-                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                } else {
-                    Text(if (uiState.emailCodeSent) "Resend Code" else "Send Verification Code")
+                when {
+                    uiState.isSendingEmailCode ->
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    uiState.emailCooldownSeconds > 0 ->
+                        Text("Resend in ${uiState.emailCooldownSeconds}s")
+                    uiState.emailCodeSent -> Text("Resend Code")
+                    else -> Text("Send Verification Code")
                 }
             }
             if (uiState.emailCodeSent) {

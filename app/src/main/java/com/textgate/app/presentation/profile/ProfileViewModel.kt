@@ -3,10 +3,14 @@ package com.textgate.app.presentation.profile
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.textgate.app.domain.model.User
+import com.textgate.app.domain.repository.OtpChannel
+import com.textgate.app.domain.repository.ThrottleRepository
 import com.textgate.app.domain.repository.UserRepository
 import com.textgate.app.domain.usecase.auth.SendEmailOtpUseCase
 import com.textgate.app.domain.usecase.auth.VerifyEmailOtpUseCase
 import com.textgate.app.domain.usecase.quota.GetEffectiveQuotaUseCase
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,6 +27,10 @@ data class ProfileUiState(
     val emailCodeSent: Boolean = false,
     val isVerifyingEmail: Boolean = false,
     val emailVerifyError: String? = null,
+    // Seconds until "Send Code" may be tapped again (persisted anti-spam state).
+    val emailCooldownSeconds: Int = 0,
+    // One-shot toast text; the screen shows it and calls clearToast().
+    val toastMessage: String? = null,
 )
 
 class ProfileViewModel(
@@ -30,12 +38,31 @@ class ProfileViewModel(
     private val getEffectiveQuota: GetEffectiveQuotaUseCase,
     private val sendEmailOtp: SendEmailOtpUseCase,
     private val verifyEmailOtp: VerifyEmailOtpUseCase,
+    private val throttle: ThrottleRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ProfileUiState())
     val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
 
-    init { load() }
+    private var cooldownJob: Job? = null
+
+    init {
+        load()
+        startCooldownTicker()
+    }
+
+    private fun startCooldownTicker() {
+        cooldownJob?.cancel()
+        cooldownJob = viewModelScope.launch {
+            var remaining = throttle.otpCooldownRemaining(OtpChannel.EMAIL)
+            while (remaining > 0) {
+                _uiState.value = _uiState.value.copy(emailCooldownSeconds = remaining)
+                delay(1_000)
+                remaining = throttle.otpCooldownRemaining(OtpChannel.EMAIL)
+            }
+            _uiState.value = _uiState.value.copy(emailCooldownSeconds = 0)
+        }
+    }
 
     private fun load() {
         viewModelScope.launch {
@@ -57,7 +84,9 @@ class ProfileViewModel(
                     _uiState.value = _uiState.value.copy(
                         isSendingEmailCode = false,
                         emailCodeSent = true,
+                        toastMessage = "OTP Sent!",
                     )
+                    startCooldownTicker()
                 }
                 .onFailure {
                     _uiState.value = _uiState.value.copy(
@@ -88,6 +117,8 @@ class ProfileViewModel(
                 }
         }
     }
+
+    fun clearToast() { _uiState.value = _uiState.value.copy(toastMessage = null) }
 
     suspend fun signOut() { userRepo.signOut() }
 }

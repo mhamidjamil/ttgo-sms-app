@@ -61,6 +61,10 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         }.await()
     }
 
+    suspend fun updateName(uid: String, name: String): Result<Unit> = runCatching {
+        db.collection(Paths.USERS).document(uid).update("name", name).await()
+    }
+
     suspend fun syncEmailVerified(uid: String, verified: Boolean): Result<Unit> = runCatching {
         db.collection(Paths.USERS).document(uid)
             .update("email_verified", verified).await()

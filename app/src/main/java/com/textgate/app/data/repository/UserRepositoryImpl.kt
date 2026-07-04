@@ -29,8 +29,15 @@ class UserRepositoryImpl(
     override suspend fun signUp(email: String, password: String, name: String): Result<FirebaseUser> {
         val authResult = auth.signUp(email, password)
         authResult.onSuccess { user ->
+            // Auth displayName was never set before, so the auto-heal path
+            // reconstructed names from the email prefix ("muhammad.tauseeq").
+            auth.updateDisplayName(name)
             val quota = firestore.getDeviceFreeSmsQuota().getOrDefault(10)
-            firestore.createUser(user.uid, email, name, quota)
+            // The doc write used to be fire-and-forget — a failure silently
+            // lost the user's name. Retry once before giving up.
+            firestore.createUser(user.uid, email, name, quota).onFailure {
+                firestore.createUser(user.uid, email, name, quota)
+            }
             prefs.setCachedUid(user.uid)
         }
         return authResult
@@ -61,6 +68,11 @@ class UserRepositoryImpl(
 
     override suspend fun decrementRemainingQuota(uid: String) =
         firestore.decrementRemainingQuota(uid)
+
+    override suspend fun updateName(uid: String, name: String): Result<Unit> = runCatching {
+        firestore.updateName(uid, name).getOrThrow()
+        auth.updateDisplayName(name)   // best-effort; Firestore is the display source
+    }
 
     override suspend fun syncEmailVerified(uid: String, verified: Boolean) =
         firestore.syncEmailVerified(uid, verified)

@@ -2,6 +2,7 @@ package com.textgate.app.data.firebase
 
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.auth.userProfileChangeRequest
 import kotlinx.coroutines.tasks.await
 
 class FirebaseAuthDataSource(private val auth: FirebaseAuth) {
@@ -14,6 +15,13 @@ class FirebaseAuthDataSource(private val auth: FirebaseAuth) {
     suspend fun signUp(email: String, password: String): Result<FirebaseUser> = runCatching {
         val result = auth.createUserWithEmailAndPassword(email, password).await()
         result.user ?: error("Sign-up returned null user")
+    }
+
+    // Keep the Auth profile's displayName in sync — the auto-heal path uses it
+    // when the Firestore doc is missing, so it must never be null.
+    suspend fun updateDisplayName(name: String): Result<Unit> = runCatching {
+        val user = auth.currentUser ?: error("No authenticated user")
+        user.updateProfile(userProfileChangeRequest { displayName = name }).await()
     }
 
     // Re-fetches the Firebase user so isEmailVerified reflects a legacy

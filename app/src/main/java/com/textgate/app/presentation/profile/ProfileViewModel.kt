@@ -77,6 +77,25 @@ class ProfileViewModel(
         }
     }
 
+    fun updateName(newName: String) {
+        val user = _uiState.value.user ?: return
+        val trimmed = newName.trim()
+        if (trimmed.isBlank()) {
+            _uiState.value = _uiState.value.copy(error = "Name cannot be empty")
+            return
+        }
+        viewModelScope.launch {
+            userRepo.updateName(user.uid, trimmed)
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(
+                        user = user.copy(name = trimmed),
+                        toastMessage = "Name updated",
+                    )
+                }
+                .onFailure { _uiState.value = _uiState.value.copy(error = it.message) }
+        }
+    }
+
     fun sendEmailCode() {
         val user = _uiState.value.user ?: return
         viewModelScope.launch {

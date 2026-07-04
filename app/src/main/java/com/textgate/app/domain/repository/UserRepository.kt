@@ -11,6 +11,7 @@ interface UserRepository {
     suspend fun getCurrentUser(): User?
     suspend fun updateQuotaReset(uid: String, remainingQuota: Int, resetDate: String): Result<Unit>
     suspend fun decrementRemainingQuota(uid: String): Result<Unit>
+    suspend fun updateName(uid: String, name: String): Result<Unit>
     suspend fun syncEmailVerified(uid: String, verified: Boolean): Result<Unit>
     // Reloads the Firebase user; a legacy link-verified account upgrades the
     // Firestore flag to true. Never downgrades an OTP-verified flag. Returns

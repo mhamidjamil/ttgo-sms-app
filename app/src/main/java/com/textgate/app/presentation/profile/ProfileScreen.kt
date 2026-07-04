@@ -8,6 +8,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -50,6 +52,7 @@ fun ProfileScreen(
         onNavigateToWhatsApp = onNavigateToWhatsApp,
         onSendEmailCode = viewModel::sendEmailCode,
         onVerifyEmailCode = viewModel::verifyEmailCode,
+        onUpdateName = viewModel::updateName,
     )
 }
 
@@ -62,8 +65,10 @@ private fun ProfileContent(
     onNavigateToWhatsApp: () -> Unit = {},
     onSendEmailCode: () -> Unit = {},
     onVerifyEmailCode: (String) -> Unit = {},
+    onUpdateName: (String) -> Unit = {},
 ) {
     var showSignOutDialog by remember { mutableStateOf(false) }
+    var showEditNameDialog by remember { mutableStateOf(false) }
 
     if (showSignOutDialog) {
         AlertDialog(
@@ -120,11 +125,28 @@ private fun ProfileContent(
                 }
 
                 Spacer(Modifier.height(16.dp))
-                Text(user.name, style = MaterialTheme.typography.titleLarge)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(user.name, style = MaterialTheme.typography.titleLarge)
+                    IconButton(onClick = { showEditNameDialog = true }) {
+                        Icon(
+                            Icons.Default.Edit, contentDescription = "Edit name",
+                            Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        )
+                    }
+                }
                 Text(
                     user.email, style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 )
+
+                if (showEditNameDialog) {
+                    EditNameDialog(
+                        currentName = user.name,
+                        onSave = { onUpdateName(it); showEditNameDialog = false },
+                        onDismiss = { showEditNameDialog = false },
+                    )
+                }
 
                 Spacer(Modifier.height(24.dp))
 
@@ -328,6 +350,39 @@ private fun EmailVerifyBanner(
             }
         }
     }
+}
+
+@Composable
+private fun EditNameDialog(
+    currentName: String,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var name by remember { mutableStateOf(currentName) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Your name") },
+        text = {
+            Column {
+                Text(
+                    "Shown in arrival messages, e.g. \"<name> arrived at Home\".",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Full name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(name) }, enabled = name.isNotBlank()) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 // ── Preview helpers ───────────────────────────────────────────────────────────

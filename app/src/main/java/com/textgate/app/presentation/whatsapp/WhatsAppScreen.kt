@@ -1,5 +1,8 @@
 package com.textgate.app.presentation.whatsapp
 
+import android.graphics.BitmapFactory
+import android.util.Base64
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -7,15 +10,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.textgate.app.BuildConfig
 import com.textgate.app.core.theme.TextGateTheme
+import com.textgate.app.domain.repository.WhatsAppRepository.Companion.MODE_OWN
+import com.textgate.app.domain.repository.WhatsAppRepository.Companion.MODE_SHARED
 import org.koin.androidx.compose.koinViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WhatsAppScreen(
     onBack: () -> Unit,
@@ -24,10 +31,12 @@ fun WhatsAppScreen(
     val uiState by viewModel.uiState.collectAsState()
     WhatsAppContent(
         uiState = uiState,
-        onSaveLink = viewModel::saveLink,
-        onCheckStatus = viewModel::checkStatus,
+        onSelectShared = viewModel::selectShared,
+        onSelectOwn = viewModel::selectOwn,
+        onStartLinking = viewModel::startLinking,
+        onRefresh = viewModel::refreshStatuses,
         onSendTest = viewModel::sendTest,
-        onUnlink = viewModel::unlink,
+        onRetrySetup = viewModel::setup,
         onBack = onBack,
     )
 }
@@ -36,22 +45,14 @@ fun WhatsAppScreen(
 @Composable
 private fun WhatsAppContent(
     uiState: WhatsAppUiState,
-    onSaveLink: (String, String) -> Unit,
-    onCheckStatus: () -> Unit,
+    onSelectShared: () -> Unit,
+    onSelectOwn: () -> Unit,
+    onStartLinking: () -> Unit,
+    onRefresh: () -> Unit,
     onSendTest: () -> Unit,
-    onUnlink: () -> Unit,
+    onRetrySetup: () -> Unit,
     onBack: () -> Unit,
 ) {
-    var apiKey by remember { mutableStateOf("") }
-    var sessionId by remember { mutableStateOf("") }
-    var prefilled by remember { mutableStateOf(false) }
-    LaunchedEffect(uiState.savedSessionId) {
-        if (!prefilled && uiState.savedSessionId.isNotBlank()) {
-            sessionId = uiState.savedSessionId
-            prefilled = true
-        }
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(
@@ -64,153 +65,244 @@ private fun WhatsAppContent(
             )
         },
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 20.dp, vertical = 8.dp)
-                .verticalScroll(rememberScrollState()),
-        ) {
-            // ── How it works ─────────────────────────────────────────────────
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("How to link WhatsApp", fontWeight = FontWeight.SemiBold,
-                        style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        """
-                        1. Open ${BuildConfig.WHATSAPP_SERVICE_URL} in a browser and sign up (email + password).
-                        2. Verify your email with the 6-digit code the service sends you.
-                        3. On the service dashboard, create a session (any name, e.g. "myphone") and scan the QR with WhatsApp → Linked Devices.
-                        4. Copy your personal API key (starts with "wa_") from the dashboard.
-                        5. Paste the key and the session name below.
-                        """.trimIndent(),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
+        when {
+            uiState.isLoading -> Box(
+                Modifier.fillMaxSize().padding(padding),
+                contentAlignment = Alignment.Center,
+            ) { CircularProgressIndicator() }
+
+            !uiState.eligible -> Column(
+                Modifier.fillMaxSize().padding(padding).padding(24.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text("Almost there!", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Verify your phone number and email first — WhatsApp is set up " +
+                        "automatically right after, nothing else to configure.",
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
             }
-            Spacer(Modifier.height(16.dp))
 
-            // ── Link form ────────────────────────────────────────────────────
-            OutlinedTextField(
-                value = apiKey,
-                onValueChange = { apiKey = it },
-                label = { Text("API Key") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("wa_…") },
-                supportingText = if (apiKey.isNotBlank() && !apiKey.trim().startsWith("wa_")) {
-                    { Text("Keys usually start with \"wa_\" — double-check, but non-standard keys are accepted") }
-                } else null,
-            )
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
-                value = sessionId,
-                onValueChange = { sessionId = it },
-                label = { Text("Session name") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("myphone") },
-            )
-            Spacer(Modifier.height(12.dp))
-            Button(
-                onClick = { onSaveLink(apiKey, sessionId) },
-                enabled = !uiState.isBusy && apiKey.isNotBlank() && sessionId.isNotBlank(),
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-            ) { Text(if (uiState.isLinked) "Update Link" else "Save Link") }
-
-            // ── Status + actions ─────────────────────────────────────────────
-            if (uiState.isLinked) {
+            uiState.setupError != null -> Column(
+                Modifier.fillMaxSize().padding(padding).padding(24.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    uiState.setupError,
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
                 Spacer(Modifier.height(16.dp))
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                            Text("Session status: ", style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                uiState.status ?: "unknown",
-                                fontWeight = FontWeight.SemiBold,
-                                color = when (uiState.status) {
-                                    "connected" -> MaterialTheme.colorScheme.primary
-                                    null -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                                    else -> MaterialTheme.colorScheme.error
-                                },
+                Button(onClick = onRetrySetup) { Text("Try Again") }
+            }
+
+            else -> Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(horizontal = 20.dp, vertical = 8.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                Text(
+                    "Your WhatsApp account was set up automatically. Choose how arrival " +
+                        "messages are sent:",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(16.dp))
+
+                // ── Mode: shared number (default) ─────────────────────────────
+                ModeCard(
+                    selected = uiState.mode == MODE_SHARED,
+                    title = "TextGate shared number (default)",
+                    subtitle = when (uiState.sharedConnected) {
+                        true -> "Ready — no setup needed"
+                        false -> "Temporarily offline — the admin needs to re-link it"
+                        null -> "Checking availability…"
+                    },
+                    onClick = onSelectShared,
+                )
+                Spacer(Modifier.height(12.dp))
+
+                // ── Mode: own WhatsApp ────────────────────────────────────────
+                ModeCard(
+                    selected = uiState.mode == MODE_OWN,
+                    title = "Use My WhatsApp",
+                    subtitle = when {
+                        uiState.ownStatus == "connected" -> "Linked — messages come from your own number"
+                        uiState.isLinking -> "Scan the QR below with WhatsApp → Linked Devices"
+                        else -> "Requires a one-time QR scan with your phone"
+                    },
+                    onClick = onSelectOwn,
+                )
+
+                // ── QR flow ───────────────────────────────────────────────────
+                if (uiState.mode == MODE_OWN && uiState.ownStatus != "connected") {
+                    Spacer(Modifier.height(16.dp))
+                    val qrBitmap: ImageBitmap? = remember(uiState.qrBase64) {
+                        uiState.qrBase64?.let { dataUrl ->
+                            runCatching {
+                                val bytes = Base64.decode(dataUrl.substringAfter("base64,"), Base64.DEFAULT)
+                                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                            }.getOrNull()
+                        }
+                    }
+                    when {
+                        qrBitmap != null -> Column(
+                            Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Image(
+                                bitmap = qrBitmap,
+                                contentDescription = "WhatsApp link QR",
+                                modifier = Modifier.size(240.dp),
                             )
-                            if (uiState.isBusy) {
-                                Spacer(Modifier.width(8.dp))
-                                CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
-                            }
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "WhatsApp → Settings → Linked Devices → Link a Device",
+                                style = MaterialTheme.typography.bodySmall,
+                                textAlign = TextAlign.Center,
+                            )
                         }
-                        Spacer(Modifier.height(12.dp))
-                        Row {
-                            OutlinedButton(onClick = onCheckStatus, enabled = !uiState.isBusy) {
-                                Text("Check Status")
-                            }
+                        uiState.isLinking -> Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                             Spacer(Modifier.width(8.dp))
-                            OutlinedButton(
-                                onClick = onSendTest,
-                                enabled = !uiState.isBusy && uiState.status == "connected",
-                            ) { Text("Send Test") }
+                            Text("Preparing your QR code…", style = MaterialTheme.typography.bodySmall)
                         }
-                        Spacer(Modifier.height(8.dp))
-                        TextButton(onClick = onUnlink) {
-                            Text("Unlink WhatsApp", color = MaterialTheme.colorScheme.error)
+                        else -> OutlinedButton(onClick = onStartLinking, modifier = Modifier.fillMaxWidth()) {
+                            Text("Link My WhatsApp")
                         }
                     }
                 }
-            }
 
-            uiState.error?.let {
-                Spacer(Modifier.height(12.dp))
-                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-            }
-            uiState.info?.let {
-                Spacer(Modifier.height(12.dp))
-                Text(it, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
-            }
+                Spacer(Modifier.height(20.dp))
+                Row {
+                    OutlinedButton(onClick = onRefresh, enabled = !uiState.isBusy) { Text("Refresh") }
+                    Spacer(Modifier.width(8.dp))
+                    OutlinedButton(
+                        onClick = onSendTest,
+                        enabled = !uiState.isBusy &&
+                            (uiState.mode == MODE_SHARED && uiState.sharedConnected == true ||
+                                uiState.mode == MODE_OWN && uiState.ownStatus == "connected"),
+                    ) { Text("Send Test") }
+                    if (uiState.isBusy) {
+                        Spacer(Modifier.width(8.dp))
+                        CircularProgressIndicator(
+                            Modifier.size(18.dp).align(Alignment.CenterVertically),
+                            strokeWidth = 2.dp,
+                        )
+                    }
+                }
 
-            Spacer(Modifier.height(16.dp))
-            Text(
-                "Once linked and connected, automatic arrival notifications are sent via WhatsApp " +
-                    "(free, no SMS quota) and fall back to SMS when WhatsApp is unavailable.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-            )
+                uiState.error?.let {
+                    Spacer(Modifier.height(12.dp))
+                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+                uiState.info?.let {
+                    Spacer(Modifier.height(12.dp))
+                    Text(it, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
+                }
+
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    "Arrival notifications go out via WhatsApp using the mode above and fall " +
+                        "back to SMS automatically when WhatsApp is unavailable.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+            }
         }
     }
 }
 
-@Preview(showBackground = true, name = "WhatsApp — Not linked")
 @Composable
-private fun WhatsAppNotLinkedPreview() {
-    TextGateTheme {
-        WhatsAppContent(
-            uiState = WhatsAppUiState(),
-            onSaveLink = { _, _ -> }, onCheckStatus = {}, onSendTest = {}, onUnlink = {}, onBack = {},
-        )
+private fun ModeCard(
+    selected: Boolean,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    val colors = if (selected) {
+        CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+    } else {
+        CardDefaults.cardColors()
+    }
+    Card(modifier = Modifier.fillMaxWidth(), colors = colors, onClick = onClick) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(selected = selected, onClick = onClick)
+            Spacer(Modifier.width(8.dp))
+            Column {
+                Text(title, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                )
+            }
+        }
     }
 }
 
-@Preview(showBackground = true, name = "WhatsApp — Connected")
+@Preview(showBackground = true, name = "WhatsApp — Shared ready")
 @Composable
-private fun WhatsAppConnectedPreview() {
-    TextGateTheme {
-        WhatsAppContent(
-            uiState = WhatsAppUiState(isLinked = true, savedSessionId = "myphone", status = "connected"),
-            onSaveLink = { _, _ -> }, onCheckStatus = {}, onSendTest = {}, onUnlink = {}, onBack = {},
-        )
-    }
-}
-
-@Preview(showBackground = true, name = "WhatsApp — Error")
-@Composable
-private fun WhatsAppErrorPreview() {
+private fun WhatsAppSharedPreview() {
     TextGateTheme {
         WhatsAppContent(
             uiState = WhatsAppUiState(
-                isLinked = true, savedSessionId = "myphone",
-                error = "WhatsApp session not connected — re-link it on the service dashboard",
+                isLoading = false, provisioned = true, sharedConnected = true, ownStatus = "disconnected",
             ),
-            onSaveLink = { _, _ -> }, onCheckStatus = {}, onSendTest = {}, onUnlink = {}, onBack = {},
+            onSelectShared = {}, onSelectOwn = {}, onStartLinking = {},
+            onRefresh = {}, onSendTest = {}, onRetrySetup = {}, onBack = {},
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "WhatsApp — Own linked")
+@Composable
+private fun WhatsAppOwnPreview() {
+    TextGateTheme {
+        WhatsAppContent(
+            uiState = WhatsAppUiState(
+                isLoading = false, provisioned = true, mode = MODE_OWN,
+                sharedConnected = true, ownStatus = "connected",
+            ),
+            onSelectShared = {}, onSelectOwn = {}, onStartLinking = {},
+            onRefresh = {}, onSendTest = {}, onRetrySetup = {}, onBack = {},
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "WhatsApp — Maintenance")
+@Composable
+private fun WhatsAppMaintenancePreview() {
+    TextGateTheme {
+        WhatsAppContent(
+            uiState = WhatsAppUiState(
+                isLoading = false,
+                setupError = "WhatsApp service is currently under maintenance. Please try again in a few hours.",
+            ),
+            onSelectShared = {}, onSelectOwn = {}, onStartLinking = {},
+            onRefresh = {}, onSendTest = {}, onRetrySetup = {}, onBack = {},
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "WhatsApp — Not eligible")
+@Composable
+private fun WhatsAppNotEligiblePreview() {
+    TextGateTheme {
+        WhatsAppContent(
+            uiState = WhatsAppUiState(isLoading = false, eligible = false),
+            onSelectShared = {}, onSelectOwn = {}, onStartLinking = {},
+            onRefresh = {}, onSendTest = {}, onRetrySetup = {}, onBack = {},
         )
     }
 }

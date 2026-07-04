@@ -5,6 +5,8 @@ import com.textgate.app.data.firebase.FirestoreDataSource
 import com.textgate.app.data.local.PreferencesDataSource
 import com.textgate.app.data.whatsapp.WhatsAppApi
 import com.textgate.app.domain.repository.WhatsAppRepository
+import com.textgate.app.domain.repository.WhatsAppRepository.Companion.MODE_OWN
+import com.textgate.app.domain.repository.WhatsAppRepository.Companion.MODE_SHARED
 
 class WhatsAppRepositoryImpl(
     private val prefs: PreferencesDataSource,
@@ -26,6 +28,7 @@ class WhatsAppRepositoryImpl(
         val dto = firestore.getUser(uid).getOrNull() ?: return null
         if (dto.waApiKey.isBlank() || dto.waSessionId.isBlank()) return null
         prefs.setWaLink(dto.waApiKey, dto.waSessionId)
+        prefs.setWaMode(dto.waMode.ifBlank { MODE_SHARED })
         return dto.waApiKey to dto.waSessionId
     }
 
@@ -36,6 +39,7 @@ class WhatsAppRepositoryImpl(
         // Already provisioned (this or another device) — refresh the cache.
         if (dto.waApiKey.isNotBlank() && dto.waSessionId.isNotBlank()) {
             prefs.setWaLink(dto.waApiKey, dto.waSessionId)
+            prefs.setWaMode(dto.waMode.ifBlank { MODE_SHARED })
             return@runCatching true
         }
         // Eligible only once BOTH verifications are done.
@@ -52,21 +56,49 @@ class WhatsAppRepositoryImpl(
         true
     }
 
-    override suspend fun saveLink(apiKey: String, sessionId: String) {
-        prefs.setWaLink(apiKey.trim(), sessionId.trim())
-        auth.currentUser()?.uid?.let { firestore.saveWaLink(it, apiKey.trim(), sessionId.trim()) }
-    }
-
     override suspend fun clearLink() {
         prefs.clearWaLink()
         // Best-effort Firestore clear so other devices unlink too.
         auth.currentUser()?.uid?.let { firestore.saveWaLink(it, "", "") }
     }
 
+    override suspend fun getMode(): String {
+        prefs.getWaMode()?.takeIf { it.isNotBlank() }?.let { return it }
+        val uid = auth.currentUser()?.uid ?: return MODE_SHARED
+        val mode = firestore.getUser(uid).getOrNull()?.waMode?.ifBlank { MODE_SHARED } ?: MODE_SHARED
+        prefs.setWaMode(mode)
+        return mode
+    }
+
+    override suspend fun setMode(mode: String): Result<Unit> = runCatching {
+        require(mode == MODE_SHARED || mode == MODE_OWN) { "Unknown WhatsApp mode: $mode" }
+        prefs.setWaMode(mode)
+        val uid = auth.currentUser()?.uid ?: error("Not signed in")
+        firestore.saveWaMode(uid, mode).getOrThrow()
+    }
+
+    override suspend fun startOwnLinking(): Result<Unit> {
+        val (key, session) = getLink()
+            ?: return Result.failure(IllegalStateException("WhatsApp is not set up yet"))
+        return api.connectSession(key, session)
+    }
+
+    override suspend fun getQr(): Result<String?> {
+        val (key, session) = getLink()
+            ?: return Result.failure(IllegalStateException("WhatsApp is not set up yet"))
+        return api.getQr(key, session)
+    }
+
     override suspend fun getStatus(): Result<String> {
         val (key, session) = getLink()
             ?: return Result.failure(IllegalStateException("WhatsApp is not set up yet"))
         return api.getSessionStatus(key, session).map { it.status }
+    }
+
+    override suspend fun getSharedConnected(): Result<Boolean> {
+        val (key, _) = getLink()
+            ?: return Result.failure(IllegalStateException("WhatsApp is not set up yet"))
+        return api.getSharedStatus(key)
     }
 
     override suspend fun sendMessage(toPhone: String, message: String, recipientName: String?): Result<Unit> {
@@ -77,6 +109,12 @@ class WhatsAppRepositoryImpl(
         if (digits.isBlank()) {
             return Result.failure(IllegalArgumentException("Invalid recipient number"))
         }
-        return api.sendMessage(key, session, digits, message, recipientName)
+        // Route by the active mode: the user's own linked WhatsApp, or the
+        // shared app number (default — zero setup).
+        return if (getMode() == MODE_OWN) {
+            api.sendMessage(key, session, digits, message, recipientName)
+        } else {
+            api.sendShared(key, digits, message, recipientName)
+        }
     }
 }

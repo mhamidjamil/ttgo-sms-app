@@ -220,10 +220,10 @@ private fun ProfileContent(
                         Text("WhatsApp", style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            if (user.emailVerified) {
-                                "Link your WhatsApp gateway account to send arrival notifications for free (no SMS quota)."
+                            if (user.emailVerified && user.phoneVerified) {
+                                "Set up automatically — choose whether messages come from the shared TextGate number or your own WhatsApp."
                             } else {
-                                "Verify your email first — WhatsApp linking requires a verified email."
+                                "Verify your phone and email first — WhatsApp is then set up automatically."
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
@@ -231,7 +231,7 @@ private fun ProfileContent(
                         Spacer(Modifier.height(10.dp))
                         OutlinedButton(
                             onClick = onNavigateToWhatsApp,
-                            enabled = user.emailVerified,
+                            enabled = user.emailVerified && user.phoneVerified,
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("WhatsApp Settings") }
                     }

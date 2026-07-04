@@ -117,6 +117,63 @@ class WhatsAppApi(private val configProvider: WaConfigProvider) {
         }
     }
 
+    /** Start (or restart) the user's own session — the QR appears shortly after. */
+    suspend fun connectSession(apiKey: String, sessionId: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val base = configProvider.get().serviceUrl
+                val (code, body) = request(base, "POST", "/v1/sessions/$sessionId/connect", apiKeyHeader(apiKey), "{}")
+                if (code !in 200..299) throw mapError(code, body)
+            }
+        }
+
+    /**
+     * Current QR for a linking session as a base64 PNG data-URL, or null while
+     * the QR isn't ready yet (still connecting / already connected).
+     */
+    suspend fun getQr(apiKey: String, sessionId: String): Result<String?> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val base = configProvider.get().serviceUrl
+                val (code, body) = request(base, "GET", "/v1/sessions/$sessionId/qr", apiKeyHeader(apiKey), null)
+                when {
+                    code in 200..299 -> JSONObject(body).optString("qrBase64").takeIf { it.isNotBlank() }
+                    code == 404 -> null // QR not available (yet) — caller keeps polling
+                    else -> throw mapError(code, body)
+                }
+            }
+        }
+
+    /** Whether the admin-linked shared sender is connected and able to send. */
+    suspend fun getSharedStatus(apiKey: String): Result<Boolean> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val base = configProvider.get().serviceUrl
+                val (code, body) = request(base, "GET", "/v1/messages/shared/status", apiKeyHeader(apiKey), null)
+                if (code !in 200..299) throw mapError(code, body)
+                JSONObject(body).optBoolean("connected", false)
+            }
+        }
+
+    /** Send through the shared (app-owned) WhatsApp number. */
+    suspend fun sendShared(
+        apiKey: String,
+        phoneDigits: String,
+        message: String,
+        recipientName: String? = null,
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val base = configProvider.get().serviceUrl
+            val payload = JSONObject().apply {
+                put("phoneNumber", phoneDigits)
+                put("message", message)
+                recipientName?.let { put("recipientName", it) }
+            }
+            val (code, body) = request(base, "POST", "/v1/messages/shared/send", apiKeyHeader(apiKey), payload.toString())
+            if (code !in 200..299) throw mapError(code, body)
+        }
+    }
+
     private fun apiKeyHeader(apiKey: String) = mapOf("x-api-key" to apiKey)
 
     private fun request(

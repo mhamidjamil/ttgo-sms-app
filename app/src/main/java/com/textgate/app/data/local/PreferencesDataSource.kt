@@ -20,6 +20,7 @@ class PreferencesDataSource(private val context: Context) {
         // the link survives reinstall/sign-out and other devices.
         private val KEY_WA_API_KEY = stringPreferencesKey("wa_api_key")
         private val KEY_WA_SESSION_ID = stringPreferencesKey("wa_session_id")
+        private val KEY_WA_MODE = stringPreferencesKey("wa_mode")
         // Anti-spam state (send-OTP cooldowns) — keyed per channel ("phone"/"email").
         private fun otpSentAtKey(channel: String) = longPreferencesKey("last_otp_sent_at_$channel")
         // Last date (YYYY-MM-DD) the user sent a quota-increase request.
@@ -58,6 +59,13 @@ class PreferencesDataSource(private val context: Context) {
             it[KEY_WA_API_KEY] = apiKey
             it[KEY_WA_SESSION_ID] = sessionId
         }
+    }
+
+    suspend fun getWaMode(): String? =
+        context.dataStore.data.first()[KEY_WA_MODE]
+
+    suspend fun setWaMode(mode: String) {
+        context.dataStore.edit { it[KEY_WA_MODE] = mode }
     }
 
     suspend fun clearWaLink() {

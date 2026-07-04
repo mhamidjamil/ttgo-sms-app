@@ -32,6 +32,11 @@ interface UserRepository {
     suspend fun markEmailVerified(uid: String): Result<Unit>
 
     // Arrival monitoring (V2) — dynamic place list
-    suspend fun savePlacesSettings(uid: String, guardianNumber: String, places: List<Place>): Result<Unit>
+    suspend fun savePlacesSettings(
+        uid: String,
+        guardianNumber: String,
+        guardianNumbers: List<String>,
+        places: List<Place>,
+    ): Result<Unit>
     suspend fun recordArrival(uid: String, placeId: String, date: String, currentTime: String): Result<Unit>
 }

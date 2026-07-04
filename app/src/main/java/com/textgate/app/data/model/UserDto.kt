@@ -28,6 +28,8 @@ data class UserDto(
     // V2: arrival monitoring
     @get:PropertyName("guardian_number") @set:PropertyName("guardian_number")
     var guardianNumber: String = "",
+    @get:PropertyName("guardian_numbers") @set:PropertyName("guardian_numbers")
+    var guardianNumbers: List<String> = emptyList(),
     @get:PropertyName("home_bssid") @set:PropertyName("home_bssid")
     var homeBssid: String = "",
     @get:PropertyName("home_label") @set:PropertyName("home_label")
@@ -66,6 +68,7 @@ data class UserDto(
                 label = raw["label"] as? String ?: "",
                 bssid = raw["bssid"] as? String ?: "",
                 message = raw["message"] as? String ?: "",
+                recipients = (raw["recipients"] as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
             )
         }.ifEmpty {
             listOf(
@@ -94,6 +97,7 @@ data class UserDto(
             remainingQuota = remainingQuota,
             lastQuotaResetDate = lastQuotaResetDate,
             guardianNumber = guardianNumber,
+            guardianNumbers = guardianNumbers,
             places = placeList,
             arrivalTimesByPlace = timesByPlace,
             lastArrivalDateByPlace = lastDatesByPlace,

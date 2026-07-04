@@ -70,8 +70,9 @@ Top-level collection — one document per Firebase Auth user, keyed by UID.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `guardian_number` | string | E.164 recipient of arrival notifications |
-| `places` | array | `[{id, label, bssid, message}]` — `home`/`office` are seeded ids; users add more. `message` is an optional custom arrival text (blank → "<name> arrived at <label>") |
+| `guardian_number` | string | E.164 default recipient of arrival notifications |
+| `guardian_numbers` | array | Extra saved E.164 numbers the user can attach to individual places |
+| `places` | array | `[{id, label, bssid, message, recipients}]` — `home`/`office` are seeded ids; users add more. `message` is an optional custom arrival text (blank → "<name> arrived at <label>"); `recipients` is a subset of `guardian_number` + `guardian_numbers` (empty → the default `guardian_number`) |
 | `arrival_times` | map | `{placeId: ["HH:mm", …]}` — last 30 arrivals per place (routine learning) |
 | `last_arrival_dates` | map | `{placeId: "YYYY-MM-DD"}` — one-notification-per-day guard per place |
 

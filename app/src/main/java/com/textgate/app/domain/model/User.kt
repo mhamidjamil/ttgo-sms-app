@@ -13,6 +13,8 @@ data class User(
 
     // V2: arrival monitoring
     val guardianNumber: String = "",
+    // Additional saved guardian numbers (E.164) selectable per place.
+    val guardianNumbers: List<String> = emptyList(),
     // Dynamic place list (home/office seeded; users add more). Legacy fixed
     // home/office fields below are kept only so old documents migrate cleanly.
     val places: List<Place> = emptyList(),

@@ -7,6 +7,7 @@ class SavePlacesUseCase(private val userRepo: UserRepository) {
     suspend operator fun invoke(
         uid: String,
         guardianNumber: String,
+        guardianNumbers: List<String>,
         places: List<Place>,
-    ): Result<Unit> = userRepo.savePlacesSettings(uid, guardianNumber, places)
+    ): Result<Unit> = userRepo.savePlacesSettings(uid, guardianNumber, guardianNumbers, places)
 }

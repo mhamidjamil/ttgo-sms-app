@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.textgate.app.presentation.settings
 
 import android.Manifest
@@ -15,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.*
@@ -108,6 +111,9 @@ fun SettingsScreen(
         snackbarHostState = snackbarHostState,
         guardianNumber = guardianNumber,
         onGuardianChange = { guardianNumber = it },
+        onAddGuardianNumber = viewModel::addGuardianNumber,
+        onRemoveGuardianNumber = viewModel::removeGuardianNumber,
+        onTogglePlaceRecipient = viewModel::togglePlaceRecipient,
         onPlaceChange = viewModel::updatePlace,
         onAddPlace = viewModel::addPlace,
         onRemovePlace = viewModel::removePlace,
@@ -146,6 +152,9 @@ private fun SettingsContent(
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     guardianNumber: String,
     onGuardianChange: (String) -> Unit,
+    onAddGuardianNumber: (String) -> Unit = {},
+    onRemoveGuardianNumber: (String) -> Unit = {},
+    onTogglePlaceRecipient: (String, String) -> Unit = { _, _ -> },
     onPlaceChange: (Place) -> Unit,
     onAddPlace: () -> Unit,
     onRemovePlace: (String) -> Unit,
@@ -193,7 +202,7 @@ private fun SettingsContent(
             OutlinedTextField(
                 value = guardianNumber,
                 onValueChange = onGuardianChange,
-                label = { Text("Guardian Phone (Pakistani, e.g. 03001234567)") },
+                label = { Text("Default Guardian Phone (Pakistani, e.g. 03001234567)") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                 modifier = Modifier.fillMaxWidth(),
@@ -202,10 +211,26 @@ private fun SettingsContent(
             )
 
             Spacer(Modifier.height(20.dp))
+            SectionTitle("Additional Guardian Numbers")
+            Text(
+                "Save more numbers here, then pick which ones each place notifies " +
+                    "(e.g. message two people when you reach a friend's home). Places " +
+                    "with none selected fall back to the default guardian above.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            )
+            Spacer(Modifier.height(8.dp))
+            GuardianNumbersEditor(
+                numbers = uiState.guardianNumbers,
+                onAdd = onAddGuardianNumber,
+                onRemove = onRemoveGuardianNumber,
+            )
+
+            Spacer(Modifier.height(20.dp))
             SectionTitle("Places")
             Text(
                 "Home and Office are always available; add any other place (friend's home, gym, …). " +
-                    "Each place can have its own arrival message.",
+                    "Each place can have its own arrival message and recipients.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
@@ -215,6 +240,9 @@ private fun SettingsContent(
                 key(place.id) {
                     PlaceCard(
                         place = place,
+                        defaultGuardian = guardianNumber,
+                        savedNumbers = uiState.guardianNumbers,
+                        onToggleRecipient = { number -> onTogglePlaceRecipient(place.id, number) },
                         onChange = onPlaceChange,
                         onScan = { onScanPlace(place.id) },
                         onRemove = if (Place.isDefaultId(place.id)) null else ({ onRemovePlace(place.id) }),
@@ -285,6 +313,9 @@ private fun SectionTitle(text: String) {
 @Composable
 private fun PlaceCard(
     place: Place,
+    defaultGuardian: String,
+    savedNumbers: List<String>,
+    onToggleRecipient: (String) -> Unit,
     onChange: (Place) -> Unit,
     onScan: () -> Unit,
     onRemove: (() -> Unit)?,
@@ -340,6 +371,82 @@ private fun PlaceCard(
                 placeholder = { Text("Default: \"<your name> arrived at ${place.label.ifBlank { "place" }}\"") },
                 supportingText = { Text("${place.message.length}/90") },
             )
+            if (savedNumbers.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Notify for this place",
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                Text(
+                    if (place.recipients.isEmpty()) {
+                        "Default guardian (${defaultGuardian.ifBlank { "not set" }})"
+                    } else {
+                        "${place.recipients.size} selected"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+                Spacer(Modifier.height(4.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    savedNumbers.forEach { number ->
+                        FilterChip(
+                            selected = number in place.recipients,
+                            onClick = { onToggleRecipient(number) },
+                            label = { Text(number) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Add/list/remove the pool of extra guardian numbers a place can be pointed at.
+@Composable
+private fun GuardianNumbersEditor(
+    numbers: List<String>,
+    onAdd: (String) -> Unit,
+    onRemove: (String) -> Unit,
+) {
+    var newNumber by remember { mutableStateOf("") }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        OutlinedTextField(
+            value = newNumber,
+            onValueChange = { newNumber = it },
+            label = { Text("Add a number (03001234567)") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(8.dp))
+        OutlinedButton(
+            onClick = {
+                if (newNumber.isNotBlank()) {
+                    onAdd(newNumber)
+                    newNumber = ""
+                }
+            },
+        ) {
+            Icon(Icons.Default.Add, contentDescription = "Add number", Modifier.size(18.dp))
+        }
+    }
+    if (numbers.isNotEmpty()) {
+        Spacer(Modifier.height(8.dp))
+        numbers.forEach { number ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(number, style = MaterialTheme.typography.bodyMedium)
+                IconButton(onClick = { onRemove(number) }) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "Remove $number",
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
         }
     }
 }

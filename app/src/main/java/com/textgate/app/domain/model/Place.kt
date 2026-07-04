@@ -10,6 +10,9 @@ data class Place(
     // Custom arrival message sent to the guardian; blank → default
     // "<name> arrived at <label>".
     val message: String = "",
+    // E.164 numbers notified for THIS place, chosen from the user's saved
+    // guardian numbers. Empty → the default guardian number.
+    val recipients: List<String> = emptyList(),
 ) {
     companion object {
         const val HOME_ID = "home"

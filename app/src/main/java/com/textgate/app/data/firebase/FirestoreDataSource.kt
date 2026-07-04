@@ -101,6 +101,30 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         ).await()
     }
 
+    // ── Email verification (OTP over SMTP — mirrors the phone_otp fields) ────
+
+    suspend fun saveEmailOtp(uid: String, otp: String): Result<Unit> = runCatching {
+        db.collection(Paths.USERS).document(uid)
+            .update("email_otp", otp, "email_otp_created_at", Timestamp.now()).await()
+    }
+
+    suspend fun getEmailOtp(uid: String): Result<Pair<String, Long>?> = runCatching {
+        val snap = db.collection(Paths.USERS).document(uid).get().await()
+        val code = snap.getString("email_otp") ?: return@runCatching null
+        val createdAt = snap.getTimestamp("email_otp_created_at")?.toDate()?.time ?: 0L
+        code to createdAt
+    }
+
+    suspend fun markEmailVerified(uid: String): Result<Unit> = runCatching {
+        db.collection(Paths.USERS).document(uid).update(
+            mapOf(
+                "email_verified" to true,
+                "email_otp" to FieldValue.delete(),
+                "email_otp_created_at" to FieldValue.delete(),
+            )
+        ).await()
+    }
+
     // Enqueues an OTP verification SMS directly — no history entry, no quota change.
     // kind:"otp" makes the TTGO device process it BEFORE regular jobs, send it
     // immediately (no anti-ban gap), and bypass the SIM-package-expired gate.

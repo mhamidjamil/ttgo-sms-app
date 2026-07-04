@@ -3,8 +3,8 @@ package com.textgate.app.presentation.auth
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.textgate.app.core.utils.PhoneNormalizer
+import com.textgate.app.domain.usecase.auth.SendEmailOtpUseCase
 import com.textgate.app.domain.usecase.auth.SendPhoneOtpUseCase
-import com.textgate.app.domain.usecase.auth.SendVerificationEmailUseCase
 import com.textgate.app.domain.usecase.auth.SignInUseCase
 import com.textgate.app.domain.usecase.auth.SignUpUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,7 +23,7 @@ data class AuthUiState(
 class AuthViewModel(
     private val signIn: SignInUseCase,
     private val signUp: SignUpUseCase,
-    private val sendVerification: SendVerificationEmailUseCase,
+    private val sendEmailOtp: SendEmailOtpUseCase,
     private val sendPhoneOtp: SendPhoneOtpUseCase,
     private val phoneNormalizer: PhoneNormalizer,
 ) : ViewModel() {
@@ -62,8 +62,9 @@ class AuthViewModel(
             _uiState.value = AuthUiState(isLoading = true)
             signUp(email, password, name)
                 .onSuccess { user ->
-                    sendVerification()
-                    // Best-effort OTP send — failure is surfaced on the verify screen, not here
+                    // Best-effort OTP sends — failures are surfaced on the
+                    // verify screen / Profile banner, not here
+                    sendEmailOtp(user.uid, email)
                     sendPhoneOtp(user.uid, normalizedPhone)
                     _uiState.value = AuthUiState(
                         success = true,

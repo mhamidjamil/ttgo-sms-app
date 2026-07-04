@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -12,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.textgate.app.core.theme.TextGateTheme
@@ -37,7 +39,8 @@ fun ProfileScreen(
         onVerifyPhone = onVerifyPhone,
         onNavigateToSettings = onNavigateToSettings,
         onNavigateToWhatsApp = onNavigateToWhatsApp,
-        onResendVerification = viewModel::resendVerification,
+        onSendEmailCode = viewModel::sendEmailCode,
+        onVerifyEmailCode = viewModel::verifyEmailCode,
     )
 }
 
@@ -48,7 +51,8 @@ private fun ProfileContent(
     onVerifyPhone: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToWhatsApp: () -> Unit = {},
-    onResendVerification: () -> Unit,
+    onSendEmailCode: () -> Unit = {},
+    onVerifyEmailCode: (String) -> Unit = {},
 ) {
     var showSignOutDialog by remember { mutableStateOf(false) }
 
@@ -116,36 +120,11 @@ private fun ProfileContent(
                 Spacer(Modifier.height(24.dp))
 
                 if (!user.emailVerified) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(WarningAmber)
-                            .border(1.dp, WarningAmberBorder)
-                            .padding(12.dp),
-                    ) {
-                        Column {
-                            Text(
-                                "⚠ Email not verified",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Text(
-                                "Email verification is needed for WhatsApp linking and admin contact (it does not affect your SMS quota).",
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            OutlinedButton(onClick = onResendVerification) {
-                                Text("Resend Verification Email")
-                            }
-                            if (uiState.verificationSent) {
-                                Text(
-                                    "Sent! Check your inbox.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.secondary,
-                                )
-                            }
-                        }
-                    }
+                    EmailVerifyBanner(
+                        uiState = uiState,
+                        onSendEmailCode = onSendEmailCode,
+                        onVerifyEmailCode = onVerifyEmailCode,
+                    )
                     Spacer(Modifier.height(12.dp))
                 }
 
@@ -263,6 +242,81 @@ private fun ProfileContent(
     }
 }
 
+// Email verification banner — request a 6-digit code (sent over SMTP) and
+// enter it inline, mirroring the phone-verify flow.
+@Composable
+private fun EmailVerifyBanner(
+    uiState: ProfileUiState,
+    onSendEmailCode: () -> Unit,
+    onVerifyEmailCode: (String) -> Unit,
+) {
+    var code by remember { mutableStateOf("") }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(WarningAmber)
+            .border(1.dp, WarningAmberBorder)
+            .padding(12.dp),
+    ) {
+        Column {
+            Text(
+                "⚠ Email not verified",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                "Email verification is needed for WhatsApp linking and admin contact (it does not affect your SMS quota).",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = onSendEmailCode,
+                enabled = !uiState.isSendingEmailCode && !uiState.isVerifyingEmail,
+            ) {
+                if (uiState.isSendingEmailCode) {
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                } else {
+                    Text(if (uiState.emailCodeSent) "Resend Code" else "Send Verification Code")
+                }
+            }
+            if (uiState.emailCodeSent) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "A 6-digit code was emailed to you. It is valid for 1 hour.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = code,
+                    onValueChange = { if (it.length <= 6 && it.all { c -> c.isDigit() }) code = it },
+                    label = { Text("Verification Code") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("123456") },
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = { onVerifyEmailCode(code) },
+                    enabled = code.length == 6 && !uiState.isVerifyingEmail,
+                ) {
+                    if (uiState.isVerifyingEmail) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary)
+                    } else {
+                        Text("Verify Email")
+                    }
+                }
+            }
+            uiState.emailVerifyError?.let {
+                Spacer(Modifier.height(8.dp))
+                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
 // ── Preview helpers ───────────────────────────────────────────────────────────
 
 private val previewUser = User(
@@ -278,7 +332,7 @@ private fun ProfileVerifiedPreview() {
     TextGateTheme {
         ProfileContent(
             uiState = ProfileUiState(user = previewUser, effectiveQuota = 10),
-            onSignOut = {}, onVerifyPhone = {}, onNavigateToSettings = {}, onResendVerification = {},
+            onSignOut = {}, onVerifyPhone = {}, onNavigateToSettings = {},
         )
     }
 }
@@ -292,7 +346,7 @@ private fun ProfileUnverifiedPreview() {
                 user = previewUser.copy(emailVerified = false, phoneVerified = false),
                 effectiveQuota = 2,
             ),
-            onSignOut = {}, onVerifyPhone = {}, onNavigateToSettings = {}, onResendVerification = {},
+            onSignOut = {}, onVerifyPhone = {}, onNavigateToSettings = {},
         )
     }
 }
@@ -303,7 +357,7 @@ private fun ProfileLoadingPreview() {
     TextGateTheme {
         ProfileContent(
             uiState = ProfileUiState(isLoading = true),
-            onSignOut = {}, onVerifyPhone = {}, onNavigateToSettings = {}, onResendVerification = {},
+            onSignOut = {}, onVerifyPhone = {}, onNavigateToSettings = {},
         )
     }
 }

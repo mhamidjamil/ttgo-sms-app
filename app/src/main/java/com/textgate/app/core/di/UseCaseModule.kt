@@ -1,9 +1,10 @@
 package com.textgate.app.core.di
 
+import com.textgate.app.domain.usecase.auth.SendEmailOtpUseCase
 import com.textgate.app.domain.usecase.auth.SendPhoneOtpUseCase
-import com.textgate.app.domain.usecase.auth.SendVerificationEmailUseCase
 import com.textgate.app.domain.usecase.auth.SignInUseCase
 import com.textgate.app.domain.usecase.auth.SignUpUseCase
+import com.textgate.app.domain.usecase.auth.VerifyEmailOtpUseCase
 import com.textgate.app.domain.usecase.auth.VerifyPhoneOtpUseCase
 import com.textgate.app.domain.usecase.auto.GetAutoHistoryUseCase
 import com.textgate.app.domain.usecase.location.RecordArrivalUseCase
@@ -20,7 +21,8 @@ import org.koin.dsl.module
 val useCaseModule = module {
     factory { SignInUseCase(get()) }
     factory { SignUpUseCase(get()) }
-    factory { SendVerificationEmailUseCase(get()) }
+    factory { SendEmailOtpUseCase(get(), get()) }
+    factory { VerifyEmailOtpUseCase(get()) }
     factory { CheckAndResetQuotaUseCase(get()) }
     factory { GetEffectiveQuotaUseCase() }
     factory { DecrementQuotaUseCase(get()) }

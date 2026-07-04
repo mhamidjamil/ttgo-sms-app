@@ -18,7 +18,10 @@ class UserRepositoryImpl(
         val result = auth.signIn(email, password)
         result.onSuccess { user ->
             prefs.setCachedUid(user.uid)
-            firestore.syncEmailVerified(user.uid, user.isEmailVerified)
+            // Legacy link-verified accounts upgrade the flag; never write false —
+            // that would clobber an in-app OTP verification (Firestore is the
+            // source of truth for email_verified).
+            if (user.isEmailVerified) firestore.syncEmailVerified(user.uid, true)
         }
         return result
     }
@@ -32,8 +35,6 @@ class UserRepositoryImpl(
         }
         return authResult
     }
-
-    override suspend fun sendVerificationEmail(): Result<Unit> = auth.sendVerificationEmail()
 
     override suspend fun signOut() {
         auth.signOut()
@@ -65,12 +66,16 @@ class UserRepositoryImpl(
         firestore.syncEmailVerified(uid, verified)
 
     override suspend fun refreshEmailVerified(): Result<Boolean> = runCatching {
-        // Reload the cached Firebase user so a verification link clicked AFTER
-        // sign-in is noticed without a re-login, then mirror it to Firestore.
+        // Reload the cached Firebase user so a legacy verification link clicked
+        // AFTER sign-in is noticed without a re-login. Only ever upgrades the
+        // Firestore flag — the in-app OTP flow writes it independently.
         auth.reload().getOrThrow()
         val fbUser = auth.currentUser() ?: error("No authenticated user")
-        firestore.syncEmailVerified(fbUser.uid, fbUser.isEmailVerified).getOrThrow()
-        fbUser.isEmailVerified
+        if (fbUser.isEmailVerified) {
+            firestore.syncEmailVerified(fbUser.uid, true).getOrThrow()
+            return@runCatching true
+        }
+        firestore.getUser(fbUser.uid).getOrNull()?.emailVerified ?: false
     }
 
     override fun isLoggedIn() = auth.isLoggedIn()
@@ -90,6 +95,17 @@ class UserRepositoryImpl(
 
     override suspend fun markPhoneVerified(uid: String) =
         firestore.markPhoneVerified(uid)
+
+    // ── Email verification (OTP) ──────────────────────────────────────────────
+
+    override suspend fun saveEmailOtp(uid: String, otp: String) =
+        firestore.saveEmailOtp(uid, otp)
+
+    override suspend fun getEmailOtp(uid: String) =
+        firestore.getEmailOtp(uid)
+
+    override suspend fun markEmailVerified(uid: String) =
+        firestore.markEmailVerified(uid)
 
     // ── Arrival monitoring (V2) ───────────────────────────────────────────────
 

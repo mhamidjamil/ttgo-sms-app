@@ -1,18 +1,23 @@
 package com.textgate.app.domain.model
 
+// A person notified when the user arrives at a place (e.g. Wife, Manager).
+// Name is optional display/personalization info; number is E.164.
+data class PlaceContact(
+    val name: String = "",
+    val number: String = "",
+)
+
 // A saved arrival location. "home" and "office" are seeded defaults; users can
 // add any number of custom places (friend's house, gym, …) with their own
-// arrival message.
+// arrival message and their own contact list.
 data class Place(
     val id: String,
     val label: String,
     val bssid: String = "",
-    // Custom arrival message sent to the guardian; blank → default
-    // "<name> arrived at <label>".
+    // Custom arrival message; blank → default "<name> arrived at <label>".
     val message: String = "",
-    // E.164 numbers notified for THIS place, chosen from the user's saved
-    // guardian numbers. Empty → the default guardian number.
-    val recipients: List<String> = emptyList(),
+    // People notified for THIS place. Empty → the default guardian number.
+    val contacts: List<PlaceContact> = emptyList(),
 ) {
     companion object {
         const val HOME_ID = "home"

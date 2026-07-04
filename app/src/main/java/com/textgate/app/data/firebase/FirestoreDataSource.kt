@@ -164,17 +164,18 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
     suspend fun savePlacesSettings(
         uid: String,
         guardianNumber: String,
-        guardianNumbers: List<String>,
         places: List<Place>,
     ): Result<Unit> = runCatching {
         db.collection(Paths.USERS).document(uid).set(
             mapOf(
                 "guardian_number" to guardianNumber,
-                "guardian_numbers" to guardianNumbers,
-                "places" to places.map {
+                "places" to places.map { place ->
                     mapOf(
-                        "id" to it.id, "label" to it.label, "bssid" to it.bssid,
-                        "message" to it.message, "recipients" to it.recipients,
+                        "id" to place.id, "label" to place.label, "bssid" to place.bssid,
+                        "message" to place.message,
+                        "contacts" to place.contacts.map {
+                            mapOf("name" to it.name, "number" to it.number)
+                        },
                     )
                 },
             ),

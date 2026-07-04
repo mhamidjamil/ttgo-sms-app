@@ -2,7 +2,6 @@ package com.textgate.app.presentation.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.textgate.app.core.utils.PhoneNormalizer
 import com.textgate.app.domain.model.Place
 import com.textgate.app.domain.repository.UserRepository
 import com.textgate.app.domain.usecase.location.SavePlacesUseCase
@@ -14,9 +13,8 @@ import kotlinx.coroutines.launch
 data class SettingsUiState(
     val isLoading: Boolean = true,
     val isSaving: Boolean = false,
+    // Fallback recipient for places that have no contacts of their own.
     val guardianNumber: String = "",
-    // Extra saved guardian numbers (E.164), selectable per place.
-    val guardianNumbers: List<String> = emptyList(),
     val places: List<Place> = emptyList(),
     val error: String? = null,
     val saveSuccess: Boolean = false,
@@ -25,7 +23,6 @@ data class SettingsUiState(
 class SettingsViewModel(
     private val userRepo: UserRepository,
     private val savePlaces: SavePlacesUseCase,
-    private val phoneNormalizer: PhoneNormalizer,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -40,7 +37,6 @@ class SettingsViewModel(
                 _uiState.value = SettingsUiState(
                     isLoading = false,
                     guardianNumber = user.guardianNumber,
-                    guardianNumbers = user.guardianNumbers,
                     // toDomain() migrates legacy home/office fields into the
                     // places list, so old accounts land here with both seeded.
                     places = user.places.ifEmpty { Place.defaults() },
@@ -51,41 +47,8 @@ class SettingsViewModel(
         }
     }
 
-    fun addGuardianNumber(raw: String) {
-        val normalized = phoneNormalizer.normalize(raw)
-        if (normalized == null) {
-            _uiState.value = _uiState.value.copy(
-                error = "Enter a valid Pakistani number (e.g. 03001234567)",
-            )
-            return
-        }
-        if (normalized in _uiState.value.guardianNumbers) return
-        _uiState.value = _uiState.value.copy(
-            guardianNumbers = _uiState.value.guardianNumbers + normalized,
-            error = null,
-        )
-    }
-
-    fun removeGuardianNumber(number: String) {
-        _uiState.value = _uiState.value.copy(
-            guardianNumbers = _uiState.value.guardianNumbers - number,
-            // A removed number must not linger as a hidden place recipient.
-            places = _uiState.value.places.map { it.copy(recipients = it.recipients - number) },
-        )
-    }
-
-    fun togglePlaceRecipient(placeId: String, number: String) {
-        _uiState.value = _uiState.value.copy(
-            places = _uiState.value.places.map { place ->
-                if (place.id != placeId) place
-                else place.copy(
-                    recipients = if (number in place.recipients) place.recipients - number
-                    else place.recipients + number,
-                )
-            },
-        )
-    }
-
+    // Whole-place update — the place editor dialog applies its draft through
+    // this (label, message, contacts) and the WiFi picker updates bssid/label.
     fun updatePlace(updated: Place) {
         _uiState.value = _uiState.value.copy(
             places = _uiState.value.places.map { if (it.id == updated.id) updated else it },
@@ -111,10 +74,9 @@ class SettingsViewModel(
         val places = _uiState.value.places.filter {
             Place.isDefaultId(it.id) || it.label.isNotBlank() || it.bssid.isNotBlank()
         }
-        val guardianNumbers = _uiState.value.guardianNumbers
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isSaving = true, error = null, saveSuccess = false)
-            savePlaces(uid, guardianNumber, guardianNumbers, places)
+            savePlaces(uid, guardianNumber, places)
                 .onSuccess {
                     _uiState.value = _uiState.value.copy(
                         isSaving = false, saveSuccess = true,

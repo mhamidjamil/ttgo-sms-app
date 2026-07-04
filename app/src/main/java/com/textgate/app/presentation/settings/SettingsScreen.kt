@@ -1,5 +1,3 @@
-@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-
 package com.textgate.app.presentation.settings
 
 import android.Manifest
@@ -25,6 +23,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -32,6 +31,7 @@ import androidx.core.content.ContextCompat
 import com.textgate.app.core.theme.TextGateTheme
 import com.textgate.app.core.utils.PhoneNormalizer
 import com.textgate.app.domain.model.Place
+import com.textgate.app.domain.model.PlaceContact
 import com.textgate.app.services.ArrivalService
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
@@ -52,6 +52,7 @@ fun SettingsScreen(
     var scanResults by remember { mutableStateOf<List<ScanResult>>(emptyList()) }
     var showScanDialog by remember { mutableStateOf(false) }
     var scanTargetPlaceId by remember { mutableStateOf<String?>(null) }
+    var editingPlaceId by remember { mutableStateOf<String?>(null) }
     var isMonitoring by remember { mutableStateOf(ArrivalService.isRunning) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -106,15 +107,24 @@ fun SettingsScreen(
         )
     }
 
+    // Tapping a place opens its editor dialog: name, contacts, arrival message.
+    uiState.places.firstOrNull { it.id == editingPlaceId }?.let { place ->
+        PlaceEditorDialog(
+            place = place,
+            onSave = { updated ->
+                viewModel.updatePlace(updated)
+                editingPlaceId = null
+            },
+            onDismiss = { editingPlaceId = null },
+        )
+    }
+
     SettingsContent(
         uiState = uiState,
         snackbarHostState = snackbarHostState,
         guardianNumber = guardianNumber,
         onGuardianChange = { guardianNumber = it },
-        onAddGuardianNumber = viewModel::addGuardianNumber,
-        onRemoveGuardianNumber = viewModel::removeGuardianNumber,
-        onTogglePlaceRecipient = viewModel::togglePlaceRecipient,
-        onPlaceChange = viewModel::updatePlace,
+        onEditPlace = { editingPlaceId = it },
         onAddPlace = viewModel::addPlace,
         onRemovePlace = viewModel::removePlace,
         onScanPlace = { placeId ->
@@ -152,10 +162,7 @@ private fun SettingsContent(
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     guardianNumber: String,
     onGuardianChange: (String) -> Unit,
-    onAddGuardianNumber: (String) -> Unit = {},
-    onRemoveGuardianNumber: (String) -> Unit = {},
-    onTogglePlaceRecipient: (String, String) -> Unit = { _, _ -> },
-    onPlaceChange: (Place) -> Unit,
+    onEditPlace: (String) -> Unit,
     onAddPlace: () -> Unit,
     onRemovePlace: (String) -> Unit,
     onScanPlace: (String) -> Unit,
@@ -192,9 +199,9 @@ private fun SettingsContent(
                 .padding(horizontal = 20.dp, vertical = 8.dp)
                 .verticalScroll(rememberScrollState()),
         ) {
-            SectionTitle("Guardian Contact")
+            SectionTitle("Default Guardian")
             Text(
-                "Arrival notifications go to this number (WhatsApp when linked, SMS otherwise)",
+                "Used for places that have no contacts of their own",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
@@ -202,7 +209,7 @@ private fun SettingsContent(
             OutlinedTextField(
                 value = guardianNumber,
                 onValueChange = onGuardianChange,
-                label = { Text("Default Guardian Phone (Pakistani, e.g. 03001234567)") },
+                label = { Text("Guardian Phone (Pakistani, e.g. 03001234567)") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                 modifier = Modifier.fillMaxWidth(),
@@ -211,26 +218,9 @@ private fun SettingsContent(
             )
 
             Spacer(Modifier.height(20.dp))
-            SectionTitle("Additional Guardian Numbers")
-            Text(
-                "Save more numbers here, then pick which ones each place notifies " +
-                    "(e.g. message two people when you reach a friend's home). Places " +
-                    "with none selected fall back to the default guardian above.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-            )
-            Spacer(Modifier.height(8.dp))
-            GuardianNumbersEditor(
-                numbers = uiState.guardianNumbers,
-                onAdd = onAddGuardianNumber,
-                onRemove = onRemoveGuardianNumber,
-            )
-
-            Spacer(Modifier.height(20.dp))
             SectionTitle("Places")
             Text(
-                "Home and Office are always available; add any other place (friend's home, gym, …). " +
-                    "Each place can have its own arrival message and recipients.",
+                "Tap a place to manage its contacts and arrival message.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
@@ -240,14 +230,11 @@ private fun SettingsContent(
                 key(place.id) {
                     PlaceCard(
                         place = place,
-                        defaultGuardian = guardianNumber,
-                        savedNumbers = uiState.guardianNumbers,
-                        onToggleRecipient = { number -> onTogglePlaceRecipient(place.id, number) },
-                        onChange = onPlaceChange,
+                        onClick = { onEditPlace(place.id) },
                         onScan = { onScanPlace(place.id) },
                         onRemove = if (Place.isDefaultId(place.id)) null else ({ onRemovePlace(place.id) }),
                     )
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(10.dp))
                 }
             }
 
@@ -310,27 +297,47 @@ private fun SectionTitle(text: String) {
     Spacer(Modifier.height(6.dp))
 }
 
+// Clean place card: name + WiFi + a compact summary. Everything else (contacts,
+// message) lives in the editor dialog opened by tapping the card.
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PlaceCard(
     place: Place,
-    defaultGuardian: String,
-    savedNumbers: List<String>,
-    onToggleRecipient: (String) -> Unit,
-    onChange: (Place) -> Unit,
+    onClick: () -> Unit,
     onScan: () -> Unit,
     onRemove: (() -> Unit)?,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp)) {
+    Card(modifier = Modifier.fillMaxWidth(), onClick = onClick) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = place.label,
-                    onValueChange = { onChange(place.copy(label = it)) },
-                    label = { Text("Place name") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("e.g. Ali's home") },
-                )
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        place.label.ifBlank { "Unnamed place" },
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        buildString {
+                            append(if (place.bssid.isBlank()) "No WiFi set" else "WiFi ${place.bssid}")
+                            append(" · ")
+                            append(
+                                when (place.contacts.size) {
+                                    0 -> "default guardian"
+                                    1 -> "1 contact"
+                                    else -> "${place.contacts.size} contacts"
+                                }
+                            )
+                            if (place.message.isNotBlank()) append(" · custom message")
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    )
+                }
+                OutlinedButton(onClick = onScan) {
+                    Icon(Icons.Default.Wifi, contentDescription = null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Scan")
+                }
                 if (onRemove != null) {
                     IconButton(onClick = onRemove) {
                         Icon(
@@ -341,114 +348,136 @@ private fun PlaceCard(
                     }
                 }
             }
-            Spacer(Modifier.height(6.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                OutlinedTextField(
-                    value = place.bssid,
-                    onValueChange = {},
-                    label = { Text("WiFi BSSID") },
-                    readOnly = true, singleLine = true,
-                    placeholder = { Text("Tap Scan to select") },
-                    modifier = Modifier.weight(1f),
-                )
-                OutlinedButton(onClick = onScan) {
-                    Icon(Icons.Default.Wifi, contentDescription = null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Scan")
-                }
-            }
-            Spacer(Modifier.height(6.dp))
-            OutlinedTextField(
-                value = place.message,
-                onValueChange = { if (it.length <= 90) onChange(place.copy(message = it)) },
-                label = { Text("Custom arrival message (optional)") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Default: \"<your name> arrived at ${place.label.ifBlank { "place" }}\"") },
-                supportingText = { Text("${place.message.length}/90") },
-            )
-            if (savedNumbers.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "Notify for this place",
-                    style = MaterialTheme.typography.labelLarge,
-                )
-                Text(
-                    if (place.recipients.isEmpty()) {
-                        "Default guardian (${defaultGuardian.ifBlank { "not set" }})"
-                    } else {
-                        "${place.recipients.size} selected"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                )
-                Spacer(Modifier.height(4.dp))
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    savedNumbers.forEach { number ->
-                        FilterChip(
-                            selected = number in place.recipients,
-                            onClick = { onToggleRecipient(number) },
-                            label = { Text(number) },
-                        )
-                    }
-                }
-            }
         }
     }
 }
 
-// Add/list/remove the pool of extra guardian numbers a place can be pointed at.
+/**
+ * Editor dialog for one place: rename it, write a custom arrival message, and
+ * manage its contact list (add / edit / remove — e.g. Wife, Parents, Manager).
+ * Edits are a local draft; nothing changes until Save.
+ */
 @Composable
-private fun GuardianNumbersEditor(
-    numbers: List<String>,
-    onAdd: (String) -> Unit,
-    onRemove: (String) -> Unit,
+private fun PlaceEditorDialog(
+    place: Place,
+    onSave: (Place) -> Unit,
+    onDismiss: () -> Unit,
 ) {
+    val phoneNormalizer = remember { PhoneNormalizer() }
+    var label by remember { mutableStateOf(place.label) }
+    var message by remember { mutableStateOf(place.message) }
+    val contacts = remember { mutableStateListOf(*place.contacts.toTypedArray()) }
+    var newName by remember { mutableStateOf("") }
     var newNumber by remember { mutableStateOf("") }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        OutlinedTextField(
-            value = newNumber,
-            onValueChange = { newNumber = it },
-            label = { Text("Add a number (03001234567)") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-            modifier = Modifier.weight(1f),
-        )
-        Spacer(Modifier.width(8.dp))
-        OutlinedButton(
-            onClick = {
-                if (newNumber.isNotBlank()) {
-                    onAdd(newNumber)
-                    newNumber = ""
+    var contactError by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(place.label.ifBlank { "Edit place" }) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                OutlinedTextField(
+                    value = label,
+                    onValueChange = { label = it },
+                    label = { Text("Place name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("e.g. Ali's home") },
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = message,
+                    onValueChange = { if (it.length <= 90) message = it },
+                    label = { Text("Arrival message (optional)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    supportingText = { Text("${message.length}/90 — blank = \"<your name> arrived at ${label.ifBlank { "place" }}\"") },
+                )
+
+                Spacer(Modifier.height(12.dp))
+                Text("Contacts", style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary)
+                Text(
+                    if (contacts.isEmpty()) "None yet — the default guardian will be notified."
+                    else "Everyone below is notified when you arrive here.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+                Spacer(Modifier.height(4.dp))
+
+                contacts.forEachIndexed { index, contact ->
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                contact.name.ifBlank { "(no name)" },
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Text(
+                                contact.number,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            )
+                        }
+                        IconButton(onClick = { contacts.removeAt(index) }) {
+                            Icon(Icons.Default.Close, contentDescription = "Remove contact",
+                                Modifier.size(18.dp))
+                        }
+                    }
                 }
-            },
-        ) {
-            Icon(Icons.Default.Add, contentDescription = "Add number", Modifier.size(18.dp))
-        }
-    }
-    if (numbers.isNotEmpty()) {
-        Spacer(Modifier.height(8.dp))
-        numbers.forEach { number ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(number, style = MaterialTheme.typography.bodyMedium)
-                IconButton(onClick = { onRemove(number) }) {
-                    Icon(
-                        Icons.Default.Close,
-                        contentDescription = "Remove $number",
-                        tint = MaterialTheme.colorScheme.error,
-                    )
+
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = newName,
+                    onValueChange = { newName = it },
+                    label = { Text("Name (e.g. Wife)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = newNumber,
+                    onValueChange = { newNumber = it; contactError = null },
+                    label = { Text("Phone (03001234567)") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    modifier = Modifier.fillMaxWidth(),
+                    isError = contactError != null,
+                    supportingText = contactError?.let { { Text(it) } },
+                )
+                Spacer(Modifier.height(6.dp))
+                OutlinedButton(
+                    onClick = {
+                        val normalized = phoneNormalizer.normalize(newNumber)
+                        if (normalized == null) {
+                            contactError = "Enter a valid Pakistani number (e.g. 03001234567)"
+                        } else if (contacts.any { it.number == normalized }) {
+                            contactError = "That number is already in the list"
+                        } else {
+                            contacts.add(PlaceContact(name = newName.trim(), number = normalized))
+                            newName = ""
+                            newNumber = ""
+                            contactError = null
+                        }
+                    },
+                    enabled = newNumber.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Add Contact")
                 }
             }
-        }
-    }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onSave(place.copy(label = label.trim(), message = message, contacts = contacts.toList()))
+            }) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable
@@ -512,9 +541,11 @@ private fun hasPermission(context: Context, permission: String): Boolean =
 // ── Preview helpers ───────────────────────────────────────────────────────────
 
 private val previewPlaces = listOf(
-    Place(Place.HOME_ID, "My Home", "AA:BB:CC:DD:EE:01"),
-    Place(Place.OFFICE_ID, "Office", "AA:BB:CC:DD:EE:02"),
-    Place("place_1", "Ali's home", "AA:BB:CC:DD:EE:03", "Reached Ali's place safely"),
+    Place(Place.HOME_ID, "My Home", "AA:BB:CC:DD:EE:01",
+        contacts = listOf(PlaceContact("Wife", "+923001111111"), PlaceContact("Parents", "+923002222222"))),
+    Place(Place.OFFICE_ID, "Office", "AA:BB:CC:DD:EE:02",
+        contacts = listOf(PlaceContact("Manager", "+923003333333"))),
+    Place("place_1", "Ali's home", "AA:BB:CC:DD:EE:03", message = "Reached Ali's place safely"),
 )
 
 @Preview(showBackground = true, name = "Settings — Loading")
@@ -524,14 +555,14 @@ private fun SettingsLoadingPreview() {
         SettingsContent(
             uiState = SettingsUiState(isLoading = true),
             guardianNumber = "", onGuardianChange = {},
-            onPlaceChange = {}, onAddPlace = {}, onRemovePlace = {}, onScanPlace = {},
+            onEditPlace = {}, onAddPlace = {}, onRemovePlace = {}, onScanPlace = {},
             isMonitoring = false, onMonitoringToggle = {},
             onSave = {}, onBack = {},
         )
     }
 }
 
-@Preview(showBackground = true, name = "Settings — Places filled")
+@Preview(showBackground = true, name = "Settings — Places with contacts")
 @Composable
 private fun SettingsFilledPreview() {
     TextGateTheme {
@@ -542,23 +573,17 @@ private fun SettingsFilledPreview() {
                 places = previewPlaces,
             ),
             guardianNumber = "03001234567", onGuardianChange = {},
-            onPlaceChange = {}, onAddPlace = {}, onRemovePlace = {}, onScanPlace = {},
+            onEditPlace = {}, onAddPlace = {}, onRemovePlace = {}, onScanPlace = {},
             isMonitoring = true, onMonitoringToggle = {},
             onSave = {}, onBack = {},
         )
     }
 }
 
-@Preview(showBackground = true, name = "Settings — Defaults only")
+@Preview(showBackground = true, name = "Settings — Place editor dialog")
 @Composable
-private fun SettingsEmptyPreview() {
+private fun PlaceEditorPreview() {
     TextGateTheme {
-        SettingsContent(
-            uiState = SettingsUiState(isLoading = false, places = Place.defaults()),
-            guardianNumber = "", onGuardianChange = {},
-            onPlaceChange = {}, onAddPlace = {}, onRemovePlace = {}, onScanPlace = {},
-            isMonitoring = false, onMonitoringToggle = {},
-            onSave = {}, onBack = {},
-        )
+        PlaceEditorDialog(place = previewPlaces.first(), onSave = {}, onDismiss = {})
     }
 }

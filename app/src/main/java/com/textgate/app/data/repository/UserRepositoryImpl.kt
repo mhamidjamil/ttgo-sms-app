@@ -112,9 +112,8 @@ class UserRepositoryImpl(
     override suspend fun savePlacesSettings(
         uid: String,
         guardianNumber: String,
-        guardianNumbers: List<String>,
         places: List<Place>,
-    ) = firestore.savePlacesSettings(uid, guardianNumber, guardianNumbers, places)
+    ) = firestore.savePlacesSettings(uid, guardianNumber, places)
 
     override suspend fun recordArrival(uid: String, placeId: String, date: String, currentTime: String) =
         firestore.recordArrival(uid, placeId, date, currentTime)

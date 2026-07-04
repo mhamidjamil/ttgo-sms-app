@@ -1,6 +1,7 @@
 package com.textgate.app.domain.usecase.location
 
 import com.textgate.app.core.utils.DateUtils
+import com.textgate.app.domain.model.PlaceContact
 import com.textgate.app.domain.repository.SmsRepository
 import com.textgate.app.domain.repository.UserRepository
 import com.textgate.app.domain.repository.WhatsAppRepository
@@ -14,11 +15,12 @@ class RecordArrivalUseCase(
         val user = userRepo.getCurrentUser() ?: error("User not found")
         val place = user.places.find { it.id == placeId } ?: return@runCatching
 
-        // Per-place recipient selection; empty → the default guardian number.
-        val recipients = place.recipients.filter { it.isNotBlank() }
-            .ifEmpty { listOf(user.guardianNumber) }
-            .filter { it.isNotBlank() }
-            .distinct()
+        // Per-place contacts; empty → the default guardian number (no name).
+        val recipients = place.contacts
+            .filter { it.number.isNotBlank() }
+            .ifEmpty { listOf(PlaceContact(name = "", number = user.guardianNumber)) }
+            .filter { it.number.isNotBlank() }
+            .distinctBy { it.number }
         if (recipients.isEmpty()) return@runCatching
 
         val today = DateUtils.todayString()
@@ -34,15 +36,16 @@ class RecordArrivalUseCase(
         val waLinked = waRepo.isLinked()
         var lastFailure: Throwable? = null
         var delivered = 0
-        recipients.forEach { number ->
+        recipients.forEach { contact ->
+            // recipientName personalizes for the RECEIVER (gateway anti-ban).
             val sentViaWhatsApp = waLinked &&
-                waRepo.sendMessage(number, message, user.name).isSuccess
+                waRepo.sendMessage(contact.number, message, contact.name.ifBlank { null }).isSuccess
             if (sentViaWhatsApp) {
                 delivered++
             } else {
                 smsRepo.enqueueAutoArrivalSms(
                     uid = uid,
-                    phoneNumber = number,
+                    phoneNumber = contact.number,
                     message = message,
                     location = placeId,
                     routineTriggered = routineTriggered,

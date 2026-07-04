@@ -4,6 +4,7 @@ import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentId
 import com.google.firebase.firestore.PropertyName
 import com.textgate.app.domain.model.Place
+import com.textgate.app.domain.model.PlaceContact
 import com.textgate.app.domain.model.User
 
 data class UserDto(
@@ -28,8 +29,6 @@ data class UserDto(
     // V2: arrival monitoring
     @get:PropertyName("guardian_number") @set:PropertyName("guardian_number")
     var guardianNumber: String = "",
-    @get:PropertyName("guardian_numbers") @set:PropertyName("guardian_numbers")
-    var guardianNumbers: List<String> = emptyList(),
     @get:PropertyName("home_bssid") @set:PropertyName("home_bssid")
     var homeBssid: String = "",
     @get:PropertyName("home_label") @set:PropertyName("home_label")
@@ -71,12 +70,22 @@ data class UserDto(
         // writes the places array and the legacy fields stop mattering.
         val placeList = places.mapNotNull { raw ->
             val id = raw["id"] as? String ?: return@mapNotNull null
+            // contacts: [{name, number}] — migrate legacy bare-number
+            // "recipients" arrays into contacts with blank names.
+            val contactMaps = (raw["contacts"] as? List<*>)?.filterIsInstance<Map<*, *>>()
+            val contacts = contactMaps?.mapNotNull { c ->
+                val number = c["number"] as? String ?: return@mapNotNull null
+                if (number.isBlank()) null
+                else PlaceContact(name = c["name"] as? String ?: "", number = number)
+            } ?: (raw["recipients"] as? List<*>)?.filterIsInstance<String>()
+                ?.filter { it.isNotBlank() }?.map { PlaceContact(name = "", number = it) }
+                .orEmpty()
             Place(
                 id = id,
                 label = raw["label"] as? String ?: "",
                 bssid = raw["bssid"] as? String ?: "",
                 message = raw["message"] as? String ?: "",
-                recipients = (raw["recipients"] as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
+                contacts = contacts,
             )
         }.ifEmpty {
             listOf(
@@ -108,7 +117,6 @@ data class UserDto(
             waSessionId = waSessionId,
             waMode = waMode.ifBlank { "shared" },
             guardianNumber = guardianNumber,
-            guardianNumbers = guardianNumbers,
             places = placeList,
             arrivalTimesByPlace = timesByPlace,
             lastArrivalDateByPlace = lastDatesByPlace,

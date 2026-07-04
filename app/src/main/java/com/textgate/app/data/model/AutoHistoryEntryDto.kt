@@ -9,6 +9,11 @@ import com.textgate.app.domain.model.SmsStatus
 data class AutoHistoryEntryDto(
     @DocumentId val id: String = "",
     val location: String = "",
+    @get:PropertyName("location_label") @set:PropertyName("location_label")
+    var locationLabel: String = "",
+    val channel: String = "sms",
+    @get:PropertyName("enque_by") @set:PropertyName("enque_by")
+    var enqueBy: String = "",
     @get:PropertyName("sent_at") @set:PropertyName("sent_at")
     var sentAt: Timestamp? = null,
     val status: String = "pending",
@@ -21,6 +26,9 @@ data class AutoHistoryEntryDto(
     fun toDomain() = AutoHistoryEntry(
         id = id,
         location = location,
+        locationLabel = locationLabel,
+        channel = channel.ifBlank { "sms" },
+        enqueBy = enqueBy,
         sentAt = sentAt?.toDate(),
         status = SmsStatus.from(status),
         jobPhoneKey = jobPhoneKey,

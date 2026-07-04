@@ -7,6 +7,7 @@ import com.textgate.app.domain.usecase.auth.SignUpUseCase
 import com.textgate.app.domain.usecase.auth.VerifyEmailOtpUseCase
 import com.textgate.app.domain.usecase.auth.VerifyPhoneOtpUseCase
 import com.textgate.app.domain.usecase.auto.GetAutoHistoryUseCase
+import com.textgate.app.domain.usecase.auto.RefreshAutoJobStatusUseCase
 import com.textgate.app.domain.usecase.location.RecordArrivalUseCase
 import com.textgate.app.domain.usecase.location.SavePlacesUseCase
 import com.textgate.app.domain.usecase.quota.CheckAndResetQuotaUseCase
@@ -36,4 +37,5 @@ val useCaseModule = module {
     factory { SavePlacesUseCase(get()) }
     factory { RecordArrivalUseCase(get(), get(), get()) }
     factory { GetAutoHistoryUseCase(get()) }
+    factory { RefreshAutoJobStatusUseCase(get()) }
 }

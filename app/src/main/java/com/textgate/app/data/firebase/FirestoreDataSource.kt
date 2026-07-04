@@ -214,17 +214,23 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         phoneNumber: String,
         message: String,
         location: String,
+        locationLabel: String,
         routineTriggered: Boolean,
     ): Result<Unit> = runCatching {
         val enqueBy = "app:$uid:arrival"
         val now = Timestamp.now()
         val jobDto = mapOf(
+            "phone_number" to phoneNumber,
             "message" to message,
             "status" to "pending",
             "enque_by" to enqueBy,
+            "created_at" to now,
         )
         val autoDto = mapOf(
             "location" to location,
+            "location_label" to locationLabel,
+            "channel" to "sms",
+            "enque_by" to enqueBy,
             "sent_at" to now,
             "status" to "pending",
             "job_phone_key" to phoneNumber,
@@ -239,6 +245,42 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
             autoDto,
         )
         batch.commit().await()
+    }
+
+    // WhatsApp deliveries don't create a gateway job — record the arrival in
+    // auto_history directly so the Auto page shows them too. 202-queued has no
+    // delivery receipt, so "sent" is the terminal status.
+    suspend fun logAutoWhatsAppArrival(
+        uid: String,
+        phoneNumber: String,
+        message: String,
+        location: String,
+        locationLabel: String,
+        routineTriggered: Boolean,
+    ): Result<Unit> = runCatching {
+        val autoDto = mapOf(
+            "location" to location,
+            "location_label" to locationLabel,
+            "channel" to "whatsapp",
+            "enque_by" to "app:$uid:arrival",
+            "sent_at" to Timestamp.now(),
+            "status" to "sent",
+            "job_phone_key" to phoneNumber,
+            "message" to message,
+            "routine_triggered" to routineTriggered,
+        )
+        db.collection(Paths.USERS).document(uid)
+            .collection(Paths.AUTO_HISTORY_SUB).document().set(autoDto).await()
+    }
+
+    suspend fun updateAutoHistoryStatus(
+        uid: String,
+        entryId: String,
+        status: String,
+    ): Result<Unit> = runCatching {
+        db.collection(Paths.USERS).document(uid)
+            .collection(Paths.AUTO_HISTORY_SUB).document(entryId)
+            .update("status", status).await()
     }
 
     fun getAutoHistory(uid: String): Flow<List<AutoHistoryEntryDto>> =

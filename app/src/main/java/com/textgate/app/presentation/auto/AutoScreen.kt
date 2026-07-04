@@ -20,6 +20,12 @@ import java.util.Date
 @Composable
 fun AutoScreen(viewModel: AutoViewModel = koinViewModel()) {
     val uiState by viewModel.uiState.collectAsState()
+    // Poll job statuses while the screen is visible — same as the History page —
+    // so "Pending" chips resolve to sent/failed instead of sticking forever.
+    DisposableEffect(Unit) {
+        viewModel.startPolling()
+        onDispose { viewModel.stopPolling() }
+    }
     AutoContent(uiState = uiState)
 }
 
@@ -29,7 +35,7 @@ private fun AutoContent(uiState: AutoUiState) {
         Text("Auto Notifications", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(4.dp))
         Text(
-            "Guardian SMS sent when you arrive home or at office",
+            "Notifications sent to your contacts when you arrive at a saved place",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
         )
@@ -75,7 +81,14 @@ private fun AutoEntryCard(entry: AutoHistoryEntry) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                val locationLabel = if (entry.location == "home") "Home" else "Office"
+                // Stored label (any custom place); legacy entries only have the id.
+                val locationLabel = entry.locationLabel.ifBlank {
+                    when (entry.location) {
+                        "home" -> "Home"
+                        "office" -> "Office"
+                        else -> entry.location
+                    }
+                }
                 Text(
                     "Arrived at $locationLabel",
                     style = MaterialTheme.typography.titleMedium,
@@ -99,6 +112,16 @@ private fun AutoEntryCard(entry: AutoHistoryEntry) {
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                 )
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = MaterialTheme.shapes.small,
+                ) {
+                    Text(
+                        if (entry.channel == "whatsapp") "WhatsApp" else "SMS",
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
                 if (entry.routineTriggered) {
                     Surface(
                         color = MaterialTheme.colorScheme.secondaryContainer,
@@ -140,10 +163,16 @@ private fun StatusChip(status: SmsStatus) {
 // ── Preview helpers ───────────────────────────────────────────────────────────
 
 private val sampleAutoEntries = listOf(
-    AutoHistoryEntry("1", "office", Date(), SmsStatus.SENT, "+923001234567",
-        "Alice arrived at Office 8 minutes ago", routineTriggered = true),
-    AutoHistoryEntry("2", "home", Date(), SmsStatus.SENT, "+923001234567",
-        "Alice arrived at Home 3 minutes ago", routineTriggered = false),
+    AutoHistoryEntry(
+        id = "1", location = "office", locationLabel = "Office", channel = "sms",
+        sentAt = Date(), status = SmsStatus.SENT, jobPhoneKey = "+923001234567",
+        message = "Alice arrived at Office at 9:05 AM", routineTriggered = true,
+    ),
+    AutoHistoryEntry(
+        id = "2", location = "place_1", locationLabel = "Ali's home", channel = "whatsapp",
+        sentAt = Date(), status = SmsStatus.SENT, jobPhoneKey = "+923001234567",
+        message = "Alice arrived at Ali's home at 7:42 PM", routineTriggered = false,
+    ),
 )
 
 @Preview(showBackground = true, name = "Auto — With arrivals")

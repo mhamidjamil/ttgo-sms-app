@@ -49,12 +49,22 @@ class RecordArrivalUseCase(
                 waRepo.sendMessage(contact.number, waText, contact.name.ifBlank { null }).isSuccess
             if (sentViaWhatsApp) {
                 delivered++
+                // Record WhatsApp deliveries too, or the Auto page never shows them.
+                smsRepo.logAutoWhatsAppArrival(
+                    uid = uid,
+                    phoneNumber = contact.number,
+                    message = waText,
+                    location = placeId,
+                    locationLabel = label,
+                    routineTriggered = routineTriggered,
+                )
             } else {
                 smsRepo.enqueueAutoArrivalSms(
                     uid = uid,
                     phoneNumber = contact.number,
                     message = message,
                     location = placeId,
+                    locationLabel = label,
                     routineTriggered = routineTriggered,
                 ).onSuccess { delivered++ }.onFailure { lastFailure = it }
             }

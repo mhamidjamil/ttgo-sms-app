@@ -18,7 +18,7 @@ val viewModelModule = module {
     viewModel { ProfileViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { PhoneVerifyViewModel(get(), get(), get(), get(), get()) }
     // V2
-    viewModel { AutoViewModel(get(), get()) }
+    viewModel { AutoViewModel(get(), get(), get()) }
     viewModel { SettingsViewModel(get(), get(), get()) }
     viewModel { WhatsAppViewModel(get(), get()) }
 }

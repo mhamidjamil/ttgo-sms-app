@@ -14,11 +14,21 @@ interface SmsRepository {
     suspend fun enqueueOtpSms(uid: String, phoneNumber: String, message: String): Result<Unit>
 
     // Arrival monitoring (V2)
+    suspend fun logAutoWhatsAppArrival(
+        uid: String,
+        phoneNumber: String,
+        message: String,
+        location: String,
+        locationLabel: String,
+        routineTriggered: Boolean,
+    ): Result<Unit>
+    suspend fun updateAutoHistoryStatus(uid: String, entryId: String, status: String): Result<Unit>
     suspend fun enqueueAutoArrivalSms(
         uid: String,
         phoneNumber: String,
         message: String,
         location: String,
+        locationLabel: String,
         routineTriggered: Boolean,
     ): Result<Unit>
     fun getAutoHistory(uid: String): Flow<List<AutoHistoryEntry>>

@@ -32,8 +32,21 @@ class SmsRepositoryImpl(private val firestore: FirestoreDataSource) : SmsReposit
         phoneNumber: String,
         message: String,
         location: String,
+        locationLabel: String,
         routineTriggered: Boolean,
-    ): Result<Unit> = firestore.enqueueAutoArrivalSms(uid, phoneNumber, message, location, routineTriggered)
+    ): Result<Unit> = firestore.enqueueAutoArrivalSms(uid, phoneNumber, message, location, locationLabel, routineTriggered)
+
+    override suspend fun logAutoWhatsAppArrival(
+        uid: String,
+        phoneNumber: String,
+        message: String,
+        location: String,
+        locationLabel: String,
+        routineTriggered: Boolean,
+    ): Result<Unit> = firestore.logAutoWhatsAppArrival(uid, phoneNumber, message, location, locationLabel, routineTriggered)
+
+    override suspend fun updateAutoHistoryStatus(uid: String, entryId: String, status: String): Result<Unit> =
+        firestore.updateAutoHistoryStatus(uid, entryId, status)
 
     override fun getAutoHistory(uid: String): Flow<List<AutoHistoryEntry>> =
         firestore.getAutoHistory(uid).map { list -> list.map { it.toDomain() } }

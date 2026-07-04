@@ -16,6 +16,8 @@ data class Place(
     val bssid: String = "",
     // Custom arrival message; blank → default "<name> arrived at <label>".
     val message: String = "",
+    // Optional separate message for WhatsApp deliveries; blank → same as SMS.
+    val waMessage: String = "",
     // People notified for THIS place. Empty → the default guardian number.
     val contacts: List<PlaceContact> = emptyList(),
 ) {

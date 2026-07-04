@@ -76,7 +76,7 @@ Top-level collection — one document per Firebase Auth user, keyed by UID.
 | Field | Type | Description |
 |-------|------|-------------|
 | `guardian_number` | string | E.164 default recipient of arrival notifications |
-| `places` | array | `[{id, label, bssid, message, contacts}]` — `home`/`office` are seeded ids; users add more. `message` is an optional custom arrival text (blank → "<name> arrived at <label>"); `contacts` is `[{name, number}]` — the people notified for that place (empty → the default `guardian_number`). Legacy `recipients` (bare number arrays) and `guardian_numbers` migrate on read |
+| `places` | array | `[{id, label, bssid, message, wa_message, contacts}]` — `home`/`office` are seeded ids; users add more. `message` is an optional custom arrival text (blank → "<name> arrived at <label>"); `contacts` is `[{name, number}]` — the people notified for that place (empty → the default `guardian_number`); `wa_message` is an optional WhatsApp-specific text (blank → same as `message`). Legacy `recipients` (bare number arrays) and `guardian_numbers` migrate on read |
 | `arrival_times` | map | `{placeId: ["HH:mm", …]}` — last 30 arrivals per place (routine learning) |
 | `last_arrival_dates` | map | `{placeId: "YYYY-MM-DD"}` — one-notification-per-day guard per place |
 

@@ -111,6 +111,7 @@ fun SettingsScreen(
     uiState.places.firstOrNull { it.id == editingPlaceId }?.let { place ->
         PlaceEditorDialog(
             place = place,
+            showWaMessage = uiState.waConfigured,
             onSave = { updated ->
                 viewModel.updatePlace(updated)
                 editingPlaceId = null
@@ -360,12 +361,14 @@ private fun PlaceCard(
 @Composable
 private fun PlaceEditorDialog(
     place: Place,
+    showWaMessage: Boolean = false,
     onSave: (Place) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val phoneNormalizer = remember { PhoneNormalizer() }
     var label by remember { mutableStateOf(place.label) }
     var message by remember { mutableStateOf(place.message) }
+    var waMessage by remember { mutableStateOf(place.waMessage) }
     val contacts = remember { mutableStateListOf(*place.contacts.toTypedArray()) }
     var newName by remember { mutableStateOf("") }
     var newNumber by remember { mutableStateOf("") }
@@ -393,6 +396,17 @@ private fun PlaceEditorDialog(
                     modifier = Modifier.fillMaxWidth(),
                     supportingText = { Text("${message.length}/90 — blank = \"<your name> arrived at ${label.ifBlank { "place" }}\"") },
                 )
+                if (showWaMessage) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = waMessage,
+                        onValueChange = { if (it.length <= 300) waMessage = it },
+                        label = { Text("WhatsApp message (optional)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        supportingText = { Text("${waMessage.length}/300 — blank = same as the SMS message") },
+                    )
+                }
 
                 Spacer(Modifier.height(12.dp))
                 Text("Contacts", style = MaterialTheme.typography.titleSmall,
@@ -473,7 +487,7 @@ private fun PlaceEditorDialog(
         },
         confirmButton = {
             TextButton(onClick = {
-                onSave(place.copy(label = label.trim(), message = message, contacts = contacts.toList()))
+                onSave(place.copy(label = label.trim(), message = message, waMessage = waMessage, contacts = contacts.toList()))
             }) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },

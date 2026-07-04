@@ -32,8 +32,10 @@ class RecordArrivalUseCase(
         val arrivalTime = DateUtils.currentTime12h()
         val label = place.label.ifBlank { placeId }
         // Per-place custom message, or the default arrival line — the event
-        // timestamp is ALWAYS appended.
-        val message = place.message.ifBlank { "${user.name} arrived at $label" } + " at $arrivalTime"
+        // timestamp is ALWAYS appended. WhatsApp can carry its own text.
+        val defaultLine = "${user.name} arrived at $label"
+        val message = place.message.ifBlank { defaultLine } + " at $arrivalTime"
+        val waText = place.waMessage.ifBlank { place.message }.ifBlank { defaultLine } + " at $arrivalTime"
 
         // WhatsApp first when a gateway account is linked (free, no SMS quota);
         // fall back to the SMS gateway per recipient when unlinked or the send
@@ -44,7 +46,7 @@ class RecordArrivalUseCase(
         recipients.forEach { contact ->
             // recipientName personalizes for the RECEIVER (gateway anti-ban).
             val sentViaWhatsApp = waLinked &&
-                waRepo.sendMessage(contact.number, message, contact.name.ifBlank { null }).isSuccess
+                waRepo.sendMessage(contact.number, waText, contact.name.ifBlank { null }).isSuccess
             if (sentViaWhatsApp) {
                 delivered++
             } else {

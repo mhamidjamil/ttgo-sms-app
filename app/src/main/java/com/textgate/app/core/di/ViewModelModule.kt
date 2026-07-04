@@ -19,6 +19,6 @@ val viewModelModule = module {
     viewModel { PhoneVerifyViewModel(get(), get(), get(), get(), get()) }
     // V2
     viewModel { AutoViewModel(get(), get()) }
-    viewModel { SettingsViewModel(get(), get()) }
+    viewModel { SettingsViewModel(get(), get(), get()) }
     viewModel { WhatsAppViewModel(get(), get()) }
 }

@@ -85,6 +85,7 @@ data class UserDto(
                 label = raw["label"] as? String ?: "",
                 bssid = raw["bssid"] as? String ?: "",
                 message = raw["message"] as? String ?: "",
+                waMessage = raw["wa_message"] as? String ?: "",
                 contacts = contacts,
             )
         }.ifEmpty {

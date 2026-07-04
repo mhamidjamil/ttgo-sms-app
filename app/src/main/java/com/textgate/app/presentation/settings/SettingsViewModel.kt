@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.textgate.app.domain.model.Place
 import com.textgate.app.domain.repository.UserRepository
+import com.textgate.app.domain.repository.WhatsAppRepository
 import com.textgate.app.domain.usecase.location.SavePlacesUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,11 +19,14 @@ data class SettingsUiState(
     val places: List<Place> = emptyList(),
     val error: String? = null,
     val saveSuccess: Boolean = false,
+    // WhatsApp gateway set up → the place editor offers a WhatsApp message field.
+    val waConfigured: Boolean = false,
 )
 
 class SettingsViewModel(
     private val userRepo: UserRepository,
     private val savePlaces: SavePlacesUseCase,
+    private val waRepo: WhatsAppRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -40,6 +44,7 @@ class SettingsViewModel(
                     // toDomain() migrates legacy home/office fields into the
                     // places list, so old accounts land here with both seeded.
                     places = user.places.ifEmpty { Place.defaults() },
+                    waConfigured = waRepo.isLinked(),
                 )
             } else {
                 _uiState.value = SettingsUiState(isLoading = false, error = "Could not load settings")

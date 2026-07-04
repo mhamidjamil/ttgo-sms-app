@@ -1,5 +1,6 @@
 package com.textgate.app.data.repository
 
+import com.textgate.app.core.utils.DateUtils
 import com.textgate.app.data.local.PreferencesDataSource
 import com.textgate.app.domain.repository.OtpChannel
 import com.textgate.app.domain.repository.ThrottleRepository
@@ -21,5 +22,12 @@ class ThrottleRepositoryImpl(
 
     override suspend fun markOtpSent(channel: OtpChannel) {
         prefs.setOtpSentAt(channel.key, System.currentTimeMillis())
+    }
+
+    override suspend fun canRequestMoreSmsToday(): Boolean =
+        prefs.getQuotaRequestDate() != DateUtils.todayString()
+
+    override suspend fun markSmsRequestSent() {
+        prefs.setQuotaRequestDate(DateUtils.todayString())
     }
 }

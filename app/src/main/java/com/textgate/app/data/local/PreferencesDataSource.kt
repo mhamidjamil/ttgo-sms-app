@@ -21,6 +21,8 @@ class PreferencesDataSource(private val context: Context) {
         private val KEY_WA_SESSION_ID = stringPreferencesKey("wa_session_id")
         // Anti-spam state (send-OTP cooldowns) — keyed per channel ("phone"/"email").
         private fun otpSentAtKey(channel: String) = longPreferencesKey("last_otp_sent_at_$channel")
+        // Last date (YYYY-MM-DD) the user sent a quota-increase request.
+        private val KEY_QUOTA_REQUEST_DATE = stringPreferencesKey("last_quota_request_date")
     }
 
     suspend fun getOtpSentAt(channel: String): Long? =
@@ -28,6 +30,13 @@ class PreferencesDataSource(private val context: Context) {
 
     suspend fun setOtpSentAt(channel: String, atMillis: Long) {
         context.dataStore.edit { it[otpSentAtKey(channel)] = atMillis }
+    }
+
+    suspend fun getQuotaRequestDate(): String? =
+        context.dataStore.data.first()[KEY_QUOTA_REQUEST_DATE]
+
+    suspend fun setQuotaRequestDate(date: String) {
+        context.dataStore.edit { it[KEY_QUOTA_REQUEST_DATE] = date }
     }
 
     suspend fun getCachedUid(): String? =

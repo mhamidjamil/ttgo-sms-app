@@ -38,11 +38,23 @@ private fun SendContent(
     uiState: SendUiState,
     onSend: (String, String) -> Unit,
     onClearMessage: () -> Unit,
-    onRequestMore: () -> Unit = {},
+    onRequestMore: (String) -> Unit = {},
     onClearRequestMoreResult: () -> Unit = {},
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val phoneNormalizer = remember { PhoneNormalizer() }
+    var showRequestDialog by remember { mutableStateOf(false) }
+
+    if (showRequestDialog) {
+        RequestMoreDialog(
+            isSending = uiState.isRequestingMore,
+            onSubmit = { note ->
+                onRequestMore(note)
+                showRequestDialog = false
+            },
+            onDismiss = { showRequestDialog = false },
+        )
+    }
 
     LaunchedEffect(uiState.sentMessage) {
         uiState.sentMessage?.let {
@@ -102,14 +114,15 @@ private fun SendContent(
                 )
                 if (user.phoneVerified) {
                     TextButton(
-                        onClick = onRequestMore,
-                        enabled = !uiState.isRequestingMore,
+                        onClick = { showRequestDialog = true },
+                        enabled = !uiState.isRequestingMore && uiState.canRequestMoreToday,
                         modifier = Modifier.align(Alignment.End),
                     ) {
-                        if (uiState.isRequestingMore) {
-                            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                        } else {
-                            Text("Request more SMS/day")
+                        when {
+                            uiState.isRequestingMore ->
+                                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                            !uiState.canRequestMoreToday -> Text("Request sent for today")
+                            else -> Text("Request more SMS/day")
                         }
                     }
                 }
@@ -172,6 +185,58 @@ private fun SendContent(
             }
         }
     }
+}
+
+// Quota-increase request form — lets the user write a custom note to the admin.
+@Composable
+private fun RequestMoreDialog(
+    isSending: Boolean,
+    onSubmit: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var note by remember { mutableStateOf("") }
+    val maxChars = 300
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Request more SMS/day") },
+        text = {
+            Column {
+                Text(
+                    "Tell the admin why you need a higher daily quota. Your email and " +
+                        "phone number are included automatically. You can send one request per day.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { if (it.length <= maxChars) note = it },
+                    label = { Text("Your message") },
+                    minLines = 3,
+                    maxLines = 6,
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = {
+                        Text("I'm a student and can't afford the pro version, please allocate X quota")
+                    },
+                    supportingText = { Text("${note.length}/$maxChars") },
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSubmit(note) },
+                enabled = note.isNotBlank() && !isSending,
+            ) {
+                if (isSending) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary)
+                } else {
+                    Text("Send Request")
+                }
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 // ── Preview helpers ───────────────────────────────────────────────────────────

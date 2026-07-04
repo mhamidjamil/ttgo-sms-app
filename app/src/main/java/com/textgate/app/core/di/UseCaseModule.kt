@@ -26,7 +26,7 @@ val useCaseModule = module {
     factory { CheckAndResetQuotaUseCase(get()) }
     factory { GetEffectiveQuotaUseCase() }
     factory { DecrementQuotaUseCase(get()) }
-    factory { RequestMoreSmsUseCase(get()) }
+    factory { RequestMoreSmsUseCase(get(), get()) }
     factory { EnqueueSmsUseCase(get(), get()) }
     factory { GetHistoryUseCase(get()) }
     factory { RefreshJobStatusUseCase(get()) }

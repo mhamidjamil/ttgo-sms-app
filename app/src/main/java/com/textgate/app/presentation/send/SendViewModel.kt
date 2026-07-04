@@ -7,6 +7,7 @@ import com.textgate.app.domain.repository.UserRepository
 import com.textgate.app.domain.usecase.quota.CheckAndResetQuotaUseCase
 import com.textgate.app.domain.usecase.quota.DecrementQuotaUseCase
 import com.textgate.app.domain.usecase.quota.GetEffectiveQuotaUseCase
+import com.textgate.app.domain.repository.ThrottleRepository
 import com.textgate.app.domain.usecase.quota.RequestMoreSmsUseCase
 import com.textgate.app.domain.usecase.sms.EnqueueSmsUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,6 +24,8 @@ data class SendUiState(
     val sentMessage: String? = null,
     val isRequestingMore: Boolean = false,
     val requestMoreResult: String? = null,
+    // False once today's single quota-increase request has been sent.
+    val canRequestMoreToday: Boolean = true,
 ) {
     // How many SMS were sent today = assigned minus what's left.
     // Comparing sentToday against effectiveQuota correctly caps unverified users:
@@ -40,6 +43,7 @@ class SendViewModel(
     private val decrementQuota: DecrementQuotaUseCase,
     private val enqueueSms: EnqueueSmsUseCase,
     private val requestMoreSms: RequestMoreSmsUseCase,
+    private val throttle: ThrottleRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SendUiState())
@@ -54,7 +58,12 @@ class SendViewModel(
             if (user != null) {
                 val refreshed = checkAndResetQuota(user).getOrDefault(user)
                 val quota = getEffectiveQuota(refreshed)
-                _uiState.value = SendUiState(user = refreshed, effectiveQuota = quota)
+                val canRequest = throttle.canRequestMoreSmsToday()
+                _uiState.value = SendUiState(
+                    user = refreshed,
+                    effectiveQuota = quota,
+                    canRequestMoreToday = canRequest,
+                )
             } else {
                 _uiState.value = SendUiState(error = "Could not load user data")
             }
@@ -88,27 +97,35 @@ class SendViewModel(
         }
     }
 
-    // "Request more SMS" — emails the admin with the user's identity so the
-    // daily quota can be raised.
-    fun requestMore() {
+    // "Request more SMS" — emails the admin with the user's identity plus their
+    // own note so the daily quota can be raised. Limited to one per day.
+    fun requestMore(note: String) {
         val user = _uiState.value.user ?: return
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isRequestingMore = true, requestMoreResult = null)
-            requestMoreSms(user)
+            requestMoreSms(user, note)
                 .onSuccess {
                     _uiState.value = _uiState.value.copy(
                         isRequestingMore = false,
+                        canRequestMoreToday = false,
                         requestMoreResult = "Request sent — the admin will review it soon.",
                     )
                 }
                 .onFailure {
                     _uiState.value = _uiState.value.copy(
                         isRequestingMore = false,
+                        // A "once per day" rejection also means the button should lock.
+                        canRequestMoreToday = throttleAllowsAfterFailure(it),
                         requestMoreResult = it.message ?: "Failed to send the request",
                     )
                 }
         }
     }
+
+    // Only an already-sent-today failure should lock the button; a transient
+    // send error (e.g. no network) leaves the user free to retry.
+    private fun throttleAllowsAfterFailure(t: Throwable): Boolean =
+        t.message?.contains("already sent a request today") != true
 
     fun clearSentMessage() { _uiState.value = _uiState.value.copy(sentMessage = null) }
     fun clearError() { _uiState.value = _uiState.value.copy(error = null) }

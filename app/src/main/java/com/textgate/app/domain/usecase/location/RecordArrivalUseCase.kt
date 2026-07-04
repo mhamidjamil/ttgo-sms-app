@@ -26,9 +26,14 @@ class RecordArrivalUseCase(
         val today = DateUtils.todayString()
         if (user.lastArrivalDateByPlace[placeId] == today) return@runCatching // one alert/day/place
 
+        // Capture the ARRIVAL time now — queueing can delay actual delivery by
+        // minutes, and the receiver must see when the arrival happened, not
+        // when the gateway finally sent the message.
+        val arrivalTime = DateUtils.currentTime12h()
         val label = place.label.ifBlank { placeId }
-        // Per-place custom message, or the default arrival line.
-        val message = place.message.ifBlank { "${user.name} arrived at $label" }
+        // Per-place custom message, or the default arrival line — the event
+        // timestamp is ALWAYS appended.
+        val message = place.message.ifBlank { "${user.name} arrived at $label" } + " at $arrivalTime"
 
         // WhatsApp first when a gateway account is linked (free, no SMS quota);
         // fall back to the SMS gateway per recipient when unlinked or the send

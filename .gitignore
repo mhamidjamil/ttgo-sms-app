@@ -22,3 +22,6 @@ captures/
 
 # Kotlin
 *.kotlin_module
+
+# Local build helper (machine-specific paths, not for version control)
+run-build.sh

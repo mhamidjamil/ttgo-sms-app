@@ -21,6 +21,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.textgate.app.core.theme.TextGateTheme
+import com.textgate.app.core.theme.OnWarningAmber
 import com.textgate.app.core.theme.WarningAmber
 import com.textgate.app.core.theme.WarningAmberBorder
 import com.textgate.app.data.local.PreferencesDataSource
@@ -83,7 +84,7 @@ private fun ProfileContent(
     onNavigateToAlertSources: () -> Unit = {},
     onNavigateToLinkedAccounts: () -> Unit = {},
     onSendEmailCode: () -> Unit = {},
-    onVerifyEmailCode: (String) -> Unit = {},
+    onVerifyEmailCode: () -> Unit = {},
     onUpdateName: (String) -> Unit = {},
     onDefaultHistoryTabChange: (String) -> Unit = {},
 ) {
@@ -187,6 +188,7 @@ private fun ProfileContent(
                             .border(1.dp, WarningAmberBorder)
                             .padding(12.dp),
                     ) {
+                        CompositionLocalProvider(LocalContentColor provides OnWarningAmber) {
                         Column {
                             Text(
                                 "⚠ Phone not verified — sending is disabled",
@@ -199,6 +201,7 @@ private fun ProfileContent(
                             )
                             Spacer(Modifier.height(8.dp))
                             OutlinedButton(onClick = onVerifyPhone) { Text("Verify Phone Number") }
+                        }
                         }
                     }
                     Spacer(Modifier.height(12.dp))
@@ -370,9 +373,8 @@ private fun ProfileContent(
 private fun EmailVerifyBanner(
     uiState: ProfileUiState,
     onSendEmailCode: () -> Unit,
-    onVerifyEmailCode: (String) -> Unit,
+    onVerifyEmailCode: () -> Unit,
 ) {
-    var code by remember { mutableStateOf("") }
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -380,64 +382,61 @@ private fun EmailVerifyBanner(
             .border(1.dp, WarningAmberBorder)
             .padding(12.dp),
     ) {
-        Column {
-            Text(
-                "⚠ Email not verified",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                "Email verification is needed for WhatsApp linking and admin contact (it does not affect your SMS quota).",
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(
-                onClick = onSendEmailCode,
-                enabled = !uiState.isSendingEmailCode && !uiState.isVerifyingEmail &&
-                    uiState.emailCooldownSeconds == 0,
-            ) {
-                when {
-                    uiState.isSendingEmailCode ->
-                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                    uiState.emailCooldownSeconds > 0 ->
-                        Text("Resend in ${uiState.emailCooldownSeconds}s")
-                    uiState.emailCodeSent -> Text("Resend Code")
-                    else -> Text("Send Verification Code")
-                }
-            }
-            if (uiState.emailCodeSent) {
-                Spacer(Modifier.height(8.dp))
+        // The banner paints its own light amber background, so the text colour
+        // is pinned too. Inheriting it would put near-white on near-white the
+        // moment the phone is in dark mode.
+        CompositionLocalProvider(LocalContentColor provides OnWarningAmber) {
+            Column {
                 Text(
-                    "A 6-digit code was emailed to you. It is valid for 1 hour.",
+                    "⚠ Email not verified",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "Email verification is needed for automatic WhatsApp setup and admin contact (it does not affect your SMS quota).",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary,
                 )
                 Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = code,
-                    onValueChange = { if (it.length <= 6 && it.all { c -> c.isDigit() }) code = it },
-                    label = { Text("Verification Code") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("123456") },
-                )
-                Spacer(Modifier.height(8.dp))
-                Button(
-                    onClick = { onVerifyEmailCode(code) },
-                    enabled = code.length == 6 && !uiState.isVerifyingEmail,
+                OutlinedButton(
+                    onClick = onSendEmailCode,
+                    enabled = !uiState.isSendingEmailCode && !uiState.isVerifyingEmail &&
+                        uiState.emailCooldownSeconds == 0,
                 ) {
-                    if (uiState.isVerifyingEmail) {
-                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary)
-                    } else {
-                        Text("Verify Email")
+                    when {
+                        uiState.isSendingEmailCode ->
+                            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        uiState.emailCooldownSeconds > 0 ->
+                            Text("Resend in ${uiState.emailCooldownSeconds}s")
+                        uiState.emailCodeSent -> Text("Resend Email")
+                        else -> Text("Send Verification Email")
                     }
                 }
-            }
-            uiState.emailVerifyError?.let {
-                Spacer(Modifier.height(8.dp))
-                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                if (uiState.emailCodeSent) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Open the link in the email we just sent, then tap below. " +
+                            "Check your spam folder if it has not arrived.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = onVerifyEmailCode,
+                        enabled = !uiState.isVerifyingEmail,
+                    ) {
+                        if (uiState.isVerifyingEmail) {
+                            CircularProgressIndicator(
+                                Modifier.size(16.dp), strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                            )
+                        } else {
+                            Text("I've opened the link")
+                        }
+                    }
+                }
+                uiState.emailVerifyError?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
             }
         }
     }

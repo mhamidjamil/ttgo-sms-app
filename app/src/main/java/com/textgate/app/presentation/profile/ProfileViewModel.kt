@@ -1,5 +1,6 @@
 package com.textgate.app.presentation.profile
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.textgate.app.data.local.PreferencesDataSource
@@ -8,8 +9,8 @@ import com.textgate.app.domain.repository.OtpChannel
 import com.textgate.app.domain.repository.ThrottleRepository
 import com.textgate.app.domain.repository.UserRepository
 import com.textgate.app.domain.repository.WhatsAppRepository
-import com.textgate.app.domain.usecase.auth.SendEmailOtpUseCase
-import com.textgate.app.domain.usecase.auth.VerifyEmailOtpUseCase
+import com.textgate.app.domain.usecase.auth.SendEmailVerificationUseCase
+import com.textgate.app.domain.usecase.auth.ConfirmEmailVerifiedUseCase
 import com.textgate.app.domain.usecase.quota.GetEffectiveQuotaUseCase
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -18,13 +19,16 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+private const val TAG = "ProfileVM"
+
 data class ProfileUiState(
     val user: User? = null,
     val effectiveQuota: Int = 0,
     val isLoading: Boolean = true,
     val error: String? = null,
 
-    // Email verification (OTP over SMTP — same flow as phone)
+    // Email verification — Firebase emails a link, the user opens it, then
+    // taps to confirm. There is no code to type.
     val isSendingEmailCode: Boolean = false,
     val emailCodeSent: Boolean = false,
     val isVerifyingEmail: Boolean = false,
@@ -40,8 +44,8 @@ data class ProfileUiState(
 class ProfileViewModel(
     private val userRepo: UserRepository,
     private val getEffectiveQuota: GetEffectiveQuotaUseCase,
-    private val sendEmailOtp: SendEmailOtpUseCase,
-    private val verifyEmailOtp: VerifyEmailOtpUseCase,
+    private val sendEmailVerification: SendEmailVerificationUseCase,
+    private val confirmEmailVerified: ConfirmEmailVerifiedUseCase,
     private val throttle: ThrottleRepository,
     private val waRepo: WhatsAppRepository,
     private val prefs: PreferencesDataSource,
@@ -113,32 +117,33 @@ class ProfileViewModel(
     }
 
     fun sendEmailCode() {
-        val user = _uiState.value.user ?: return
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isSendingEmailCode = true, emailVerifyError = null)
-            sendEmailOtp(user.uid, user.email)
+            sendEmailVerification()
                 .onSuccess {
                     _uiState.value = _uiState.value.copy(
                         isSendingEmailCode = false,
                         emailCodeSent = true,
-                        toastMessage = "OTP Sent!",
+                        toastMessage = "Verification email sent",
                     )
                     startCooldownTicker()
                 }
                 .onFailure {
+                    Log.w(TAG, "verification email failed: ${it.message}")
                     _uiState.value = _uiState.value.copy(
                         isSendingEmailCode = false,
-                        emailVerifyError = it.message ?: "Failed to send the code",
+                        emailVerifyError = it.message ?: "Could not send the email",
                     )
                 }
         }
     }
 
-    fun verifyEmailCode(code: String) {
+    // Asks Firebase whether the emailed link has been opened yet.
+    fun verifyEmailCode() {
         val user = _uiState.value.user ?: return
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isVerifyingEmail = true, emailVerifyError = null)
-            verifyEmailOtp(user.uid, code)
+            confirmEmailVerified()
                 .onSuccess {
                     // Best-effort SSO provisioning (no-ops until phone is verified too).
                     launch { waRepo.ensureProvisioned() }

@@ -41,27 +41,11 @@ android {
         buildConfigField("int", "MIN_WIFI_STABILITY_MINUTES",
             localProps.getProperty("MIN_WIFI_STABILITY_MINUTES", "5"))
 
-        // SMTP mailer (same variable names as the baileys-service .env) — used
-        // for quota-increase requests to the admin. All optional: when host/user
-        // are blank the mailer no-ops with a clear error instead of crashing.
-        // SECURITY NOTE: these values are compiled into the APK — use a
-        // low-privilege mail account, never your personal password.
-        buildConfigField("String", "SMTP_HOST",
-            "\"${localProps.getProperty("SMTP_HOST", "").removeSurrounding("\"")}\"")
-        buildConfigField("int", "SMTP_PORT",
-            localProps.getProperty("SMTP_PORT", "587"))
-        buildConfigField("boolean", "SMTP_SECURE",
-            localProps.getProperty("SMTP_SECURE", "false"))
-        buildConfigField("String", "SMTP_USER",
-            "\"${localProps.getProperty("SMTP_USER", "").removeSurrounding("\"")}\"")
-        buildConfigField("String", "SMTP_PASS",
-            "\"${localProps.getProperty("SMTP_PASS", "").removeSurrounding("\"")}\"")
-        buildConfigField("String", "SMTP_FROM_EMAIL",
-            "\"${localProps.getProperty("SMTP_FROM_EMAIL", "").removeSurrounding("\"")}\"")
-        buildConfigField("String", "SMTP_SENDER_NAME",
-            "\"${localProps.getProperty("SMTP_SENDER_NAME", "TextGate").removeSurrounding("\"")}\"")
-        buildConfigField("String", "ADMIN_EMAIL",
-            "\"${localProps.getProperty("ADMIN_EMAIL", "").removeSurrounding("\"")}\"")
+        // NOTE: no credential of any kind belongs in a buildConfigField. Every
+        // one of them is a public static final String, so the compiler inlines
+        // it into the constant pool before R8 ever runs and `strings` on the
+        // published APK reads it straight back. Verification email goes through
+        // Firebase, which holds its own credentials server-side.
 
         // WhatsApp gateway (baileys service). Both are REMOTE-FIRST at runtime:
         // fields wa_service_url / wa_portal_url on the Firestore device doc
@@ -134,10 +118,6 @@ dependencies {
     implementation(libs.koin.android)
     implementation(libs.koin.androidx.compose)
     implementation(libs.kotlinx.coroutines.android)
-
-    // SMTP mailer (JavaMail for Android) — quota-increase requests to the admin
-    implementation("com.sun.mail:android-mail:1.6.7")
-    implementation("com.sun.mail:android-activation:1.6.7")
 
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)

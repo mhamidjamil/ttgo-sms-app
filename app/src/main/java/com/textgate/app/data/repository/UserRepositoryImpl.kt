@@ -92,17 +92,20 @@ class UserRepositoryImpl(
         firestore.syncEmailVerified(uid, verified)
 
     override suspend fun refreshEmailVerified(): Result<Boolean> = runCatching {
-        // Reload the cached Firebase user so a legacy verification link clicked
-        // AFTER sign-in is noticed without a re-login. Only ever upgrades the
-        // Firestore flag — the in-app OTP flow writes it independently.
+        // Reload the cached Firebase user so a verification link clicked AFTER
+        // sign-in is noticed without a re-login. Only ever upgrades the
+        // Firestore flag: an account verified before this changed keeps its
+        // flag even though Firebase never saw a link click.
         auth.reload().getOrThrow()
         val fbUser = auth.currentUser() ?: error("No authenticated user")
         if (fbUser.isEmailVerified) {
-            firestore.syncEmailVerified(fbUser.uid, true).getOrThrow()
+            markEmailVerified(fbUser.uid).getOrThrow()
             return@runCatching true
         }
         firestore.getUser(fbUser.uid).getOrNull()?.emailVerified ?: false
     }
+
+    override suspend fun sendEmailVerification(): Result<Unit> = auth.sendEmailVerification()
 
     override fun isLoggedIn() = auth.isLoggedIn()
 
@@ -133,17 +136,20 @@ class UserRepositoryImpl(
             logChange(uid, "Phone verified", "no", "yes")
         }
 
-    // ── Email verification (OTP) ──────────────────────────────────────────────
+    // ── Email verification ────────────────────────────────────────────────────
 
-    override suspend fun saveEmailOtp(uid: String, otp: String) =
-        firestore.saveEmailOtp(uid, otp)
-
-    override suspend fun getEmailOtp(uid: String) =
-        firestore.getEmailOtp(uid)
-
-    override suspend fun markEmailVerified(uid: String): Result<Unit> =
-        firestore.markEmailVerified(uid).onSuccess {
+    // Idempotent: the confirm button can be tapped repeatedly, so only the
+    // transition from unverified is worth an audit line.
+    override suspend fun markEmailVerified(uid: String): Result<Unit> {
+        if (firestore.getUser(uid).getOrNull()?.emailVerified == true) return Result.success(Unit)
+        return firestore.markEmailVerified(uid).onSuccess {
             logChange(uid, "Email verified", "no", "yes")
+        }
+    }
+
+    override suspend fun requestMoreSms(uid: String, note: String, currentQuota: Int): Result<Unit> =
+        firestore.saveQuotaRequest(uid, note, currentQuota).onSuccess {
+            logChange(uid, "Quota increase requested", currentQuota.toString(), note.ifBlank { "(no message)" })
         }
 
     private suspend fun logChange(uid: String, field: String, old: String, new: String) {

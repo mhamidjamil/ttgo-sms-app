@@ -89,6 +89,19 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
             .update("email_verified", verified).await()
     }
 
+    // A quota-increase request, left on the user's own document for the admin
+    // to find. The admin raises assigned_quota here, or free_sms_quota on the
+    // device doc to lift everyone at once.
+    suspend fun saveQuotaRequest(uid: String, note: String, currentQuota: Int): Result<Unit> = runCatching {
+        db.collection(Paths.USERS).document(uid).update(
+            mapOf(
+                "quota_request_note" to note,
+                "quota_request_current" to currentQuota,
+                "quota_request_at" to Timestamp.now(),
+            )
+        ).await()
+    }
+
     suspend fun getDeviceFreeSmsQuota(): Result<Int> = runCatching {
         val snap = db.document(Paths.DEVICE_DOC).get().await()
         snap.getLong(Paths.FREE_SMS_QUOTA_FIELD)?.toInt() ?: 10

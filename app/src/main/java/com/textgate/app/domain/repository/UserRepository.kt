@@ -15,10 +15,12 @@ interface UserRepository {
     suspend fun decrementRemainingQuota(uid: String): Result<Unit>
     suspend fun updateName(uid: String, name: String): Result<Unit>
     suspend fun syncEmailVerified(uid: String, verified: Boolean): Result<Unit>
-    // Reloads the Firebase user; a legacy link-verified account upgrades the
-    // Firestore flag to true. Never downgrades an OTP-verified flag. Returns
-    // the effective (Firestore) verification status.
+    // Reloads the Firebase user; a link-verified account upgrades the Firestore
+    // flag to true. Never downgrades an already-verified flag. Returns the
+    // effective (Firestore) verification status.
     suspend fun refreshEmailVerified(): Result<Boolean>
+    // Firebase sends the verification email itself — no mail credential ships.
+    suspend fun sendEmailVerification(): Result<Unit>
     fun isLoggedIn(): Boolean
     fun currentFirebaseUser(): FirebaseUser?
 
@@ -29,10 +31,11 @@ interface UserRepository {
     suspend fun getPhoneOtp(uid: String): Result<Pair<String, Long>?>
     suspend fun markPhoneVerified(uid: String): Result<Unit>
 
-    // Email verification — 6-digit OTP over SMTP, mirroring the phone flow.
-    suspend fun saveEmailOtp(uid: String, otp: String): Result<Unit>
-    suspend fun getEmailOtp(uid: String): Result<Pair<String, Long>?>
+    // Email verification — Firebase's own emailed link.
     suspend fun markEmailVerified(uid: String): Result<Unit>
+
+    // Files a quota-increase request on the user's own document for the admin.
+    suspend fun requestMoreSms(uid: String, note: String, currentQuota: Int): Result<Unit>
 
     // Arrival monitoring (V2) — dynamic place list
     suspend fun savePlacesSettings(

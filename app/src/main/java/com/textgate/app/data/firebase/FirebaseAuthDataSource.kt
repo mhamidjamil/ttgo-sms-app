@@ -24,13 +24,23 @@ class FirebaseAuthDataSource(private val auth: FirebaseAuth) {
         user.updateProfile(userProfileChangeRequest { displayName = name }).await()
     }
 
-    // Re-fetches the Firebase user so isEmailVerified reflects a legacy
-    // verification link clicked AFTER sign-in (the cached user object never
-    // updates on its own). New accounts verify via the in-app email OTP.
+    // Re-fetches the Firebase user so isEmailVerified reflects a verification
+    // link clicked AFTER sign-in (the cached user object never updates on its
+    // own).
     suspend fun reload(): Result<Unit> = runCatching {
         val user = auth.currentUser ?: error("No authenticated user")
         user.reload().await()
     }
+
+    // Firebase sends and checks the verification email itself, so no mail
+    // credential has to be shipped inside the app.
+    suspend fun sendEmailVerification(): Result<Unit> = runCatching {
+        val user = auth.currentUser ?: error("No authenticated user")
+        if (user.isEmailVerified) return@runCatching
+        user.sendEmailVerification().await()
+    }
+
+    fun isEmailVerified(): Boolean = auth.currentUser?.isEmailVerified == true
 
     fun signOut() = auth.signOut()
 

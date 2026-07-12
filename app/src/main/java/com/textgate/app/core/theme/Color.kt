@@ -33,3 +33,6 @@ val StatusUnknown = Color(0xFF757575)
 
 val WarningAmber = Color(0xFFFFF8E1)
 val WarningAmberBorder = Color(0xFFFFE082)
+// The amber banners paint a fixed light background in both themes, so the text
+// on them needs a fixed dark colour rather than the theme's onSurface.
+val OnWarningAmber = Color(0xFF3E2C00)

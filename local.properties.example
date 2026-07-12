@@ -16,27 +16,13 @@ DEVICE_DOC_PATH=sim_module/device
 #   phone verified   -> assigned_quota from sim_module/device/free_sms_quota (default 10)
 # Email verification does not affect the SMS quota.
 
-# SMTP mailer — used for "Request more SMS" emails to the admin.
-# Same variable names as the baileys-service .env. Leave blank to disable email.
-# SECURITY: these values are compiled into the APK; use a dedicated
-# low-privilege mail account, never a personal password.
-SMTP_HOST=
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER=
-SMTP_PASS=
-SMTP_FROM_EMAIL=
-SMTP_SENDER_NAME=TextGate
-# Where quota-increase requests are sent
-ADMIN_EMAIL=
-
-# WhatsApp gateway (baileys service). Accounts are provisioned automatically
-# via SSO once the user verifies phone + email — no manual signup.
-# BOTH values are remote-first: Firestore device-doc fields wa_service_url /
-# wa_sso_secret override them at runtime, so rotation = config edit, no rebuild.
+# WhatsApp gateway (baileys service). Both are public addresses and both are
+# remote-first: device-doc fields wa_service_url / wa_portal_url override them
+# at runtime, so moving the gateway is a console edit and not a release.
+# No gateway credential belongs here — anything compiled in is readable from
+# the published APK. Each user pastes their own key from the portal instead.
 WHATSAPP_SERVICE_URL=https://w2.innovorix.com
 WHATSAPP_PORTAL_URL=https://w2.innovorix.com
-# Must match SSO_SERVICE_SECRET in the baileys service .env. Blank = SSO off.
 
 # History auto-poll interval in seconds while the screen is visible
 HISTORY_POLL_INTERVAL_SECONDS=10

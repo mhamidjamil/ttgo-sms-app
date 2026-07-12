@@ -16,12 +16,12 @@ fun localProp(key: String, default: String) =
 
 android {
     namespace = "com.textgate.app"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.textgate.app"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 36
         versionCode = 5
         versionName = "1.3.0"
 

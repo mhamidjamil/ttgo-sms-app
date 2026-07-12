@@ -94,12 +94,14 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         snap.getLong(Paths.FREE_SMS_QUOTA_FIELD)?.toInt() ?: 10
     }
 
-    // WhatsApp gateway overrides on the device doc: (wa_service_url, wa_sso_secret).
-    // Either may be null/blank — the caller falls back to BuildConfig. Kept in
-    // Firestore so URL + secret rotate with a config edit, not an app rebuild.
-    suspend fun getWaGatewayOverrides(): Result<Pair<String?, String?>> = runCatching {
+    // WhatsApp gateway overrides on the device doc. Any field may be null/blank —
+    // the caller falls back to BuildConfig. Kept in Firestore so the gateway URL
+    // and the portal address change with a console edit, not an app rebuild.
+    suspend fun getWaGatewayOverrides(): Result<Map<String, String>> = runCatching {
         val snap = db.document(Paths.DEVICE_DOC).get().await()
-        snap.getString("wa_service_url") to snap.getString("wa_sso_secret")
+        listOf("wa_service_url", "wa_portal_url")
+            .mapNotNull { field -> snap.getString(field)?.takeIf { it.isNotBlank() }?.let { field to it } }
+            .toMap()
     }
 
     // ── Phone verification (V1.5) ─────────────────────────────────────────────
@@ -180,6 +182,19 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
 
     suspend fun saveWaMode(uid: String, mode: String): Result<Unit> = runCatching {
         db.collection(Paths.USERS).document(uid).update("wa_mode", mode).await()
+    }
+
+    // The gateway key the user minted on the portal themselves. Owner-only via
+    // security rules, so it follows them to a new phone without being re-typed.
+    suspend fun saveWaOwnKey(
+        uid: String,
+        keyId: String,
+        keySecret: String,
+        sessionId: String,
+    ): Result<Unit> = runCatching {
+        db.collection(Paths.USERS).document(uid)
+            .update("wa_key_id", keyId, "wa_key_secret", keySecret, "wa_session_id", sessionId)
+            .await()
     }
 
     // ── Location settings (V2) ────────────────────────────────────────────────

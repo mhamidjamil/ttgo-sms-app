@@ -1,5 +1,6 @@
 package com.textgate.app.presentation.whatsapp
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.textgate.app.domain.repository.UserRepository
@@ -13,11 +14,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+private const val TAG = "WhatsAppVM"
+
 data class WhatsAppUiState(
     val isLoading: Boolean = true,
     // Both phone + email verified — SSO eligibility.
     val eligible: Boolean = true,
-    // Gateway account exists (auto-provisioned).
+    // Gateway account exists (auto-provisioned, or a key the user pasted).
     val provisioned: Boolean = false,
     // Provisioning/availability failure (e.g. the maintenance message).
     val setupError: String? = null,
@@ -29,6 +32,19 @@ data class WhatsAppUiState(
     val isBusy: Boolean = false,
     val error: String? = null,
     val info: String? = null,
+
+    // ── Own gateway key (portal) ──────────────────────────────────────────────
+    // The link came from a key the user created on the gateway portal. Such a
+    // key sends only from their own number, so the mode choice does not apply.
+    val ownKey: Boolean = false,
+    val ownKeyPhone: String? = null,
+    val portalUrl: String = "",
+    // The paste form is open. Opens by default when there is nothing set up.
+    val showKeyForm: Boolean = false,
+    val keyId: String = "",
+    val keySecret: String = "",
+    val keyError: String? = null,
+    val isSavingKey: Boolean = false,
 )
 
 class WhatsAppViewModel(
@@ -43,16 +59,38 @@ class WhatsAppViewModel(
 
     init { setup() }
 
-    /** Full setup pass: eligibility → auto-provision → mode + statuses. */
+    /** Full setup pass: eligibility → existing link or SSO → mode + statuses. */
     fun setup() {
         viewModelScope.launch {
             _uiState.value = WhatsAppUiState(isLoading = true)
+            val portal = waRepo.portalUrl()
             val user = userRepo.getCurrentUser()
             val eligible = user != null && user.phoneVerified && user.emailVerified
-            if (!eligible) {
-                _uiState.value = WhatsAppUiState(isLoading = false, eligible = false)
+
+            // A key the user pasted stands on its own: it does not need the SSO
+            // path, and it does not need email verification either.
+            val existing = waRepo.getLinkInfo()
+            if (existing != null) {
+                _uiState.value = WhatsAppUiState(
+                    isLoading = false,
+                    eligible = eligible,
+                    provisioned = true,
+                    mode = waRepo.getMode(),
+                    ownKey = existing.ownKey,
+                    ownKeyPhone = existing.phoneNumber,
+                    portalUrl = portal,
+                )
+                refreshStatuses()
                 return@launch
             }
+
+            if (!eligible) {
+                _uiState.value = WhatsAppUiState(
+                    isLoading = false, eligible = false, portalUrl = portal, showKeyForm = true,
+                )
+                return@launch
+            }
+
             waRepo.ensureProvisioned()
                 .onSuccess { provisioned ->
                     _uiState.value = WhatsAppUiState(
@@ -60,16 +98,23 @@ class WhatsAppViewModel(
                         eligible = true,
                         provisioned = provisioned,
                         mode = waRepo.getMode(),
+                        portalUrl = portal,
+                        showKeyForm = !provisioned,
                     )
                     if (provisioned) refreshStatuses()
                 }
                 .onFailure {
-                    // Health gate / provisioning failed — e.g. "under maintenance".
+                    // The gateway declined — most often because it has SSO
+                    // switched off. Its own words are kept, and the manual
+                    // portal key is offered underneath as the way through.
+                    Log.i(TAG, "gateway setup unavailable: ${it.message}")
                     _uiState.value = WhatsAppUiState(
                         isLoading = false,
                         eligible = true,
                         provisioned = false,
                         setupError = it.message ?: "WhatsApp setup failed — try again later",
+                        portalUrl = portal,
+                        showKeyForm = true,
                     )
                 }
         }
@@ -78,13 +123,73 @@ class WhatsAppViewModel(
     fun refreshStatuses() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isBusy = true)
-            val shared = waRepo.getSharedConnected().getOrNull()
+            // A portal key cannot send through the shared number, so asking
+            // about it would only show a status the user can never act on.
+            val shared = if (_uiState.value.ownKey) null else waRepo.getSharedConnected().getOrNull()
             val own = waRepo.getStatus().getOrNull()
             _uiState.value = _uiState.value.copy(
                 isBusy = false,
                 sharedConnected = shared,
                 ownStatus = own,
             )
+        }
+    }
+
+    // ── Own gateway key ───────────────────────────────────────────────────────
+
+    fun setKeyId(value: String) { _uiState.value = _uiState.value.copy(keyId = value, keyError = null) }
+
+    fun setKeySecret(value: String) { _uiState.value = _uiState.value.copy(keySecret = value, keyError = null) }
+
+    fun toggleKeyForm() {
+        _uiState.value = _uiState.value.copy(
+            showKeyForm = !_uiState.value.showKeyForm, keyError = null,
+        )
+    }
+
+    /**
+     * Checks the pasted key against the gateway and stores it only once the
+     * gateway has confirmed it and named the number it sends from. Nothing is
+     * saved on failure, so a typo cannot leave the app configured but broken.
+     */
+    fun saveOwnKey() {
+        viewModelScope.launch {
+            val state = _uiState.value
+            _uiState.value = state.copy(isSavingKey = true, keyError = null, info = null)
+            waRepo.saveOwnKey(state.keyId, state.keySecret)
+                .onSuccess { link ->
+                    _uiState.value = _uiState.value.copy(
+                        isSavingKey = false,
+                        provisioned = true,
+                        setupError = null,
+                        showKeyForm = false,
+                        keyId = "",
+                        keySecret = "",
+                        ownKey = true,
+                        ownKeyPhone = link.phoneNumber,
+                        mode = MODE_OWN,
+                        info = link.phoneNumber
+                            ?.let { "Connected. Messages will come from $it." }
+                            ?: "Connected to your own WhatsApp gateway.",
+                    )
+                    refreshStatuses()
+                }
+                .onFailure {
+                    Log.w(TAG, "gateway key rejected: ${it.message}")
+                    _uiState.value = _uiState.value.copy(
+                        isSavingKey = false,
+                        keyError = it.message ?: "Could not verify that key",
+                    )
+                }
+        }
+    }
+
+    /** Forgets the stored key so a different one can be pasted. */
+    fun disconnectOwnKey() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isBusy = true)
+            waRepo.clearLink()
+            setup()
         }
     }
 
@@ -175,7 +280,10 @@ class WhatsAppViewModel(
                         info = "Test queued — it arrives within ~15 s",
                     )
                 }
-                .onFailure { _uiState.value = _uiState.value.copy(isBusy = false, error = it.message) }
+                .onFailure {
+                    Log.w(TAG, "test send failed: ${it.message}")
+                    _uiState.value = _uiState.value.copy(isBusy = false, error = it.message)
+                }
         }
     }
 

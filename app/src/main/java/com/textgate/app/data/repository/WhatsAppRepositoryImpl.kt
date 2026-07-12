@@ -1,47 +1,72 @@
 package com.textgate.app.data.repository
 
+import android.util.Log
 import com.textgate.app.data.firebase.FirebaseAuthDataSource
 import com.textgate.app.data.firebase.FirestoreDataSource
 import com.textgate.app.data.local.PreferencesDataSource
+import com.textgate.app.data.whatsapp.WaConfigProvider
+import com.textgate.app.data.whatsapp.WaCredential
 import com.textgate.app.data.whatsapp.WhatsAppApi
 import com.textgate.app.domain.repository.WhatsAppRepository
 import com.textgate.app.domain.repository.WhatsAppRepository.Companion.MODE_OWN
 import com.textgate.app.domain.repository.WhatsAppRepository.Companion.MODE_SHARED
+
+private const val TAG = "WhatsAppRepo"
 
 class WhatsAppRepositoryImpl(
     private val prefs: PreferencesDataSource,
     private val api: WhatsAppApi,
     private val firestore: FirestoreDataSource,
     private val auth: FirebaseAuthDataSource,
+    private val config: WaConfigProvider,
 ) : WhatsAppRepository {
 
-    override suspend fun isLinked(): Boolean = getLink() != null
-
-    // Local cache first (fast, offline); Firestore user doc as the source of
-    // truth (survives reinstall/sign-out and other devices) — re-cached on hit.
-    override suspend fun getLink(): Pair<String, String>? {
-        val cachedKey = prefs.getWaApiKey()?.takeIf { it.isNotBlank() }
-        val cachedSession = prefs.getWaSessionId()?.takeIf { it.isNotBlank() }
-        if (cachedKey != null && cachedSession != null) return cachedKey to cachedSession
+    // (credential, sessionId) resolved local-cache-first, then the Firestore
+    // user doc, which is the source of truth and survives reinstall, sign-out
+    // and a second device.
+    private suspend fun credential(): Pair<WaCredential, String>? {
+        val cachedKeyId = prefs.getWaKeyId().orEmpty()
+        val cachedSecret = prefs.getWaKeySecret().orEmpty()
+        val cachedSession = prefs.getWaSessionId().orEmpty()
+        if (cachedKeyId.isNotBlank() && cachedSecret.isNotBlank()) {
+            return WaCredential.pair(cachedKeyId, cachedSecret) to cachedSession
+        }
+        val cachedApiKey = prefs.getWaApiKey().orEmpty()
+        if (cachedApiKey.isNotBlank() && cachedSession.isNotBlank()) {
+            return WaCredential.legacy(cachedApiKey) to cachedSession
+        }
 
         val uid = auth.currentUser()?.uid ?: return null
         val dto = firestore.getUser(uid).getOrNull() ?: return null
-        if (dto.waApiKey.isBlank() || dto.waSessionId.isBlank()) return null
-        prefs.setWaLink(dto.waApiKey, dto.waSessionId)
         prefs.setWaMode(dto.waMode.ifBlank { MODE_SHARED })
-        return dto.waApiKey to dto.waSessionId
+        if (dto.waKeyId.isNotBlank() && dto.waKeySecret.isNotBlank()) {
+            prefs.setWaOwnKey(dto.waKeyId, dto.waKeySecret, dto.waSessionId)
+            return WaCredential.pair(dto.waKeyId, dto.waKeySecret) to dto.waSessionId
+        }
+        if (dto.waApiKey.isNotBlank() && dto.waSessionId.isNotBlank()) {
+            prefs.setWaLink(dto.waApiKey, dto.waSessionId)
+            return WaCredential.legacy(dto.waApiKey) to dto.waSessionId
+        }
+        return null
+    }
+
+    override suspend fun isLinked(): Boolean = credential() != null
+
+    override suspend fun getLinkInfo(): WhatsAppRepository.Link? {
+        val (cred, session) = credential() ?: return null
+        return WhatsAppRepository.Link(
+            linked = true,
+            ownKey = cred.isPair,
+            sessionId = session,
+            phoneNumber = prefs.getWaPhoneNumber(),
+        )
     }
 
     override suspend fun ensureProvisioned(): Result<Boolean> = runCatching {
         val uid = auth.currentUser()?.uid ?: return@runCatching false
-        val dto = firestore.getUser(uid).getOrNull() ?: return@runCatching false
+        if (credential() != null) return@runCatching true
 
-        // Already provisioned (this or another device) — refresh the cache.
-        if (dto.waApiKey.isNotBlank() && dto.waSessionId.isNotBlank()) {
-            prefs.setWaLink(dto.waApiKey, dto.waSessionId)
-            prefs.setWaMode(dto.waMode.ifBlank { MODE_SHARED })
-            return@runCatching true
-        }
+        val dto = firestore.getUser(uid).getOrNull() ?: return@runCatching false
         // Eligible only once BOTH verifications are done.
         if (!dto.phoneVerified || !dto.emailVerified || dto.phoneNumber.isBlank()) {
             return@runCatching false
@@ -56,10 +81,45 @@ class WhatsAppRepositoryImpl(
         true
     }
 
+    override suspend fun saveOwnKey(keyId: String, keySecret: String): Result<WhatsAppRepository.Link> =
+        runCatching {
+            val id = keyId.trim()
+            val secret = keySecret.trim()
+            require(id.isNotBlank() && secret.isNotBlank()) { "Enter both the key id and the secret" }
+
+            val cred = WaCredential.pair(id, secret)
+            // Prove the key works before storing it, so a typo cannot leave the
+            // app configured-but-broken.
+            val sessions = api.listSessions(cred).getOrThrow()
+            val session = sessions.firstOrNull { it.status == "connected" } ?: sessions.firstOrNull()
+            if (session == null) {
+                error("This key works, but no WhatsApp number is linked to it yet. Link one on the portal, then try again.")
+            }
+
+            val uid = auth.currentUser()?.uid ?: error("Not signed in")
+            firestore.saveWaOwnKey(uid, id, secret, session.sessionId).getOrThrow()
+            prefs.setWaOwnKey(id, secret, session.sessionId)
+            session.phoneNumber?.let { prefs.setWaPhoneNumber(it) }
+            // A portal key only ever sends from its own number, so the shared
+            // sender is not an option for it.
+            setMode(MODE_OWN)
+            Log.i(TAG, "gateway key accepted for session ${session.sessionId} (status ${session.status})")
+
+            WhatsAppRepository.Link(
+                linked = true,
+                ownKey = true,
+                sessionId = session.sessionId,
+                phoneNumber = session.phoneNumber,
+            )
+        }
+
     override suspend fun clearLink() {
         prefs.clearWaLink()
         // Best-effort Firestore clear so other devices unlink too.
-        auth.currentUser()?.uid?.let { firestore.saveWaLink(it, "", "") }
+        auth.currentUser()?.uid?.let {
+            firestore.saveWaLink(it, "", "")
+            firestore.saveWaOwnKey(it, "", "", "")
+        }
     }
 
     override suspend fun getMode(): String {
@@ -78,43 +138,52 @@ class WhatsAppRepositoryImpl(
     }
 
     override suspend fun startOwnLinking(): Result<Unit> {
-        val (key, session) = getLink()
+        val (cred, session) = credential()
             ?: return Result.failure(IllegalStateException("WhatsApp is not set up yet"))
-        return api.connectSession(key, session)
+        return api.connectSession(cred, session)
     }
 
     override suspend fun getQr(): Result<String?> {
-        val (key, session) = getLink()
+        val (cred, session) = credential()
             ?: return Result.failure(IllegalStateException("WhatsApp is not set up yet"))
-        return api.getQr(key, session)
+        return api.getQr(cred, session)
     }
 
     override suspend fun getStatus(): Result<String> {
-        val (key, session) = getLink()
+        val (cred, session) = credential()
             ?: return Result.failure(IllegalStateException("WhatsApp is not set up yet"))
-        return api.getSessionStatus(key, session).map { it.status }
+        // For a portal key the list endpoint is the honest one: the per-session
+        // status only knows about sockets live in the process it asks.
+        if (cred.isPair) {
+            return api.listSessions(cred).map { list ->
+                list.firstOrNull { it.sessionId == session }?.status ?: "disconnected"
+            }
+        }
+        return api.getSessionStatus(cred, session).map { it.status }
     }
 
     override suspend fun getSharedConnected(): Result<Boolean> {
-        val (key, _) = getLink()
+        val (cred, _) = credential()
             ?: return Result.failure(IllegalStateException("WhatsApp is not set up yet"))
-        return api.getSharedStatus(key)
+        return api.getSharedStatus(cred)
     }
 
+    override suspend fun portalUrl(): String = config.get().portalUrl
+
     override suspend fun sendMessage(toPhone: String, message: String, recipientName: String?): Result<Unit> {
-        val (key, session) = getLink()
+        val (cred, session) = credential()
             ?: return Result.failure(IllegalStateException("WhatsApp is not set up yet"))
         // Gateway wants digits only including country code (no '+').
         val digits = toPhone.filter { it.isDigit() }
         if (digits.isBlank()) {
             return Result.failure(IllegalArgumentException("Invalid recipient number"))
         }
-        // Route by the active mode: the user's own linked WhatsApp, or the
-        // shared app number (default — zero setup).
-        return if (getMode() == MODE_OWN) {
-            api.sendMessage(key, session, digits, message, recipientName)
+        // A portal key is tied to the user's own number and the gateway refuses
+        // it on the shared sender, so only an SSO key can take that route.
+        return if (cred.isPair || getMode() == MODE_OWN) {
+            api.sendMessage(cred, session, digits, message, recipientName)
         } else {
-            api.sendShared(key, digits, message, recipientName)
+            api.sendShared(cred, digits, message, recipientName)
         }
     }
 }

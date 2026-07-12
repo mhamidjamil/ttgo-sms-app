@@ -24,6 +24,12 @@ class PreferencesDataSource(private val context: Context) {
         private val KEY_WA_API_KEY = stringPreferencesKey("wa_api_key")
         private val KEY_WA_SESSION_ID = stringPreferencesKey("wa_session_id")
         private val KEY_WA_MODE = stringPreferencesKey("wa_mode")
+        // Key id + secret the user minted on the gateway portal, plus the number
+        // it turned out to send from, shown back to them so they can tell which
+        // WhatsApp account is linked.
+        private val KEY_WA_KEY_ID = stringPreferencesKey("wa_key_id")
+        private val KEY_WA_KEY_SECRET = stringPreferencesKey("wa_key_secret")
+        private val KEY_WA_PHONE_NUMBER = stringPreferencesKey("wa_phone_number")
         // Anti-spam state (send-OTP cooldowns) — keyed per channel ("phone"/"email").
         private fun otpSentAtKey(channel: String) = longPreferencesKey("last_otp_sent_at_$channel")
         // Last date (YYYY-MM-DD) the user sent a quota-increase request.
@@ -128,10 +134,34 @@ class PreferencesDataSource(private val context: Context) {
         context.dataStore.edit { it[KEY_WA_MODE] = mode }
     }
 
+    suspend fun getWaKeyId(): String? =
+        context.dataStore.data.first()[KEY_WA_KEY_ID]
+
+    suspend fun getWaKeySecret(): String? =
+        context.dataStore.data.first()[KEY_WA_KEY_SECRET]
+
+    suspend fun getWaPhoneNumber(): String? =
+        context.dataStore.data.first()[KEY_WA_PHONE_NUMBER]
+
+    suspend fun setWaPhoneNumber(phoneNumber: String) {
+        context.dataStore.edit { it[KEY_WA_PHONE_NUMBER] = phoneNumber }
+    }
+
+    suspend fun setWaOwnKey(keyId: String, keySecret: String, sessionId: String) {
+        context.dataStore.edit {
+            it[KEY_WA_KEY_ID] = keyId
+            it[KEY_WA_KEY_SECRET] = keySecret
+            it[KEY_WA_SESSION_ID] = sessionId
+        }
+    }
+
     suspend fun clearWaLink() {
         context.dataStore.edit {
             it.remove(KEY_WA_API_KEY)
             it.remove(KEY_WA_SESSION_ID)
+            it.remove(KEY_WA_KEY_ID)
+            it.remove(KEY_WA_KEY_SECRET)
+            it.remove(KEY_WA_PHONE_NUMBER)
         }
     }
 

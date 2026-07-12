@@ -56,6 +56,13 @@ data class UserDto(
     var waSessionId: String = "",
     @get:PropertyName("wa_mode") @set:PropertyName("wa_mode")
     var waMode: String = "shared",
+    // Gateway key the user created on the portal themselves. Takes precedence
+    // over wa_api_key, and is the only path that works while the gateway has
+    // SSO provisioning switched off.
+    @get:PropertyName("wa_key_id") @set:PropertyName("wa_key_id")
+    var waKeyId: String = "",
+    @get:PropertyName("wa_key_secret") @set:PropertyName("wa_key_secret")
+    var waKeySecret: String = "",
 
     // Dynamic places: [{id,label,bssid,message}] + per-place arrival state maps.
     @get:PropertyName("places") @set:PropertyName("places")

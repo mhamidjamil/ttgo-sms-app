@@ -34,9 +34,9 @@ ADMIN_EMAIL=
 # via SSO once the user verifies phone + email — no manual signup.
 # BOTH values are remote-first: Firestore device-doc fields wa_service_url /
 # wa_sso_secret override them at runtime, so rotation = config edit, no rebuild.
-WHATSAPP_SERVICE_URL=https://ww.innovorix.com
+WHATSAPP_SERVICE_URL=https://w2.innovorix.com
+WHATSAPP_PORTAL_URL=https://w2.innovorix.com
 # Must match SSO_SERVICE_SECRET in the baileys service .env. Blank = SSO off.
-WHATSAPP_SSO_SECRET=
 
 # History auto-poll interval in seconds while the screen is visible
 HISTORY_POLL_INTERVAL_SECONDS=10

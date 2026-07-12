@@ -63,14 +63,15 @@ android {
         buildConfigField("String", "ADMIN_EMAIL",
             "\"${localProps.getProperty("ADMIN_EMAIL", "").removeSurrounding("\"")}\"")
 
-        // WhatsApp gateway (baileys service). Both values are REMOTE-FIRST at
-        // runtime: fields wa_service_url / wa_sso_secret on the Firestore device
-        // doc override these compile-time defaults, so rotating the URL or the
-        // SSO secret is a config edit (Firestore + service .env) — no rebuild.
+        // WhatsApp gateway (baileys service). Both are REMOTE-FIRST at runtime:
+        // fields wa_service_url / wa_portal_url on the Firestore device doc
+        // override these compile-time defaults, so moving the gateway or the
+        // portal is a console edit — no rebuild, no release. These are public
+        // addresses; no gateway credential is ever compiled in.
         buildConfigField("String", "WHATSAPP_SERVICE_URL",
-            "\"${localProps.getProperty("WHATSAPP_SERVICE_URL", "https://ww.innovorix.com").removeSurrounding("\"")}\"")
-        buildConfigField("String", "WHATSAPP_SSO_SECRET",
-            "\"${localProps.getProperty("WHATSAPP_SSO_SECRET", "").removeSurrounding("\"")}\"")
+            "\"${localProps.getProperty("WHATSAPP_SERVICE_URL", "https://w2.innovorix.com").removeSurrounding("\"")}\"")
+        buildConfigField("String", "WHATSAPP_PORTAL_URL",
+            "\"${localProps.getProperty("WHATSAPP_PORTAL_URL", "https://w2.innovorix.com").removeSurrounding("\"")}\"")
     }
 
     buildTypes {

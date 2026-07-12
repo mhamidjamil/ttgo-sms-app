@@ -23,6 +23,6 @@ val repositoryModule = module {
     single<LinkRepository> { LinkRepositoryImpl(get()) }
     single { WaConfigProvider(get()) }
     single { WhatsAppApi(get()) }
-    single<WhatsAppRepository> { WhatsAppRepositoryImpl(get(), get(), get(), get()) }
+    single<WhatsAppRepository> { WhatsAppRepositoryImpl(get(), get(), get(), get(), get()) }
     single<ThrottleRepository> { ThrottleRepositoryImpl(get()) }
 }

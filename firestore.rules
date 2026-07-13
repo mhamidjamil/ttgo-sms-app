@@ -1,0 +1,422 @@
+rules_version = '2';
+
+// TextGate — Cloud Firestore security rules.
+//
+// Two very different clients share this database:
+//
+//   1. The TTGO T-Call gateway firmware (TTGO_TCall/v8/sms_calls). It talks to
+//      the Firestore REST API with an Authorization: Bearer <Firebase ID token>
+//      header (FirebaseManager.cpp:1755/1771/1788). The token comes from
+//      identitytoolkit accounts:signUp with returnSecureToken and NO email
+//      (FirebaseManager.cpp:594), because secrets.h sets
+//      FIREBASE_USE_ANONYMOUS_DEFAULT 1 with an empty email/password. It is an
+//      ANONYMOUS user. It stores no refresh token, so it signs up again roughly
+//      every hour (FirebaseManager.cpp:578) and gets a brand-new uid each time.
+//      The sign-in provider is the only stable thing about its identity.
+//
+//   2. The Android app. It only ever signs in with email + password
+//      (FirebaseAuthDataSource.kt:11 and :16), never anonymously.
+//
+// Everything not matched below is denied.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Identity helpers ─────────────────────────────────────────────────────
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function provider() {
+      return request.auth.token.firebase.sign_in_provider;
+    }
+
+    // Put the gateway's real uid here once it runs on a dedicated account, then
+    // delete the 'anonymous' clause in isDevice(). Anonymous sign-up is open to
+    // anyone who has the (public) Firebase API key, so the anonymous clause is
+    // a partition between the two clients, NOT a security boundary.
+    function deviceUids() {
+      return [];
+    }
+
+    function isDevice() {
+      return signedIn() &&
+             (provider() == 'anonymous' || request.auth.uid in deviceUids());
+    }
+
+    function isAppUser() {
+      return signedIn() && provider() != 'anonymous';
+    }
+
+    function isOwner(uid) {
+      return isAppUser() && request.auth.uid == uid;
+    }
+
+    // True when the caller's own profile says they have verified this exact
+    // number. Used by the two collections that are keyed by phone number
+    // instead of uid.
+    // exists() first: a get() on a missing document returns null, and null.data
+    // is an evaluation ERROR, not a false. That would deny the write anyway, but
+    // it shows up as a rules error rather than a rules denial and is impossible
+    // to read in the console. Fails closed either way, legibly this way.
+    function ownsVerifiedNumber(phone) {
+      let path = /databases/$(database)/documents/ttgo_users/$(request.auth.uid);
+      return isAppUser() &&
+             exists(path) &&
+             get(path).data.get('phone_verified', false) == true &&
+             get(path).data.get('phone_number', '') == phone;
+    }
+
+    // ── sim_module: the gateway's namespace ──────────────────────────────────
+
+    // Config + health + block lists + lifetime counters.
+    // Read: the app needs free_sms_quota (getDeviceFreeSmsQuota) and
+    // wa_service_url / wa_portal_url (getWaGatewayOverrides). Both reads happen
+    // while signed in — sign-up reads the quota straight after auth succeeds
+    // (UserRepositoryImpl.kt:41), so isAppUser() is always satisfied by then.
+    // Write: NOT the app — but the firmware writes this document constantly
+    // (bootstrapGateway FirebaseManager.cpp:1032, pushDeviceHeartbeat :1438,
+    // incrementDeviceCounter :1394, ensureDeviceDocument :1618), so this can
+    // never be `allow write: if false`.
+    //
+    // WARNING: a Firestore read grant is per DOCUMENT, never per field. Every
+    // signed-in user can therefore read wa_sso_secret if that field is still
+    // present on this document (docs/FIREBASE-SCHEMA.md:15) — a real credential
+    // for the WhatsApp gateway. The in-flight WhatsApp change moves the gateway
+    // credential onto each user's own document, so DELETE the stale field from
+    // sim_module/device rather than leaving it readable by every account holder.
+    match /sim_module/device {
+      allow read: if isAppUser() || isDevice();
+      allow write: if isDevice();
+    }
+
+    // Container documents. The firmware creates them so the subcollections show
+    // up in the console (ensureFirestoreDocument, FirebaseManager.cpp:1796).
+    // The app never touches them.
+    match /sim_module/sms {
+      allow read, write: if isDevice();
+    }
+
+    match /sim_module/calls {
+      allow read, write: if isDevice();
+    }
+
+    // The outgoing SMS queue — the one collection both clients use.
+    //
+    // Device: runs a structuredQuery for status == "pending" against the
+    // sms_jobs collection (FirebaseManager.cpp:1074/1162), which needs `list`,
+    // then PATCHes the document to in_progress and on to sent/failed/blocked
+    // (claimJob :1135, updateSmsJobStatus :1239, recoverStuckJobs :1498), which
+    // needs `update`. It never creates a job: every write carries
+    // currentDocument.exists=true.
+    //
+    // App: creates jobs with an auto id (enqueueJob FirestoreDataSource.kt:445,
+    // enqueueAutoArrivalSms :291, enqueueOtpSms :171, enqueueSystemNotice :501,
+    // retryAutoArrivalSms :396) and reads back one job by id to refresh its own
+    // history row (fetchJobStatus :479). It never lists the collection, so
+    // `list` stays device-only and one user cannot enumerate another's traffic.
+    //
+    // enque_by is "app:<uid>" or "app:<uid>:arrival" / ":otp" / ":unsub", so it
+    // both stamps ownership and gates the read-back.
+    match /sim_module/sms/sms_jobs/{jobId} {
+      function enqueuedByCaller(data) {
+        return data.get('enque_by', '') is string &&
+               data.get('enque_by', '').matches('^app:' + request.auth.uid + '(:[a-z]+)?$');
+      }
+
+      // resource != null first: RefreshAutoJobStatusUseCase.kt:13 and
+      // RefreshJobStatusUseCase.kt:8 fall back to the recipient's phone number
+      // when an auto_history row has no job_id (every WhatsApp-failure row
+      // written by FirestoreDataSource.kt:355 is one), and that document does
+      // not exist. Reading resource.data off a null resource is an evaluation
+      // error, so without this guard the History and Auto pages generate a
+      // steady stream of rules ERRORS on every poll instead of clean denials.
+      allow get: if isDevice() ||
+                    (isAppUser() && resource != null && enqueuedByCaller(resource.data));
+      allow list: if isDevice();
+      allow create: if isAppUser() &&
+                       enqueuedByCaller(request.resource.data) &&
+                       request.resource.data.status == 'pending' &&
+                       request.resource.data.phone_number is string &&
+                       request.resource.data.message is string &&
+                       request.resource.data.message.size() <= 2000 &&
+                       request.resource.data.created_at is timestamp &&
+                       request.resource.data.keys().hasOnly([
+                         'phone_number', 'message', 'status', 'enque_by',
+                         'kind', 'created_at', 'error'
+                       ]);
+      allow update: if isDevice();
+      allow delete: if false;
+    }
+
+    // Incoming SMS and call logs, and the call queue. Written by the firmware
+    // (pushSmsReceived :1314, pushCallReceived :1356, claimJob/updateCallJobStatus
+    // on call_jobs :1214/:1281). The app has no code path that touches any of
+    // them, so it gets nothing.
+    match /sim_module/sms/sms_received/{docId} {
+      allow read, write: if isDevice();
+    }
+
+    match /sim_module/calls/call_jobs/{docId} {
+      allow read, write: if isDevice();
+    }
+
+    match /sim_module/calls/call_received/{docId} {
+      allow read, write: if isDevice();
+    }
+
+    // ── ttgo_users: one document per app account ─────────────────────────────
+    //
+    // NOTE: there is deliberately NO `match /ttgo_users/{uid}/{document=**}`
+    // catch-all. Under rules_version 2 a recursive wildcard matches ZERO or more
+    // segments, so such a rule would also match /ttgo_users/{uid} itself and
+    // silently cancel every field guard below. Each subcollection is listed out
+    // instead.
+    match /ttgo_users/{uid} {
+
+      // The app copies free_sms_quota into assigned_quota at sign-up
+      // (UserRepositoryImpl.kt:41 and :70) and falls back to 10 when that read
+      // fails, so the ceiling has to allow both values.
+      //
+      // The exists() guard is not cosmetic: without it, a deleted or not yet
+      // created sim_module/device document turns this into an evaluation error
+      // and NOBODY CAN SIGN UP. Sign-up is the one flow where a rules read of
+      // another document can strand a user with an Auth account and no profile.
+      function quotaCap() {
+        let devicePath = /databases/$(database)/documents/sim_module/device;
+        let configured = exists(devicePath)
+                           ? get(devicePath).data.get('free_sms_quota', 10)
+                           : 10;
+        return configured > 10 ? configured : 10;
+      }
+
+      // assigned_quota is set once, at create. Nothing in the app ever raises
+      // it — RequestMoreSmsUseCase emails the admin instead
+      // (RequestMoreSmsUseCase.kt:37) — so it is frozen here.
+      function quotaImmutable() {
+        return request.resource.data.get('assigned_quota', -1) ==
+               resource.data.get('assigned_quota', -1);
+      }
+
+      // remaining_quota is decremented client-side, so cap it at the assignment
+      // (updateQuotaReset writes assigned_quota, decrementRemainingQuota writes
+      // current - 1: neither can legitimately exceed it).
+      function quotaSane() {
+        let after = request.resource.data;
+        return !after.keys().hasAll(['assigned_quota', 'remaining_quota']) ||
+               (after.remaining_quota is int &&
+                after.remaining_quota >= 0 &&
+                after.remaining_quota <= after.assigned_quota);
+      }
+
+      // phone_verified may only be switched on by the write that consumes the
+      // stored code: markPhoneVerified (FirestoreDataSource.kt:125) sets the
+      // flag and deletes phone_otp in the same update. And a number can never
+      // be swapped while the flag stays on — savePhoneNumber (:107) clears it,
+      // and this makes that mandatory rather than polite.
+      function phoneVerificationOk() {
+        let before = resource.data;
+        let after = request.resource.data;
+        let wasVerified = before.get('phone_verified', false);
+        let nowVerified = after.get('phone_verified', false);
+        let numberMoved = after.get('phone_number', '') != before.get('phone_number', '');
+        return (!nowVerified || wasVerified ||
+                (('phone_otp' in before) && !('phone_otp' in after) && !numberMoved)) &&
+               (!numberMoved || !nowVerified);
+      }
+
+      // Same shape for email, plus the one case where the truth comes from
+      // Firebase Auth itself: syncEmailVerified is only called when the ID
+      // token already says the address is verified (UserRepositoryImpl.kt:30).
+      function emailVerificationOk() {
+        let before = resource.data;
+        let after = request.resource.data;
+        return !after.get('email_verified', false) ||
+               before.get('email_verified', false) ||
+               request.auth.token.get('email_verified', false) == true ||
+               (('email_otp' in before) && !('email_otp' in after));
+      }
+
+      allow get: if isOwner(uid);
+      allow list: if false;
+
+      allow create: if isOwner(uid) &&
+                       request.resource.data.get('phone_verified', false) == false &&
+                       request.resource.data.get('email_verified', false) == false &&
+                       request.resource.data.assigned_quota is int &&
+                       request.resource.data.assigned_quota >= 0 &&
+                       request.resource.data.assigned_quota <= quotaCap() &&
+                       request.resource.data.remaining_quota ==
+                         request.resource.data.assigned_quota;
+
+      allow update: if isOwner(uid) &&
+                       quotaImmutable() &&
+                       quotaSane() &&
+                       phoneVerificationOk() &&
+                       emailVerificationOk() &&
+                       request.resource.data.get('email', '') == resource.data.get('email', '') &&
+                       request.resource.data.get('created_at', null) == resource.data.get('created_at', null);
+
+      allow delete: if false;
+    }
+
+    // Manual send history (FirestoreDataSource.kt:456/464/488).
+    match /ttgo_users/{uid}/history/{entryId} {
+      allow read, write: if isOwner(uid);
+    }
+
+    // Arrival-alert history (:316/:381/:407/:420/:425).
+    match /ttgo_users/{uid}/auto_history/{entryId} {
+      allow read, write: if isOwner(uid);
+    }
+
+    // Settings audit trail (:233/:248).
+    match /ttgo_users/{uid}/settings_history/{entryId} {
+      allow read, write: if isOwner(uid);
+    }
+
+    // One side of an account pairing. Both sides are written at once
+    // (createLinkInvite :601, setLinkState :625, deleteLink :649), so the person
+    // a link names must be able to write that single document — but ONLY the
+    // descriptive fields and the state. The perm_* flags on MY document decide
+    // what they may do with MY location (AnswerLocationRequestsUseCase.kt:26),
+    // so letting them write those would be self-granted access.
+    match /ttgo_users/{uid}/links/{otherUid} {
+      allow read, write: if isOwner(uid);
+
+      allow create: if isAppUser() && request.auth.uid == otherUid &&
+                       request.resource.data.keys().hasOnly([
+                         'other_name', 'other_phone', 'state'
+                       ]);
+      allow update: if isAppUser() && request.auth.uid == otherUid &&
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                         'other_name', 'other_phone', 'state'
+                       ]);
+      allow delete: if isAppUser() && request.auth.uid == otherUid;
+    }
+
+    // "Where are you right now?" asks live in the TARGET's subcollection
+    // (createLocationRequest :678). The target lists and answers them
+    // (:698/:707); the asker only watches back the one document it created
+    // (:694). A request is only accepted from someone who already has a link
+    // document on this account, which is exactly the set the target's app is
+    // willing to answer.
+    match /ttgo_users/{uid}/location_requests/{requestId} {
+      allow read: if isOwner(uid) ||
+                     (isAppUser() && resource.data.get('requester_uid', '') == request.auth.uid);
+      allow create: if isAppUser() &&
+                       request.resource.data.requester_uid == request.auth.uid &&
+                       request.resource.data.status == 'pending' &&
+                       request.resource.data.keys().hasOnly([
+                         'requester_uid', 'requester_name', 'status', 'answer', 'created_at'
+                       ]) &&
+                       exists(/databases/$(database)/documents/ttgo_users/$(uid)/links/$(request.auth.uid));
+      allow update: if isOwner(uid);
+      allow delete: if isOwner(uid);
+    }
+
+    // ── phone_directory: number → account, for link invites ──────────────────
+    //
+    // A link invite has to resolve a typed number to an account
+    // (InviteLinkUseCase.kt:29 → lookupPhoneDirectory :527) without opening up
+    // ttgo_users. `get` is allowed for any app user; `list` is not, so nobody
+    // can dump the number-to-name table. An entry can only be claimed by the
+    // account that currently has that number verified, and it is published
+    // right after the OTP is confirmed (VerifyPhoneOtpUseCase.kt:24).
+    match /phone_directory/{phone} {
+      allow get: if isAppUser();
+      allow list: if false;
+      allow create, update: if isAppUser() &&
+                               request.resource.data.uid == request.auth.uid &&
+                               request.resource.data.keys().hasOnly(['uid', 'name']) &&
+                               ownsVerifiedNumber(phone);
+      allow delete: if isAppUser() && resource.data.get('uid', '') == request.auth.uid;
+    }
+
+    // ── alert_subscriptions: recipient-controlled opt-out ────────────────────
+    //
+    // Keyed by the recipient's number, not their uid, because the row is created
+    // by the SENDER (recordAlertSubscription :542) possibly months before the
+    // recipient installs the app. Two parties, two narrow grants:
+    //
+    //   sender    — owns the document named after their own uid: writes
+    //               sender_name / sender_phone / last_alert_at and reads it back
+    //               to honour an opt-out (isAlertAllowed :560). Must never write
+    //               `subscribed`, or a sender could re-subscribe themselves.
+    //   recipient — proves the number is theirs and verified, then lists the
+    //               senders (:573) and flips `subscribed` (:564). Nothing else.
+    //
+    // This replaces the previous "any signed-in user may write" note in
+    // docs/FIREBASE-SCHEMA.md:293, which let anyone flip anyone's flag.
+    match /alert_subscriptions/{phone}/senders/{senderUid} {
+      allow get: if (isAppUser() && request.auth.uid == senderUid) ||
+                    ownsVerifiedNumber(phone);
+      allow list: if ownsVerifiedNumber(phone);
+
+      allow create: if (isAppUser() && request.auth.uid == senderUid &&
+                        request.resource.data.keys().hasOnly([
+                          'sender_name', 'sender_phone', 'last_alert_at'
+                        ])) ||
+                       (ownsVerifiedNumber(phone) &&
+                        request.resource.data.keys().hasOnly(['subscribed']));
+
+      allow update: if (isAppUser() && request.auth.uid == senderUid &&
+                        !request.resource.data.diff(resource.data)
+                          .affectedKeys().hasAny(['subscribed'])) ||
+                       (ownsVerifiedNumber(phone) &&
+                        request.resource.data.diff(resource.data)
+                          .affectedKeys().hasOnly(['subscribed']));
+
+      allow delete: if false;
+    }
+
+    // ── NOT TextGate: the academia app shares this Firebase project ──────────
+    //
+    // Firebase project `myacademiaapp` also serves the academia Next.js app.
+    // Its package.json pulls in `firebase` and NOT `firebase-admin`, so EVERY
+    // academia Firestore call goes through the web SDK and is governed by these
+    // rules — including the ones that run on the server, which have no signed-in
+    // Firebase user at all and therefore arrive with request.auth == null. That
+    // is why these four grants are `if true` and not `if request.auth != null`:
+    // tightening them to require a signed-in user takes down push registration
+    // and dispatch immediately.
+    //
+    // The complete set of client-SDK paths, from an exhaustive grep of
+    // academia/src for collection(db, …) / doc(db, …):
+    //   schools/{id}/guardians          services/parentService.ts:7 and :28
+    //   schools/{id}/leaves             app/(dashboard)/layout.tsx:390
+    //   users/{uid}/deviceTokens        app/api/notifications/register/route.ts:14,
+    //                                   dispatch/route.ts:25, unregister/route.ts:32,
+    //                                   debug/route.ts:11, workers/index.ts:168
+    //   users/{uid}/userNotifications   components/dashboard/Notifications.tsx:164
+    // Anything not matched is denied, so a path missing from this list is an
+    // academia outage the moment these rules deploy.
+    //
+    // This block is deliberately IDENTICAL in effect to the console default the
+    // whole database runs on today: it changes nothing for academia while
+    // TextGate gets locked down, shrinking the wide-open surface from "every
+    // collection" to these four subtrees. It is NOT safe and it is NOT this
+    // change's job to fix — audit academia's own auth model and replace it.
+    //
+    // The Rails app at projects/academia_rails uses no Firebase at all
+    // (PostgreSQL only), so it is unaffected either way.
+    match /schools/{schoolId}/guardians/{guardianId} {
+      allow read, write: if true;
+    }
+
+    // Teacher pending-leave badge: a live onSnapshot listener mounted in the
+    // dashboard LAYOUT, so it runs on every dashboard page for every teacher.
+    match /schools/{schoolId}/leaves/{leaveId} {
+      allow read, write: if true;
+    }
+
+    match /users/{userId}/deviceTokens/{tokenId} {
+      allow read, write: if true;
+    }
+
+    match /users/{userId}/userNotifications/{notificationId} {
+      allow read, write: if true;
+    }
+  }
+}

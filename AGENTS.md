@@ -1,5 +1,44 @@
 # AGENTS.md
 
+<!-- CLAUDE-KNOWLEDGE-BLOCK:START (managed by ~/.claude/knowledge - do not edit by hand) -->
+## Central knowledge (read this first)
+
+This project does not hold its own copy of the working rules or the lessons
+learned elsewhere. Those live in one place, shared by every project:
+
+**`~/.claude/knowledge/`** (private repository `hamidjamil0420/claude-knowledge`)
+
+Read before starting work here:
+
+1. `~/.claude/knowledge/rules/portable-working-rules.md` - how to work with
+   Hamid: communication, git and commits, code quality, testing, database.
+2. `~/.claude/knowledge/learnings/cross-project.md` - dated lessons from every
+   project, each with the reason it matters.
+3. `~/.claude/knowledge/playbooks/mobile-app.md` - what is already known about
+   building this kind of project.
+4. `~/.claude/knowledge/projects/index.md` - what this project shares with the
+   others, and therefore what a change here can break somewhere else.
+
+Before publishing or releasing anything, walk
+`~/.claude/knowledge/checklists/ship-readiness.md`. It is short, and skipping it
+is how a real credential reached a published application once already.
+
+**Write back the moment something is learned.** Do not leave it in this
+conversation and do not batch it for the end. Decide where by asking whether it
+would have helped a different project:
+
+- Useful to any project: `~/.claude/knowledge/learnings/cross-project.md` and
+  the Obsidian note `Claude - Learnings`.
+- Useful to projects of this kind: the playbook above.
+- Only true here: this file, below this block.
+
+Announce it with the up arrow emoji when recording and the down arrow emoji when
+applying, so the learning is visible and not just the result.
+
+If `~/.claude/knowledge/` is missing on this machine, clone it:
+`git clone https://github.com/hamidjamil0420/claude-knowledge.git ~/.claude/knowledge`
+<!-- CLAUDE-KNOWLEDGE-BLOCK:END -->
+
 ## Project Overview
 - TextGate is a single-module Android app (`:app`) written in Kotlin + Jetpack Compose. It queues SMS jobs in Firestore for a TTGO T-Call device; the app does not send GSM SMS directly.
 - Architecture is Clean Architecture: `presentation/` Compose screens + ViewModels -> `domain/` pure use cases/repository interfaces -> `data/` Firebase/DataStore DTOs and repository implementations.
@@ -20,6 +59,9 @@
 - Firestore paths and quotas come from `local.properties` via `app/build.gradle.kts` `buildConfigField`s, then through `core/utils/Constants.kt`. Do not hardcode paths in business logic.
 - Current defaults include `SMS_JOBS_PATH=sim_module/sms/sms_jobs`, `USERS_PATH=ttgo_users`, and `DEVICE_DOC_PATH=sim_module/device`.
 - Setup requires `app/google-services.json`; use `local.properties.example` as the local config template. Do not commit secrets or machine-local Firebase files.
+- **No credential may ever be a `buildConfigField`.** They compile to `public static final String`, so the literal is inlined before R8 runs and `strings` reads it straight out of the published APK. The SMTP mailer and the WhatsApp SSO secret were removed for exactly this reason; email verification now goes through Firebase, which holds its own credentials server-side.
+- Release signing reads the gitignored `keystore.properties` at the repo root, pointing at a keystore kept outside the repository. Without it the release variant still builds, just unsigned, so a fresh clone works.
+- Firestore security rules live in `firestore.rules` and are deployed with `firebase deploy --only firestore:rules`. The project is shared with the academia app and the TTGO firmware, so read `docs/PLAY-RELEASE.md` before changing them.
 
 ## Code Patterns
 - Domain use cases expose `suspend operator fun invoke(...)` and usually return `Result<T>`; data sources wrap Firebase calls with `runCatching { ... await() }`.
@@ -31,10 +73,11 @@
 ## Versioning
 - App version is in `app/build.gradle.kts`: `versionCode` (integer, bumped for each release) and `versionName` (semver string, e.g. `1.0.1`).
 - **Whenever you make any solid changes or bug fixes, always bump `versionCode` by 1 and update `versionName` appropriately** (patch bump for fixes, minor for features). The version is displayed at the bottom of the Send screen via `BuildConfig.VERSION_NAME`.
-- Current version: `1.3.0` (versionCode=5).
+- Current version: `1.4.0` (versionCode=6).
 
 ## Developer Workflow
-- This repo may not include `gradle/wrapper/gradle-wrapper.jar`; Android Studio can generate/download it, or run `gradle wrapper --gradle-version 8.4` if local Gradle is installed.
-- Main build command: `./gradlew assembleDebug` on Unix-like shells or `.\gradlew.bat assembleDebug` on Windows once the wrapper exists.
-- There are currently no test source sets in the repo. For verification, build `assembleDebug` and manually test the Firebase checklist in `README.md`/`docs/SETUP.md`.
+- Toolchain is AGP 8.9.1 / Gradle 8.11.1 / JDK 17, compiling against SDK 36. `targetSdk` must stay at 36 or above: Play refuses a lower target for new apps and updates from 31 August 2026.
+- Main build command: `./run-build.sh assembleDebug` (it pins JAVA_HOME/ANDROID_HOME for this repo only). `./run-build.sh bundleRelease` produces the signed Play bundle.
+- There are no Kotlin test source sets. The Firestore rules DO have tests: they run on the emulator, which needs JDK 21 or newer, unlike the app build.
+- `docs/PLAY-RELEASE.md` is the release checklist and the record of what is still deliberately open.
 - Important docs: `docs/ARCHITECTURE.md` for flows and design decisions, `docs/FIREBASE-SCHEMA.md` for Firestore fields, and `docs/V2-ARRIVAL-FEATURE.md` for arrival behavior.

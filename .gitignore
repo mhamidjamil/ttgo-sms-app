@@ -5,6 +5,7 @@ build/
 
 # Android
 *.apk
+*.aab
 *.aar
 *.ap_
 *.dex
@@ -25,3 +26,9 @@ captures/
 
 # Local build helper (machine-specific paths, not for version control)
 run-build.sh
+
+# Signing material. The keystore lives outside the repository; this file holds
+# its path and passwords. Neither belongs in version control.
+keystore.properties
+*.jks
+*.keystore

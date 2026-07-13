@@ -14,6 +14,16 @@ val localProps = Properties().apply {
 fun localProp(key: String, default: String) =
     localProps.getProperty(key, default).also { require(it.isNotBlank()) { "local.properties missing: $key" } }
 
+// Upload key for Google Play. The keystore itself lives outside the repository
+// and this file is gitignored, so a clone carries no signing material. When it
+// is absent the release variant simply builds unsigned, which keeps a plain
+// `git clone && assembleDebug` working for anyone else.
+val keystoreProps = Properties().apply {
+    val f = rootProject.file("keystore.properties")
+    if (f.exists()) load(f.inputStream())
+}
+val hasReleaseKeystore = keystoreProps.getProperty("storeFile")?.let { file(it).exists() } == true
+
 android {
     namespace = "com.textgate.app"
     compileSdk = 36
@@ -58,6 +68,17 @@ android {
             "\"${localProps.getProperty("WHATSAPP_PORTAL_URL", "https://w2.innovorix.com").removeSurrounding("\"")}\"")
     }
 
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            create("release") {
+                storeFile = file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -66,7 +87,18 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (hasReleaseKeystore) signingConfig = signingConfigs.getByName("release")
         }
+        // NOTE: no applicationIdSuffix on debug. google-services.json is keyed by
+        // package name, so suffixing it fails the build with "no matching client"
+        // until a second app is registered in the Firebase project.
+    }
+
+    // Strips the encrypted dependency blob Play would otherwise get with the
+    // bundle. It is metadata about our libraries, not something Play needs.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
     }
 
     compileOptions {

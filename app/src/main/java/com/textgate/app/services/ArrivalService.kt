@@ -1,11 +1,13 @@
 package com.textgate.app.services
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -19,6 +21,7 @@ import android.hardware.TriggerEventListener
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.textgate.app.R
 import com.textgate.app.App
 import com.textgate.app.core.utils.DateUtils
@@ -150,7 +153,17 @@ class ArrivalService : Service() {
         super.onCreate()
         isRunning = true
         startedAt = System.currentTimeMillis()
-        startForeground(NOTIFICATION_ID, buildNotification())
+        // Second line of defence behind the check in start(): the permission can
+        // also be revoked in the window between the two. Stopping cleanly beats
+        // taking the whole process down.
+        try {
+            startForeground(NOTIFICATION_ID, buildNotification())
+        } catch (e: Exception) {
+            Log.e(TAG, "Could not start the arrival service in the foreground", e)
+            isRunning = false
+            stopSelf()
+            return
+        }
         ArrivalWatchdogReceiver.scheduleNextCheck(this)
         connectivityManager.registerNetworkCallback(buildNetworkRequest(), networkCallback)
         stepSensor?.let {
@@ -470,9 +483,27 @@ class ArrivalService : Service() {
         // before anything is allowed to send.
         private const val SETTLING_MILLIS = 2 * 60 * 1000L
 
+        /**
+         * Android revokes the permissions of apps that have not been opened for
+         * a few months, and this app is built to run without being opened. When
+         * that happens, starting a location-typed foreground service throws
+         * SecurityException from inside the service, which kills the process on
+         * the very first screen. The check belongs here so every caller gets
+         * it: the settings screen, the launcher, and the watchdog.
+         */
         fun start(context: Context) {
+            if (!hasLocationPermission(context)) {
+                Log.w(TAG, "Not starting monitoring: location permission is not granted")
+                return
+            }
             context.startForegroundService(Intent(context, ArrivalService::class.java))
         }
+
+        fun hasLocationPermission(context: Context): Boolean =
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
+                PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+                PackageManager.PERMISSION_GRANTED
 
         fun stop(context: Context) {
             context.stopService(Intent(context, ArrivalService::class.java))

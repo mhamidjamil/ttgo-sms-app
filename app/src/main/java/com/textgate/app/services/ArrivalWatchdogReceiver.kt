@@ -6,6 +6,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
+import android.os.UserManager
 import android.util.Log
 import com.textgate.app.data.local.PreferencesDataSource
 import kotlinx.coroutines.CoroutineScope
@@ -34,6 +35,15 @@ class ArrivalWatchdogReceiver : BroadcastReceiver(), KoinComponent {
     override fun onReceive(context: Context, intent: Intent) {
         val reason = intent.action ?: return
         val appContext = context.applicationContext
+        // LOCKED_BOOT_COMPLETED arrives before the user has unlocked the phone
+        // for the first time, and the saved settings live in credential-encrypted
+        // storage that does not exist yet. Reading them there throws and takes
+        // the process down. BOOT_COMPLETED follows after the unlock, which is the
+        // earliest this can do anything useful anyway.
+        if (appContext.getSystemService(UserManager::class.java)?.isUserUnlocked == false) {
+            Log.i(TAG, "Ignoring $reason: waiting for the phone to be unlocked")
+            return
+        }
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -41,8 +51,11 @@ class ArrivalWatchdogReceiver : BroadcastReceiver(), KoinComponent {
                 scheduleNextCheck(appContext)
                 if (ArrivalService.isRunning) return@launch
                 Log.i(TAG, "Restarting arrival monitoring after $reason")
-                runCatching { ArrivalService.start(appContext) }
-                    .onFailure { Log.w(TAG, "Could not restart monitoring: ${it.message}") }
+                ArrivalService.start(appContext)
+            } catch (e: Exception) {
+                // Nothing here may escape: an uncaught throw in a boot receiver
+                // is a crash dialog the moment the phone starts.
+                Log.w(TAG, "Could not restart monitoring after $reason", e)
             } finally {
                 pending.finish()
             }

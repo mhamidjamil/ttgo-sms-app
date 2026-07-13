@@ -18,6 +18,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.textgate.app.BuildConfig
 import com.textgate.app.core.theme.TextGateTheme
+import com.textgate.app.core.theme.OnWarningAmber
 import com.textgate.app.core.theme.WarningAmber
 import com.textgate.app.core.theme.WarningAmberBorder
 import com.textgate.app.core.utils.PhoneNormalizer
@@ -106,6 +107,10 @@ private fun SendContent(
                     Text(
                         "⚠ Phone not verified — sending is disabled (0 SMS/day). Verify your number from Profile to unlock ${user.assignedQuota} SMS/day.",
                         style = MaterialTheme.typography.bodySmall,
+                        // The amber background is fixed in both themes, so the
+                        // text colour has to be too — inheriting it puts white
+                        // on near-white in dark mode.
+                        color = OnWarningAmber,
                     )
                 }
                 Spacer(Modifier.height(12.dp))

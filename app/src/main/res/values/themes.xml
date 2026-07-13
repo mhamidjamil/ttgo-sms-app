@@ -1,4 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.TextGate" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- The window theme, which is what paints the screen before Compose has
+         drawn anything. The Compose theme follows the system light/dark setting,
+         so a light-only window here is a white flash on every cold start for a
+         dark-mode user, and a white bar behind the system insets afterwards.
+         values-night/ carries the dark counterpart. -->
+    <style name="Theme.TextGate" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+    </style>
 </resources>

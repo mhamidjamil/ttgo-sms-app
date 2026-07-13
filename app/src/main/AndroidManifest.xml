@@ -7,12 +7,21 @@
     <!-- V2: WiFi arrival detection -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <!-- WiFi and location are how arrival is detected, but a phone without
+         either is still a perfectly good SMS sender, so neither may narrow who
+         can install the app on Play. -->
+    <uses-feature android:name="android.hardware.wifi" android:required="false" />
+    <uses-feature android:name="android.hardware.location" android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <!-- Android 12 and above show a precise/approximate choice, and refuse the
          precise prompt unless the approximate one is declared alongside it. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <!-- Required for background BSSID reads on Android 10+ -->
-    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <!-- ACCESS_BACKGROUND_LOCATION is deliberately NOT declared. Every WiFi scan
+         happens either inside the location foreground service, which grants
+         location for as long as it runs, or with a screen open. Declaring it
+         would oblige a Play background-location declaration and video review
+         for an access this app never makes. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />

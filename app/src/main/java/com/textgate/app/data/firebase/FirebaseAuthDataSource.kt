@@ -1,6 +1,7 @@
 package com.textgate.app.data.firebase
 
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthRecentLoginRequiredException
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.userProfileChangeRequest
 import kotlinx.coroutines.tasks.await
@@ -41,6 +42,22 @@ class FirebaseAuthDataSource(private val auth: FirebaseAuth) {
     }
 
     fun isEmailVerified(): Boolean = auth.currentUser?.isEmailVerified == true
+
+    /**
+     * Removes the Firebase Auth account. Firebase refuses this on a stale
+     * session, which is a security feature rather than a bug, so the caller is
+     * told to sign in again rather than being left with a half-deleted account.
+     */
+    suspend fun deleteAccount(): Result<Unit> = runCatching {
+        val user = auth.currentUser ?: error("No authenticated user")
+        try {
+            user.delete().await()
+        } catch (e: FirebaseAuthRecentLoginRequiredException) {
+            throw IllegalStateException(
+                "For your security, sign out and sign in again, then delete your account.", e,
+            )
+        }
+    }
 
     fun signOut() = auth.signOut()
 

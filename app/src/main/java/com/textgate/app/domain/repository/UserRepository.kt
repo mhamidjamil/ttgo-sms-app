@@ -37,6 +37,10 @@ interface UserRepository {
     // Files a quota-increase request on the user's own document for the admin.
     suspend fun requestMoreSms(uid: String, note: String, currentQuota: Int): Result<Unit>
 
+    // Erases the stored data and the sign-in account. Required by Google Play
+    // for any app that lets people create an account.
+    suspend fun deleteAccount(): Result<Unit>
+
     // Arrival monitoring (V2) — dynamic place list
     suspend fun savePlacesSettings(
         uid: String,

@@ -258,7 +258,12 @@ service cloud.firestore {
                        request.resource.data.get('email', '') == resource.data.get('email', '') &&
                        request.resource.data.get('created_at', null) == resource.data.get('created_at', null);
 
-      allow delete: if false;
+      // Google Play requires an in-app way to delete the account and the data
+      // with it, and that has to mean a real delete. The owner clears their
+      // subcollections first (each of those match blocks already allows it) and
+      // this document last, because once it is gone the rules above no longer
+      // recognise them as the owner of anything.
+      allow delete: if isOwner(uid);
     }
 
     // Manual send history (FirestoreDataSource.kt:456/464/488).

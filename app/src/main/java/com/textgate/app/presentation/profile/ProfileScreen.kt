@@ -16,10 +16,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.textgate.app.BuildConfig
 import com.textgate.app.core.theme.TextGateTheme
 import com.textgate.app.core.theme.OnWarningAmber
 import com.textgate.app.core.theme.WarningAmber
@@ -29,6 +32,9 @@ import com.textgate.app.domain.model.User
 import com.textgate.app.services.ArrivalService
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
+
+// Play requires a policy link inside the app as well as in the listing.
+const val PRIVACY_POLICY_URL = "https://mhamidjamil.github.io/ttgo-sms-app/privacy-policy.html"
 
 // Default History tab choices, in the order the History page shows them.
 private val historyTabOptions = listOf(
@@ -55,6 +61,15 @@ fun ProfileScreen(
             viewModel.clearToast()
         }
     }
+    // The account is gone, so monitoring has to stop and the app has to leave
+    // every signed-in screen behind.
+    LaunchedEffect(uiState.accountDeleted) {
+        if (uiState.accountDeleted) {
+            ArrivalService.stop(context)
+            Toast.makeText(context, "Your account has been deleted", Toast.LENGTH_LONG).show()
+            onSignOut()
+        }
+    }
     ProfileContent(
         uiState = uiState,
         onSignOut = {
@@ -68,6 +83,7 @@ fun ProfileScreen(
         onNavigateToLinkedAccounts = onNavigateToLinkedAccounts,
         onSendEmailCode = viewModel::sendEmailCode,
         onVerifyEmailCode = viewModel::verifyEmailCode,
+        onDeleteAccount = viewModel::deleteAccount,
         onUpdateName = viewModel::updateName,
         onDefaultHistoryTabChange = viewModel::setDefaultHistoryTab,
     )
@@ -85,11 +101,36 @@ private fun ProfileContent(
     onNavigateToLinkedAccounts: () -> Unit = {},
     onSendEmailCode: () -> Unit = {},
     onVerifyEmailCode: () -> Unit = {},
+    onDeleteAccount: () -> Unit = {},
     onUpdateName: (String) -> Unit = {},
     onDefaultHistoryTabChange: (String) -> Unit = {},
 ) {
     var showSignOutDialog by remember { mutableStateOf(false) }
     var showEditNameDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    val uriHandler = LocalUriHandler.current
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete your account?") },
+            text = {
+                Text(
+                    "This permanently erases your profile, your message history, your saved " +
+                        "places and your WhatsApp settings, and closes your sign-in. It cannot " +
+                        "be undone, and messages already delivered are not recalled.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showDeleteDialog = false; onDeleteAccount() }) {
+                    Text("Delete everything", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
+            },
+        )
+    }
 
     if (showSignOutDialog) {
         AlertDialog(
@@ -339,7 +380,7 @@ private fun ProfileContent(
                             if (user.emailVerified && user.phoneVerified) {
                                 "Set up automatically — choose whether messages come from the shared TextGate number or your own WhatsApp."
                             } else {
-                                "Verify your phone and email first — WhatsApp is then set up automatically."
+                                "Verify your phone and email for automatic setup, or connect your own WhatsApp gateway now."
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
@@ -347,7 +388,6 @@ private fun ProfileContent(
                         Spacer(Modifier.height(10.dp))
                         OutlinedButton(
                             onClick = onNavigateToWhatsApp,
-                            enabled = user.emailVerified && user.phoneVerified,
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("WhatsApp Settings") }
                     }
@@ -361,6 +401,48 @@ private fun ProfileContent(
                         contentColor = MaterialTheme.colorScheme.error,
                     ),
                 ) { Text("Sign Out") }
+
+                Spacer(Modifier.height(24.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(12.dp))
+                TextButton(
+                    onClick = { uriHandler.openUri(PRIVACY_POLICY_URL) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Privacy policy") }
+
+                // Google Play requires an in-app way to delete the account for
+                // any app that lets people create one, and it must really erase
+                // the data rather than just disable the login.
+                TextButton(
+                    onClick = { showDeleteDialog = true },
+                    enabled = !uiState.isDeletingAccount,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                ) {
+                    if (uiState.isDeletingAccount) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Deleting your account…")
+                    } else {
+                        Text("Delete my account and data")
+                    }
+                }
+                uiState.deleteError?.let {
+                    Text(
+                        it,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Text(
+                    "TextGate ${BuildConfig.VERSION_NAME}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 Spacer(Modifier.height(16.dp))
             }
         }

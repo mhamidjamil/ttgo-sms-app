@@ -39,6 +39,11 @@ data class ProfileUiState(
     val toastMessage: String? = null,
     // Which half of the History page opens first.
     val defaultHistoryTab: String = PreferencesDataSource.HISTORY_TAB_AUTOMATED,
+
+    // Account deletion (required by Google Play).
+    val isDeletingAccount: Boolean = false,
+    val deleteError: String? = null,
+    val accountDeleted: Boolean = false,
 )
 
 class ProfileViewModel(
@@ -157,6 +162,29 @@ class ProfileViewModel(
                     _uiState.value = _uiState.value.copy(
                         isVerifyingEmail = false,
                         emailVerifyError = it.message ?: "Verification failed",
+                    )
+                }
+        }
+    }
+
+    /**
+     * Erases the account and everything stored with it. The signed-out screen is
+     * reached through accountDeleted rather than by navigating from here, so a
+     * failure leaves the user exactly where they were with a reason on screen.
+     */
+    fun deleteAccount() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isDeletingAccount = true, deleteError = null)
+            userRepo.deleteAccount()
+                .onSuccess {
+                    Log.i(TAG, "account deleted at the user's request")
+                    _uiState.value = _uiState.value.copy(isDeletingAccount = false, accountDeleted = true)
+                }
+                .onFailure {
+                    Log.w(TAG, "account deletion failed: ${it.message}")
+                    _uiState.value = _uiState.value.copy(
+                        isDeletingAccount = false,
+                        deleteError = it.message ?: "Could not delete the account. Try again.",
                     )
                 }
         }

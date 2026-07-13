@@ -89,6 +89,35 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
             .update("email_verified", verified).await()
     }
 
+    /**
+     * Erases everything stored about a user, for the account deletion Google
+     * Play requires. Firestore has no recursive delete from a client, so each
+     * subcollection is emptied by name before the document itself goes. The
+     * directory entry is removed too, otherwise a deleted account's number keeps
+     * answering link invites.
+     */
+    suspend fun deleteUserData(uid: String, phoneNumber: String): Result<Unit> = runCatching {
+        val userDoc = db.collection(Paths.USERS).document(uid)
+        listOf(
+            Paths.HISTORY_SUB, Paths.AUTO_HISTORY_SUB, Paths.SETTINGS_HISTORY_SUB,
+            Paths.LINKS_SUB, Paths.LOCATION_REQUESTS_SUB,
+        ).forEach { sub ->
+            // Batches cap at 500 writes, so a long history is cleared in pages.
+            while (true) {
+                val page = userDoc.collection(sub).limit(400).get().await()
+                if (page.isEmpty) break
+                val batch = db.batch()
+                page.documents.forEach { batch.delete(it.reference) }
+                batch.commit().await()
+                if (page.size() < 400) break
+            }
+        }
+        if (phoneNumber.isNotBlank()) {
+            runCatching { db.collection(Paths.PHONE_DIRECTORY).document(phoneNumber).delete().await() }
+        }
+        userDoc.delete().await()
+    }
+
     // A quota-increase request, left on the user's own document for the admin
     // to find. The admin raises assigned_quota here, or free_sms_quota on the
     // device doc to lift everyone at once.

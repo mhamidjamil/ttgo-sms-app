@@ -76,6 +76,7 @@ fun SettingsScreen(
     var scanTargetPlaceId by remember { mutableStateOf<String?>(null) }
     var editingPlaceId by remember { mutableStateOf<String?>(null) }
     var isMonitoring by remember { mutableStateOf(ArrivalService.isRunning) }
+    var showLocationDisclosure by remember { mutableStateOf(false) }
 
     // Persist monitoring state so it survives process death / system service kill.
     // On composition, restore from prefs — if the user intended monitoring ON but
@@ -113,6 +114,23 @@ fun SettingsScreen(
         } else {
             isMonitoring = false
         }
+    }
+
+    if (showLocationDisclosure) {
+        LocationDisclosureDialog(
+            onAgree = {
+                showLocationDisclosure = false
+                monitoringPermissionLauncher.launch(
+                    monitoringPermissionsToRequest()
+                        .filterNot { permission -> hasPermission(context, permission) }
+                        .toTypedArray()
+                )
+            },
+            onDismiss = {
+                showLocationDisclosure = false
+                isMonitoring = false
+            },
+        )
     }
 
     LaunchedEffect(uiState.saveSuccess) {
@@ -206,7 +224,11 @@ fun SettingsScreen(
                     scope.launch { viewModel.setMonitoringEnabled(true) }
                     ArrivalService.start(context)
                 } else {
-                    monitoringPermissionLauncher.launch(missing.toTypedArray())
+                    // Google Play requires the app to say what it collects, that
+                    // it keeps collecting while the app is closed, and why,
+                    // BEFORE the system permission dialog appears — and to take
+                    // no for an answer. Asking cold is a policy rejection.
+                    showLocationDisclosure = true
                 }
             } else {
                 isMonitoring = false
@@ -1150,6 +1172,46 @@ private fun requestScanOrLaunch(
 }
 
 // Detection genuinely cannot work without this one.
+/**
+ * Google Play's prominent disclosure. It has to appear before the system
+ * permission dialog, say plainly what is collected and that it continues while
+ * the app is closed, and offer a real way to decline. Wording it as anything
+ * other than a straight description of the behaviour is what gets apps pulled.
+ */
+@Composable
+private fun LocationDisclosureDialog(onAgree: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Before you turn this on") },
+        text = {
+            Column {
+                Text(
+                    "To tell when you have arrived somewhere, TextGate reads which WiFi " +
+                        "networks are near your phone. Android counts that as location data, " +
+                        "so it asks for the location permission.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "This keeps running while the app is closed, with a permanent notification " +
+                        "showing while it does. It is the only way an alert can be sent when you " +
+                        "get home without you opening the app first.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Network names never leave your phone. When you arrive, only the place " +
+                        "label you chose is sent to the people you picked. You can switch this " +
+                        "off here at any time.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = onAgree) { Text("Continue") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Not now") } },
+    )
+}
+
 private fun requiredMonitoringPermissions(): List<String> = listOf(
     Manifest.permission.ACCESS_FINE_LOCATION,
     Manifest.permission.ACCESS_COARSE_LOCATION,

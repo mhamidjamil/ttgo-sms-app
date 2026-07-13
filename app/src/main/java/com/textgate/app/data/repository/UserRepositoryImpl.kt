@@ -147,6 +147,17 @@ class UserRepositoryImpl(
         }
     }
 
+    // Stored data first, sign-in account last: the Firestore rules only let a
+    // signed-in owner erase their own rows, so deleting the account first would
+    // strand every one of them with nobody left who is allowed to remove it.
+    override suspend fun deleteAccount(): Result<Unit> = runCatching {
+        val fbUser = auth.currentUser() ?: error("No authenticated user")
+        val phoneNumber = firestore.getUser(fbUser.uid).getOrNull()?.phoneNumber.orEmpty()
+        firestore.deleteUserData(fbUser.uid, phoneNumber).getOrThrow()
+        prefs.clearAll()
+        auth.deleteAccount().getOrThrow()
+    }
+
     override suspend fun requestMoreSms(uid: String, note: String, currentQuota: Int): Result<Unit> =
         firestore.saveQuotaRequest(uid, note, currentQuota).onSuccess {
             logChange(uid, "Quota increase requested", currentQuota.toString(), note.ifBlank { "(no message)" })

@@ -16,8 +16,8 @@ class SmsRepositoryImpl(private val firestore: FirestoreDataSource) : SmsReposit
     override fun getHistory(uid: String): Flow<List<HistoryEntry>> =
         firestore.getHistory(uid).map { list -> list.map { it.toDomain() } }
 
-    override suspend fun fetchJobStatus(phoneNumber: String): Result<SmsJob> =
-        firestore.fetchJobStatus(phoneNumber).map { it.toDomain() }
+    override suspend fun fetchJobStatus(jobId: String): Result<SmsJob> =
+        firestore.fetchJobStatus(jobId).map { it.toDomain() }
 
     override suspend fun updateHistoryStatus(uid: String, historyId: String, status: String): Result<Unit> =
         firestore.updateHistoryStatus(uid, historyId, status)

@@ -16,6 +16,8 @@ data class HistoryEntryDto(
     var enqueuedAt: Timestamp? = null,
     @get:PropertyName("job_phone_key") @set:PropertyName("job_phone_key")
     var jobPhoneKey: String = "",
+    @get:PropertyName("job_id") @set:PropertyName("job_id")
+    var jobId: String = "",
     @get:PropertyName("enque_by") @set:PropertyName("enque_by")
     var enqueBy: String = "",
 ) {
@@ -26,6 +28,7 @@ data class HistoryEntryDto(
         status = SmsStatus.from(status),
         enqueuedAt = enqueuedAt,
         jobPhoneKey = jobPhoneKey,
+        jobId = jobId,
         enqueBy = enqueBy,
     )
 }

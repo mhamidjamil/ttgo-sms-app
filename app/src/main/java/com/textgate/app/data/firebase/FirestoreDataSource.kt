@@ -168,7 +168,7 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
             "kind" to "otp",
             "created_at" to Timestamp.now(),
         )
-        db.collection(Paths.SMS_JOBS).document(phoneNumber).set(jobDto).await()
+        db.collection(Paths.SMS_JOBS).document().set(jobDto).await()
     }
 
     // ── WhatsApp gateway link (SSO) ───────────────────────────────────────────
@@ -281,6 +281,7 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
     ): Result<Unit> = runCatching {
         val enqueBy = "app:$uid:arrival"
         val now = Timestamp.now()
+        val jobRef = db.collection(Paths.SMS_JOBS).document()
         val jobDto = mapOf(
             "phone_number" to phoneNumber,
             "message" to message,
@@ -296,12 +297,13 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
             "sent_at" to now,
             "status" to "pending",
             "job_phone_key" to phoneNumber,
+            "job_id" to jobRef.id,
             "recipient_name" to recipientName,
             "message" to message,
             "routine_triggered" to routineTriggered,
         )
         val batch = db.batch()
-        batch.set(db.collection(Paths.SMS_JOBS).document(phoneNumber), jobDto)
+        batch.set(jobRef, jobDto)
         batch.set(
             db.collection(Paths.USERS).document(uid)
                 .collection(Paths.AUTO_HISTORY_SUB).document(),
@@ -338,9 +340,10 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
             .collection(Paths.AUTO_HISTORY_SUB).document().set(autoDto).await()
     }
 
-    // Re-queues an arrival alert that failed. The gateway job doc is rewritten
-    // (one doc per number, so this replaces whatever is there) and the existing
-    // auto_history row goes back to pending rather than adding a duplicate.
+    // Re-queues an arrival alert that failed. The retry gets its own gateway job
+    // doc and the existing auto_history row goes back to pending rather than
+    // adding a duplicate, with job_id repointed at the new job so the status
+    // refresh follows the retry and not the abandoned original.
     // sent_at is deliberately left alone so the entry keeps its place in the list.
     suspend fun retryAutoArrivalSms(
         uid: String,
@@ -349,6 +352,7 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         message: String,
     ): Result<Unit> = runCatching {
         val enqueBy = "app:$uid:arrival"
+        val jobRef = db.collection(Paths.SMS_JOBS).document()
         val jobDto = mapOf(
             "phone_number" to phoneNumber,
             "message" to message,
@@ -357,11 +361,11 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
             "created_at" to Timestamp.now(),
         )
         val batch = db.batch()
-        batch.set(db.collection(Paths.SMS_JOBS).document(phoneNumber), jobDto)
+        batch.set(jobRef, jobDto)
         batch.update(
             db.collection(Paths.USERS).document(uid)
                 .collection(Paths.AUTO_HISTORY_SUB).document(entryId),
-            mapOf("status" to "pending", "enque_by" to enqueBy),
+            mapOf("status" to "pending", "enque_by" to enqueBy, "job_id" to jobRef.id),
         )
         batch.commit().await()
     }
@@ -397,16 +401,17 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         val enqueBy = "app:$uid"
         val now = Timestamp.now()
         val jobDto = SmsJobDto.from(phoneNumber, message, enqueBy, now)
+        val jobRef = db.collection(Paths.SMS_JOBS).document()
         val historyDto = mapOf(
             "phone_number" to phoneNumber,
             "message" to message,
             "status" to "pending",
             "enqueued_at" to now,
             "job_phone_key" to phoneNumber,
+            "job_id" to jobRef.id,
             "enque_by" to enqueBy,
         )
         val batch = db.batch()
-        val jobRef = db.collection(Paths.SMS_JOBS).document(phoneNumber)
         val historyRef = db.collection(Paths.USERS).document(uid)
             .collection(Paths.HISTORY_SUB).document()
         batch.set(jobRef, jobDto)
@@ -426,9 +431,12 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
                 }
             }
 
-    suspend fun fetchJobStatus(phoneNumber: String): Result<SmsJobDto> = runCatching {
-        val snap = db.collection(Paths.SMS_JOBS).document(phoneNumber).get().await()
-        snap.toObject(SmsJobDto::class.java) ?: error("Job not found for $phoneNumber")
+    // Takes the job document id. Entries written before jobs got their own ids
+    // pass the phone number instead, which is exactly what those older documents
+    // are still keyed by, so both resolve through the same read.
+    suspend fun fetchJobStatus(jobId: String): Result<SmsJobDto> = runCatching {
+        val snap = db.collection(Paths.SMS_JOBS).document(jobId).get().await()
+        snap.toObject(SmsJobDto::class.java) ?: error("Job not found for $jobId")
     }
 
     suspend fun updateHistoryStatus(
@@ -449,7 +457,7 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         message: String,
         enqueBy: String,
     ): Result<Unit> = runCatching {
-        db.collection(Paths.SMS_JOBS).document(phoneNumber).set(
+        db.collection(Paths.SMS_JOBS).document().set(
             mapOf(
                 "phone_number" to phoneNumber,
                 "message" to message,

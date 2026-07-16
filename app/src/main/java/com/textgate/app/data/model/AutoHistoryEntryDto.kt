@@ -19,6 +19,8 @@ data class AutoHistoryEntryDto(
     val status: String = "pending",
     @get:PropertyName("job_phone_key") @set:PropertyName("job_phone_key")
     var jobPhoneKey: String = "",
+    @get:PropertyName("job_id") @set:PropertyName("job_id")
+    var jobId: String = "",
     @get:PropertyName("recipient_name") @set:PropertyName("recipient_name")
     var recipientName: String = "",
     val message: String = "",
@@ -34,6 +36,7 @@ data class AutoHistoryEntryDto(
         sentAt = sentAt?.toDate(),
         status = SmsStatus.from(status),
         jobPhoneKey = jobPhoneKey,
+        jobId = jobId,
         recipientName = recipientName,
         message = message,
         routineTriggered = routineTriggered,

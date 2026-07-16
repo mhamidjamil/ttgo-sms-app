@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.textgate.app.data.local.PreferencesDataSource
 import com.textgate.app.domain.model.Place
 import com.textgate.app.domain.model.PlaceContact
+import com.textgate.app.core.utils.WifiConfig
 import com.textgate.app.domain.model.SettingsChange
 import com.textgate.app.domain.repository.UserRepository
 import com.textgate.app.domain.repository.WhatsAppRepository
@@ -70,10 +71,44 @@ class SettingsViewModel(
     // Whole-place update — the place editor dialog applies its draft through
     // this (label, message, contacts) and the WiFi picker updates bssid/label.
     fun updatePlace(updated: Place) {
+        val previous = _uiState.value.places.firstOrNull { it.id == updated.id }
         val places = _uiState.value.places.map { if (it.id == updated.id) updated else it }
         _uiState.value = _uiState.value.copy(places = places)
         persistPlaces(places)
+        if (previous != null) logAlertingChanges(previous, updated)
     }
+
+    // Only the settings that decide whether an alert goes out are audited, so a
+    // place that quietly stopped alerting can be traced to the change that did it.
+    private fun logAlertingChanges(before: Place, after: Place) {
+        val name = after.label.ifBlank { after.id }
+        val changes = buildList {
+            if (before.alertsEnabled != after.alertsEnabled) add(SettingsChange(
+                field = "$name alerts",
+                oldValue = if (before.alertsEnabled) "on" else "off",
+                newValue = if (after.alertsEnabled) "on" else "off",
+            ))
+            val wasWait = before.effectiveDwellMinutes(WifiConfig.STABILITY_MINUTES)
+            val nowWait = after.effectiveDwellMinutes(WifiConfig.STABILITY_MINUTES)
+            if (wasWait != nowWait) add(SettingsChange(
+                field = "$name wait before alerting",
+                oldValue = "$wasWait min",
+                newValue = "$nowWait min",
+            ))
+            if (before.quietFrom != after.quietFrom || before.quietTo != after.quietTo) add(SettingsChange(
+                field = "$name quiet hours",
+                oldValue = quietLabel(before),
+                newValue = quietLabel(after),
+            ))
+        }
+        if (changes.isEmpty()) return
+        val uid = userRepo.currentFirebaseUser()?.uid ?: return
+        viewModelScope.launch { userRepo.logSettingsChanges(uid, changes) }
+    }
+
+    private fun quietLabel(place: Place): String =
+        if (place.quietFrom.isBlank() || place.quietTo.isBlank()) "none"
+        else "${place.quietFrom}-${place.quietTo}"
 
     // A brand new place has nothing worth writing yet; it persists on first edit.
     fun addPlace() {

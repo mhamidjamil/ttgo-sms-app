@@ -87,6 +87,11 @@ data class UserDto(
                 message = raw["message"] as? String ?: "",
                 waMessage = raw["wa_message"] as? String ?: "",
                 contacts = contacts,
+                alertsEnabled = raw["alerts_enabled"] as? Boolean ?: true,
+                sensitivity = raw["sensitivity"] as? String ?: "",
+                dwellMinutesOverride = (raw["dwell_minutes"] as? Number)?.toInt() ?: 0,
+                quietFrom = raw["quiet_from"] as? String ?: "",
+                quietTo = raw["quiet_to"] as? String ?: "",
             )
         }.ifEmpty {
             listOf(

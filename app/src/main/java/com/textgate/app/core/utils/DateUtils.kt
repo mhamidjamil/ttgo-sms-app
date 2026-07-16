@@ -14,6 +14,11 @@ object DateUtils {
 
     fun currentTimeHHmm(): String = timeFmt.format(Date())
 
+    fun minutesOfDay(): Int {
+        val cal = java.util.Calendar.getInstance()
+        return cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
+    }
+
     // Human-facing 12-hour clock, e.g. "7:42 PM" — used in arrival messages.
     fun currentTime12h(): String =
         SimpleDateFormat("h:mm a", Locale.US).format(Date())

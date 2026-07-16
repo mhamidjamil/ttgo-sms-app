@@ -191,6 +191,11 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         "contacts" to place.contacts.map {
             mapOf("name" to it.name, "number" to it.number)
         },
+        "alerts_enabled" to place.alertsEnabled,
+        "sensitivity" to place.sensitivity,
+        "dwell_minutes" to place.dwellMinutesOverride,
+        "quiet_from" to place.quietFrom,
+        "quiet_to" to place.quietTo,
     )
 
     suspend fun savePlacesSettings(

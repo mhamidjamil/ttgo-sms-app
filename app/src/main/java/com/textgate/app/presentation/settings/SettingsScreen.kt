@@ -40,6 +40,7 @@ import com.textgate.app.core.utils.requestWifiScan
 import com.textgate.app.core.utils.visibleBssids
 import com.textgate.app.domain.model.Place
 import com.textgate.app.domain.model.PlaceContact
+import com.textgate.app.domain.model.Sensitivity
 import com.textgate.app.services.ArrivalService
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
@@ -606,6 +607,14 @@ private fun PlaceEditorDialog(
     var newName by remember { mutableStateOf("") }
     var newNumber by remember { mutableStateOf("") }
     var contactError by remember { mutableStateOf<String?>(null) }
+    var alertsEnabled by remember { mutableStateOf(place.alertsEnabled) }
+    var sensitivity by remember { mutableStateOf(place.sensitivity) }
+    var dwellOverride by remember {
+        mutableStateOf(place.dwellMinutesOverride.takeIf { it > 0 }?.toString() ?: "")
+    }
+    var quietFrom by remember { mutableStateOf(place.quietFrom) }
+    var quietTo by remember { mutableStateOf(place.quietTo) }
+    var showAdvanced by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -639,6 +648,96 @@ private fun PlaceEditorDialog(
                         modifier = Modifier.fillMaxWidth(),
                         supportingText = { Text("${waMessage.length}/300 — blank = same as the SMS message") },
                     )
+                }
+
+                Spacer(Modifier.height(12.dp))
+                Text("Alerts", style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary)
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Alert me for this place", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "Off keeps the place saved but never sends anything.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        )
+                    }
+                    Switch(checked = alertsEnabled, onCheckedChange = { alertsEnabled = it })
+                }
+
+                if (alertsEnabled) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("How soon to alert", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.height(4.dp))
+                    Row(Modifier.fillMaxWidth()) {
+                        Sensitivity.entries.forEach { option ->
+                            FilterChip(
+                                selected = sensitivity == option.id,
+                                onClick = { sensitivity = option.id },
+                                label = { Text(option.label) },
+                                modifier = Modifier.padding(end = 6.dp),
+                            )
+                        }
+                    }
+                    Text(
+                        sensitivityExplanation(sensitivity),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Shorter waits tell people sooner and catch short visits, but are more " +
+                            "likely to announce a visit you did not really make. The wait only " +
+                            "counts while your phone is sitting still, so a short setting will " +
+                            "not fire while you are driving past.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    )
+
+                    Spacer(Modifier.height(4.dp))
+                    TextButton(onClick = { showAdvanced = !showAdvanced }) {
+                        Text(if (showAdvanced) "Hide advanced" else "Advanced")
+                    }
+                    if (showAdvanced) {
+                        OutlinedTextField(
+                            value = dwellOverride,
+                            onValueChange = { dwellOverride = it.filter(Char::isDigit).take(3) },
+                            label = { Text("Exact wait in minutes") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth(),
+                            supportingText = { Text("Blank follows the choice above.") },
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Row(Modifier.fillMaxWidth()) {
+                            OutlinedTextField(
+                                value = quietFrom,
+                                onValueChange = { quietFrom = it.take(5) },
+                                label = { Text("No alerts from") },
+                                singleLine = true,
+                                placeholder = { Text("23:00") },
+                                modifier = Modifier.weight(1f),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            OutlinedTextField(
+                                value = quietTo,
+                                onValueChange = { quietTo = it.take(5) },
+                                label = { Text("until") },
+                                singleLine = true,
+                                placeholder = { Text("06:00") },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        Text(
+                            "Leave both blank for no quiet hours. Nothing else changes, so a real " +
+                                "arrival right after the window still alerts normally.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        )
+                    }
                 }
 
                 Spacer(Modifier.height(12.dp))
@@ -720,11 +819,32 @@ private fun PlaceEditorDialog(
         },
         confirmButton = {
             TextButton(onClick = {
-                onSave(place.copy(label = label.trim(), message = message, waMessage = waMessage, contacts = contacts.toList()))
+                onSave(place.copy(
+                    label = label.trim(), message = message, waMessage = waMessage,
+                    contacts = contacts.toList(),
+                    alertsEnabled = alertsEnabled,
+                    sensitivity = sensitivity,
+                    dwellMinutesOverride = dwellOverride.toIntOrNull() ?: 0,
+                    quietFrom = quietFrom.trim(),
+                    quietTo = quietTo.trim(),
+                ))
             }) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+private fun sensitivityExplanation(id: String): String = when (Sensitivity.from(id)) {
+    Sensitivity.QUICK ->
+        "Alerts about 3 minutes after you settle here. Best for places you only stop at " +
+            "briefly. A short stop next door might set it off."
+    Sensitivity.CAREFUL ->
+        "Alerts about 20 minutes after you settle here. Use this where neighbouring " +
+            "networks overlap yours. Very short visits will end before the alert goes out."
+    Sensitivity.BALANCED ->
+        "Alerts about 8 minutes after you settle here. The safe middle, and what most " +
+            "places should stay on."
+    null -> "Currently using the app's original wait. Pick one above to change it."
 }
 
 @Composable

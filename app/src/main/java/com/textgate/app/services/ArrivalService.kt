@@ -114,6 +114,10 @@ class ArrivalService : Service() {
         val today = DateUtils.todayString()
 
         saved.forEach { place ->
+            if (!place.alertsEnabled) {
+                Log.d(TAG, "${place.id}: alerts switched off for this place")
+                return@forEach
+            }
             if (place.bssid.lowercase() !in visible) {
                 val missed = (missedSweeps[place.id] ?: 0) + 1
                 missedSweeps[place.id] = missed
@@ -133,14 +137,21 @@ class ArrivalService : Service() {
                 System.currentTimeMillis()
             }
             val arrivalTimes = user.arrivalTimesByPlace[place.id] ?: emptyList()
-            val waitMinutes = routineAnalyzer.effectiveWait(arrivalTimes, WifiConfig.STABILITY_MINUTES)
+            val dwellMinutes = place.effectiveDwellMinutes(WifiConfig.STABILITY_MINUTES)
+            val waitMinutes = routineAnalyzer.effectiveWait(arrivalTimes, dwellMinutes)
             val elapsedMinutes = (System.currentTimeMillis() - since) / 60_000
             if (elapsedMinutes < waitMinutes) {
                 Log.d(TAG, "${place.id}: $elapsedMinutes/$waitMinutes minutes in range")
                 return@forEach
             }
+            // Suppressing the send must not touch the countdown or the day guard,
+            // or the suppression becomes the reason the next real arrival is lost.
+            if (place.isQuietAt(DateUtils.minutesOfDay())) {
+                Log.d(TAG, "${place.id}: inside its quiet hours, not sending")
+                return@forEach
+            }
 
-            val routineTriggered = waitMinutes < WifiConfig.STABILITY_MINUTES
+            val routineTriggered = waitMinutes < dwellMinutes
             recordArrival(uid, place.id, routineTriggered)
                 .onSuccess { Log.i(TAG, "${place.id}: arrival recorded") }
                 .onFailure { Log.w(TAG, "${place.id}: arrival not sent — ${it.message}") }

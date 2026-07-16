@@ -15,11 +15,14 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.textgate.app.R
 import com.textgate.app.core.utils.DateUtils
+import com.textgate.app.core.utils.canScanWifi
 import com.textgate.app.core.utils.RoutineAnalyzer
 import com.textgate.app.core.utils.WifiConfig
 import com.textgate.app.core.utils.requestWifiScan
 import com.textgate.app.core.utils.visibleAccessPoints
 import com.textgate.app.core.utils.visibleBssids
+import com.textgate.app.data.local.PreferencesDataSource
+import com.textgate.app.domain.model.PresenceState
 import com.textgate.app.domain.repository.LinkRepository
 import com.textgate.app.domain.repository.UserRepository
 import com.textgate.app.domain.usecase.links.AnswerLocationRequestsUseCase
@@ -50,6 +53,7 @@ class ArrivalService : Service() {
     private val recordArrival: RecordArrivalUseCase by inject()
     private val linkRepo: LinkRepository by inject()
     private val answerLocationRequest: AnswerLocationRequestsUseCase by inject()
+    private val prefs: PreferencesDataSource by inject()
     private val routineAnalyzer = RoutineAnalyzer()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -108,10 +112,23 @@ class ArrivalService : Service() {
         requestWifiScan(this)
         val visible = visibleAccessPoints(this)
         val saved = user.places.filter { it.savedBssids.isNotEmpty() }
-        Log.d(TAG, "Sweep: ${visible.size} networks in range, ${saved.size} saved places")
-        if (visible.isEmpty()) {
-            Log.w(TAG, "No networks visible — WiFi scanning or location is likely off")
+
+        // Not being able to look is its own answer. Inferring "away" from it is
+        // what turned switching the radios on in the morning into an arrival.
+        if (!canScanWifi(this) || visible.isEmpty()) {
+            Log.w(TAG, "Cannot observe: scanning=${canScanWifi(this)}, heard=${visible.size}")
+            saved.forEach { place ->
+                val presence = prefs.getPresence(place.id)
+                if (presence.state != PresenceState.BLIND) {
+                    Log.i(TAG, "${place.id}: going blind, was ${presence.state}")
+                    prefs.setPresence(place.id, presence.goBlind())
+                }
+            }
+            return
         }
+        Log.d(TAG, "Sweep: ${visible.size} networks in range, ${saved.size} saved places")
+        prefs.setLastObservedAt(System.currentTimeMillis())
+        prefs.setEnvironment(visible.keys)
         val today = DateUtils.todayString()
 
         saved.forEach { place ->
@@ -119,11 +136,34 @@ class ArrivalService : Service() {
                 Log.d(TAG, "${place.id}: alerts switched off for this place")
                 return@forEach
             }
-            if (!place.isPresentIn(visible)) {
+            val presence = prefs.getPresence(place.id)
+            val present = place.isPresentIn(visible)
+
+            // First look after a blind spell. Hearing this place now says nothing
+            // about whether the phone travelled while nobody was watching, so the
+            // visit is adopted without a message either way. A missed alert is a
+            // smaller harm than one that announces an arrival that never happened.
+            if (presence.state == PresenceState.BLIND) {
+                val resumed = if (present) {
+                    Log.i(TAG, "${place.id}: audible after a blind spell (was " +
+                        "${presence.stateBeforeBlind}), adopting as already here")
+                    presence.copy(state = PresenceState.HERE)
+                } else {
+                    Log.i(TAG, "${place.id}: not audible after a blind spell, away")
+                    presence.copy(state = PresenceState.AWAY, visitStartedAt = 0L, stationaryMillis = 0L)
+                }
+                prefs.setPresence(place.id, resumed)
+                return@forEach
+            }
+
+            if (!present) {
                 val missed = (missedSweeps[place.id] ?: 0) + 1
                 missedSweeps[place.id] = missed
                 if (missed >= MISSED_SWEEPS_TO_LEAVE && firstSeenAt.remove(place.id) != null) {
                     Log.d(TAG, "${place.id}: out of range, countdown dropped")
+                    prefs.setPresence(place.id, presence.copy(
+                        state = PresenceState.AWAY, visitStartedAt = 0L, stationaryMillis = 0L,
+                    ))
                 }
                 return@forEach
             }
@@ -135,6 +175,9 @@ class ArrivalService : Service() {
 
             val since = firstSeenAt.getOrPut(place.id) {
                 Log.i(TAG, "${place.id}: in range, starting countdown")
+                prefs.setPresence(place.id, presence.copy(
+                    state = PresenceState.APPROACHING, visitStartedAt = System.currentTimeMillis(),
+                ))
                 System.currentTimeMillis()
             }
             val arrivalTimes = user.arrivalTimesByPlace[place.id] ?: emptyList()
@@ -156,6 +199,9 @@ class ArrivalService : Service() {
             recordArrival(uid, place.id, routineTriggered)
                 .onSuccess { Log.i(TAG, "${place.id}: arrival recorded") }
                 .onFailure { Log.w(TAG, "${place.id}: arrival not sent — ${it.message}") }
+            prefs.setPresence(place.id, prefs.getPresence(place.id).copy(
+                state = PresenceState.HERE, lastAlertAt = System.currentTimeMillis(),
+            ))
             // Cleared either way: on success the day guard stops a repeat, and on
             // failure the next attempt waits out the full window instead of
             // retrying every sweep.

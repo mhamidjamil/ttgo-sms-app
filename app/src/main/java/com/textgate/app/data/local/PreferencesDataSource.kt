@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.textgate.app.domain.model.PlacePresence
 import kotlinx.coroutines.flow.first
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "textgate_prefs")
@@ -30,8 +31,41 @@ class PreferencesDataSource(private val context: Context) {
         // Which half of the History page opens first: "automated" or "manual".
         private val KEY_DEFAULT_HISTORY_TAB = stringPreferencesKey("default_history_tab")
 
+        // Arrival presence, held locally because it decides whether a message is
+        // sent. The Firestore copy of the user document falls back to an offline
+        // cache that can be hours stale, which is not something an alert may
+        // depend on.
+        private fun presenceKey(placeId: String) = stringPreferencesKey("presence_$placeId")
+        private val KEY_ENVIRONMENT = stringPreferencesKey("environment_fingerprint")
+        private val KEY_LAST_OBSERVED_AT = longPreferencesKey("last_observed_at")
+
         const val HISTORY_TAB_AUTOMATED = "automated"
         const val HISTORY_TAB_MANUAL = "manual"
+    }
+
+    suspend fun getPresence(placeId: String): PlacePresence =
+        PlacePresence.decode(context.dataStore.data.first()[presenceKey(placeId)])
+
+    suspend fun setPresence(placeId: String, presence: PlacePresence) {
+        context.dataStore.edit { it[presenceKey(placeId)] = presence.encode() }
+    }
+
+    // Everything heard on the last successful scan, saved or not. This is what
+    // makes "the surroundings changed" a testable statement instead of a guess,
+    // so a router power cut does not read as having left the building.
+    suspend fun getEnvironment(): Set<String> =
+        context.dataStore.data.first()[KEY_ENVIRONMENT]
+            ?.split(",")?.filter { it.isNotBlank() }?.toSet().orEmpty()
+
+    suspend fun setEnvironment(bssids: Set<String>) {
+        context.dataStore.edit { it[KEY_ENVIRONMENT] = bssids.joinToString(",") }
+    }
+
+    suspend fun getLastObservedAt(): Long =
+        context.dataStore.data.first()[KEY_LAST_OBSERVED_AT] ?: 0L
+
+    suspend fun setLastObservedAt(atMillis: Long) {
+        context.dataStore.edit { it[KEY_LAST_OBSERVED_AT] = atMillis }
     }
 
     suspend fun getDefaultHistoryTab(): String =

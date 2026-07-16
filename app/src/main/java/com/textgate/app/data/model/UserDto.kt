@@ -3,6 +3,7 @@ package com.textgate.app.data.model
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentId
 import com.google.firebase.firestore.PropertyName
+import com.textgate.app.domain.model.Closeness
 import com.textgate.app.domain.model.Place
 import com.textgate.app.domain.model.PlaceContact
 import com.textgate.app.domain.model.User
@@ -87,6 +88,9 @@ data class UserDto(
                 message = raw["message"] as? String ?: "",
                 waMessage = raw["wa_message"] as? String ?: "",
                 contacts = contacts,
+                bssids = (raw["bssids"] as? List<*>)?.filterIsInstance<String>()
+                    ?.filter { it.isNotBlank() }.orEmpty(),
+                minRssi = (raw["min_rssi"] as? Number)?.toInt() ?: Closeness.NEARBY.dbm,
                 alertsEnabled = raw["alerts_enabled"] as? Boolean ?: true,
                 sensitivity = raw["sensitivity"] as? String ?: "",
                 dwellMinutesOverride = (raw["dwell_minutes"] as? Number)?.toInt() ?: 0,

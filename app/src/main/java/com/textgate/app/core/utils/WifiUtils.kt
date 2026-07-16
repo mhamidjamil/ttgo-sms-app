@@ -18,11 +18,23 @@ private const val NO_BSSID = "02:00:00:00:00:00"
  * mobile data all day and never join the home network, so the connected network
  * is only one more entry in this set, never the deciding one.
  */
+fun visibleBssids(context: Context): Set<String> = visibleAccessPoints(context).keys
+
+/**
+ * Every access point the phone can hear right now, mapped to its signal strength
+ * in dBm. Strength is what separates standing inside a building from walking
+ * past it on the street, so the deciding read has to carry it.
+ *
+ * The connected network is folded in at a strength that always clears any
+ * closeness floor: being joined to it is stronger evidence than any reading.
+ */
 @Suppress("DEPRECATION")
-fun visibleBssids(context: Context): Set<String> {
-    val wm = context.applicationContext.getSystemService(WifiManager::class.java) ?: return emptySet()
+fun visibleAccessPoints(context: Context): Map<String, Int> {
+    val wm = context.applicationContext.getSystemService(WifiManager::class.java) ?: return emptyMap()
     val scanned = try {
-        wm.scanResults.mapNotNull { it.BSSID?.lowercase() }
+        wm.scanResults.mapNotNull { result ->
+            result.BSSID?.lowercase()?.let { it to result.level }
+        }
     } catch (e: Exception) {
         // Missing location permission or location services turned off.
         Log.w(TAG, "Scan results unavailable: ${e.message}")
@@ -33,7 +45,10 @@ fun visibleBssids(context: Context): Set<String> {
     } catch (_: Exception) {
         null
     }
-    return (scanned + listOfNotNull(connected)).toSet()
+    return buildMap {
+        scanned.forEach { (bssid, level) -> put(bssid, maxOf(level, get(bssid) ?: level)) }
+        connected?.let { put(it, 0) }
+    }
 }
 
 // Asks the framework for a fresh sweep. Android throttles this (four calls per
@@ -50,7 +65,7 @@ fun requestWifiScan(context: Context) {
 
 // The first saved place whose network is in range.
 fun placeInRange(places: List<Place>, bssids: Set<String>): Place? =
-    places.firstOrNull { it.bssid.isNotBlank() && it.bssid.lowercase() in bssids }
+    places.firstOrNull { place -> place.savedBssids.any { it in bssids } }
 
 // Scanning still works with WiFi switched off when the system-wide "WiFi
 // scanning always available" toggle is on, which is exactly the case for

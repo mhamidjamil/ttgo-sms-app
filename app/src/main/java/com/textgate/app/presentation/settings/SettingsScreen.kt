@@ -39,6 +39,7 @@ import com.textgate.app.core.utils.placeInRange
 import com.textgate.app.core.utils.requestWifiScan
 import com.textgate.app.core.utils.visibleBssids
 import com.textgate.app.domain.model.Place
+import com.textgate.app.domain.model.Closeness
 import com.textgate.app.domain.model.PlaceContact
 import com.textgate.app.domain.model.Sensitivity
 import com.textgate.app.services.ArrivalService
@@ -133,16 +134,23 @@ fun SettingsScreen(
     }
 
     if (showScanDialog) {
-        WifiPickerDialog(
+        val target = uiState.places.firstOrNull { it.id == scanTargetPlaceId }
+        WifiCaptureDialog(
             results = scanResults,
-            onSelect = { result ->
-                val targetId = scanTargetPlaceId
-                val place = uiState.places.firstOrNull { it.id == targetId }
-                if (place != null) {
+            alreadySaved = target?.savedBssids.orEmpty(),
+            onCapture = { selected, strongest ->
+                if (target != null) {
+                    // Cumulative: capturing again at the same place adds what is
+                    // audible today without dropping what was saved on an earlier
+                    // visit, which is how a mesh gets covered node by node.
+                    val merged = (target.savedBssids + selected).distinct()
+                    val topName = scanResults.firstOrNull { it.BSSID.lowercase() == strongest }
+                        ?.SSID.orEmpty()
                     viewModel.updatePlace(
-                        place.copy(
-                            bssid = result.BSSID,
-                            label = place.label.ifBlank { result.SSID.ifBlank { result.BSSID } },
+                        target.copy(
+                            bssid = strongest.ifBlank { target.bssid },
+                            bssids = merged,
+                            label = target.label.ifBlank { topName.ifBlank { strongest } },
                         )
                     )
                 }
@@ -553,7 +561,14 @@ private fun PlaceCard(
                     )
                     Text(
                         buildString {
-                            append(if (place.bssid.isBlank()) "No WiFi set" else "WiFi ${place.bssid}")
+                            append(
+                                when (place.savedBssids.size) {
+                                    0 -> "No WiFi set"
+                                    1 -> "1 network saved"
+                                    else -> "${place.savedBssids.size} networks saved, " +
+                                        "needs ${place.requiredMatches}"
+                                }
+                            )
                             append(" · ")
                             append(
                                 when (place.contacts.size) {
@@ -571,7 +586,7 @@ private fun PlaceCard(
                 OutlinedButton(onClick = onScan) {
                     Icon(Icons.Default.Wifi, contentDescription = null, Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Scan")
+                    Text("Capture")
                 }
                 if (onRemove != null) {
                     IconButton(onClick = onRemove) {
@@ -615,6 +630,7 @@ private fun PlaceEditorDialog(
     var quietFrom by remember { mutableStateOf(place.quietFrom) }
     var quietTo by remember { mutableStateOf(place.quietTo) }
     var showAdvanced by remember { mutableStateOf(false) }
+    var minRssi by remember { mutableIntStateOf(place.minRssi) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -693,6 +709,26 @@ private fun PlaceEditorDialog(
                             "likely to announce a visit you did not really make. The wait only " +
                             "counts while your phone is sitting still, so a short setting will " +
                             "not fire while you are driving past.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    )
+
+                    Spacer(Modifier.height(8.dp))
+                    Text("How close you must be", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.height(4.dp))
+                    Row(Modifier.fillMaxWidth()) {
+                        Closeness.entries.forEach { option ->
+                            FilterChip(
+                                selected = Closeness.forDbm(minRssi) == option,
+                                onClick = { minRssi = option.dbm },
+                                label = { Text(option.label) },
+                                modifier = Modifier.padding(end = 6.dp),
+                            )
+                        }
+                    }
+                    Text(
+                        "Inside only means the app must hear your network loudly, the way it " +
+                            "sounds from inside the building rather than from the street.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     )
@@ -827,6 +863,7 @@ private fun PlaceEditorDialog(
                     dwellMinutesOverride = dwellOverride.toIntOrNull() ?: 0,
                     quietFrom = quietFrom.trim(),
                     quietTo = quietTo.trim(),
+                    minRssi = minRssi,
                 ))
             }) { Text("Save") }
         },
@@ -847,35 +884,81 @@ private fun sensitivityExplanation(id: String): String = when (Sensitivity.from(
     null -> "Currently using the app's original wait. Pick one above to change it."
 }
 
+/**
+ * Captures the networks audible at a place, rather than picking one. A router
+ * with two bands, a mesh, or a replacement unit all break single-network
+ * detection silently, so the place keeps a set and only needs part of it.
+ *
+ * The strongest network and anything sharing its name are ticked to begin with,
+ * because those are almost always the same physical router. Everything else is
+ * deliberately left unticked: a ticked neighbour makes the app think the user is
+ * home when they are not, which is the exact failure this feature exists to stop.
+ */
 @Composable
-private fun WifiPickerDialog(
+private fun WifiCaptureDialog(
     results: List<ScanResult>,
-    onSelect: (ScanResult) -> Unit,
+    alreadySaved: List<String>,
+    onCapture: (selected: List<String>, strongest: String) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val sorted = remember(results) { results.sortedByDescending { it.level }.take(15) }
+    val strongest = sorted.firstOrNull()
+    val preTicked = remember(sorted) {
+        val siblings = sorted.filter {
+            strongest != null && it.SSID.isNotBlank() && it.SSID == strongest.SSID
+        }.map { it.BSSID.lowercase() }
+        (siblings + alreadySaved).toSet()
+    }
+    val ticked = remember(preTicked) { mutableStateListOf(*preTicked.toTypedArray()) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Select WiFi Network") },
+        title = { Text("Capture networks here") },
         text = {
-            if (results.isEmpty()) {
+            if (sorted.isEmpty()) {
                 Text("No networks found. Make sure WiFi is on and location is enabled.")
             } else {
-                Column {
-                    results.sortedByDescending { it.level }.take(10).forEach { result ->
-                        TextButton(onClick = { onSelect(result) }, modifier = Modifier.fillMaxWidth()) {
-                            Column(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        "Only tick networks you know are yours. Ticking a neighbour's network " +
+                            "will make the app think you are here when you are not.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    sorted.forEach { result ->
+                        val id = result.BSSID.lowercase()
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = id in ticked,
+                                onCheckedChange = { on ->
+                                    if (on) ticked.add(id) else ticked.remove(id)
+                                },
+                            )
+                            Column(Modifier.weight(1f)) {
                                 Text(result.SSID.ifBlank { "(Hidden network)" },
                                     style = MaterialTheme.typography.bodyMedium)
-                                Text(result.BSSID, style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                                Text(
+                                    "${result.BSSID} · ${result.level} dBm" +
+                                        if (id in alreadySaved) " · already saved" else "",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                )
                             }
                         }
-                        HorizontalDivider()
                     }
                 }
             }
         },
-        confirmButton = {},
+        confirmButton = {
+            TextButton(
+                onClick = { onCapture(ticked.toList(), strongest?.BSSID?.lowercase().orEmpty()) },
+                enabled = ticked.isNotEmpty(),
+            ) { Text("Save networks") }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

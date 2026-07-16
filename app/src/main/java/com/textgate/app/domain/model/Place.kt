@@ -20,13 +20,34 @@ enum class Sensitivity(val id: String, val label: String, val dwellMinutes: Int)
     }
 }
 
+// How close the phone has to be for a place to count as reached.
+enum class Closeness(val id: String, val label: String, val dbm: Int) {
+    ANY("any", "Any signal", -100),
+    NEARBY("nearby", "Nearby", -80),
+    INSIDE("inside", "Inside only", -65);
+
+    companion object {
+        // The nearest chip at or below the stored number, so an exact value typed
+        // into the advanced drawer still shows the closest matching chip.
+        fun forDbm(dbm: Int): Closeness = entries.lastOrNull { dbm <= it.dbm } ?: INSIDE
+    }
+}
+
 // A saved arrival location. "home" and "office" are seeded defaults; users can
 // add any number of custom places (friend's house, gym, …) with their own
 // arrival message and their own contact list.
 data class Place(
     val id: String,
     val label: String,
+    // The strongest saved network. Kept alongside the full set so a copy of the
+    // app that predates multiple networks still detects this place.
     val bssid: String = "",
+    // Every access point saved for this place: a second radio band, a mesh node,
+    // a replacement router. One dropping out of a scan must not blind the place.
+    val bssids: List<String> = emptyList(),
+    // How loud the strongest match has to be. Walking past outside reads much
+    // weaker than standing inside, so this is what separates the two.
+    val minRssi: Int = Closeness.NEARBY.dbm,
     // Custom arrival message; blank → default "<name> arrived at <label>".
     val message: String = "",
     // Optional separate message for WhatsApp deliveries; blank → same as SMS.
@@ -44,6 +65,23 @@ data class Place(
     val quietFrom: String = "",
     val quietTo: String = "",
 ) {
+    // Every network saved for this place, however it was saved.
+    val savedBssids: List<String>
+        get() = (bssids + bssid).filter { it.isNotBlank() }.map { it.lowercase() }.distinct()
+
+    // One access point dropping out of a scan is normal, so a place with a mesh
+    // must not need every node. Two is enough to rule out a recycled identifier,
+    // and asking for more makes detection worse rather than better.
+    val requiredMatches: Int
+        get() = if (savedBssids.size >= 3) 2 else 1
+
+    // Present when enough of this place's networks are audible and the loudest
+    // of them clears the closeness floor.
+    fun isPresentIn(visible: Map<String, Int>): Boolean {
+        val heard = savedBssids.mapNotNull { visible[it] }
+        return heard.size >= requiredMatches && (heard.maxOrNull() ?: return false) >= minRssi
+    }
+
     // The wait actually applied: an exact override wins, then the chosen preset,
     // then whatever the app was using before any of this was configurable.
     fun effectiveDwellMinutes(fallbackMinutes: Int): Int = when {

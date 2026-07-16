@@ -18,6 +18,7 @@ import com.textgate.app.core.utils.DateUtils
 import com.textgate.app.core.utils.RoutineAnalyzer
 import com.textgate.app.core.utils.WifiConfig
 import com.textgate.app.core.utils.requestWifiScan
+import com.textgate.app.core.utils.visibleAccessPoints
 import com.textgate.app.core.utils.visibleBssids
 import com.textgate.app.domain.repository.LinkRepository
 import com.textgate.app.domain.repository.UserRepository
@@ -105,8 +106,8 @@ class ArrivalService : Service() {
         val uid = userRepo.currentFirebaseUser()?.uid ?: return
         val user = userRepo.getCurrentUser() ?: return
         requestWifiScan(this)
-        val visible = visibleBssids(this)
-        val saved = user.places.filter { it.bssid.isNotBlank() }
+        val visible = visibleAccessPoints(this)
+        val saved = user.places.filter { it.savedBssids.isNotEmpty() }
         Log.d(TAG, "Sweep: ${visible.size} networks in range, ${saved.size} saved places")
         if (visible.isEmpty()) {
             Log.w(TAG, "No networks visible — WiFi scanning or location is likely off")
@@ -118,7 +119,7 @@ class ArrivalService : Service() {
                 Log.d(TAG, "${place.id}: alerts switched off for this place")
                 return@forEach
             }
-            if (place.bssid.lowercase() !in visible) {
+            if (!place.isPresentIn(visible)) {
                 val missed = (missedSweeps[place.id] ?: 0) + 1
                 missedSweeps[place.id] = missed
                 if (missed >= MISSED_SWEEPS_TO_LEAVE && firstSeenAt.remove(place.id) != null) {

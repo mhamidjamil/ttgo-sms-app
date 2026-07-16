@@ -191,6 +191,8 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         "contacts" to place.contacts.map {
             mapOf("name" to it.name, "number" to it.number)
         },
+        "bssids" to place.bssids,
+        "min_rssi" to place.minRssi,
         "alerts_enabled" to place.alertsEnabled,
         "sensitivity" to place.sensitivity,
         "dwell_minutes" to place.dwellMinutesOverride,

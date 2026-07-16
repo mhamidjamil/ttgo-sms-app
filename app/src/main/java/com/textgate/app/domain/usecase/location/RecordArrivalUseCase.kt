@@ -81,14 +81,11 @@ class RecordArrivalUseCase(
         // fall back to the SMS gateway per recipient when unlinked or the send
         // fails. A failure for one recipient must not block the others.
         val waLinked = waRepo.isLinked()
-        var lastFailure: Throwable? = null
-        var delivered = 0
         recipients.forEach { contact ->
             // recipientName personalizes for the RECEIVER (gateway anti-ban).
             val sentViaWhatsApp = waLinked &&
                 waRepo.sendMessage(contact.number, waText, contact.name.ifBlank { null }).isSuccess
             if (sentViaWhatsApp) {
-                delivered++
                 // Record WhatsApp deliveries too, or the Auto page never shows them.
                 smsRepo.logAutoWhatsAppArrival(
                     uid = uid,
@@ -108,7 +105,21 @@ class RecordArrivalUseCase(
                     location = placeId,
                     locationLabel = label,
                     routineTriggered = routineTriggered,
-                ).onSuccess { delivered++ }.onFailure { lastFailure = it }
+                ).onFailure { failure ->
+                    // Leave a failed row for THIS recipient so the Auto page can
+                    // show them and retry just them. Without it a recipient the
+                    // gateway rejected is lost with no trace.
+                    smsRepo.logAutoArrivalFailure(
+                        uid = uid,
+                        phoneNumber = contact.number,
+                        recipientName = contact.name,
+                        message = message,
+                        location = placeId,
+                        locationLabel = label,
+                        routineTriggered = routineTriggered,
+                        error = failure.message.orEmpty(),
+                    )
+                }
             }
             // Leaves a trail the recipient can find when they install the app,
             // even if that is months from now.
@@ -119,11 +130,10 @@ class RecordArrivalUseCase(
                 senderPhone = user.phoneNumber,
             )
         }
-        // Nobody reached → surface the error and leave the day unrecorded so the
-        // service can retry. Partial success records the arrival, otherwise a
-        // retry would double-message the recipients that already got it.
-        if (delivered == 0) throw (lastFailure ?: IllegalStateException("No recipients notified"))
-
+        // The arrival itself is recorded whatever the gateway did, because it
+        // happened. Delivery is now tracked per recipient, so a failure is a row
+        // that can be retried on its own rather than a reason to replay the whole
+        // fan-out and double-message everyone who was already reached.
         userRepo.recordArrival(uid, placeId, today, DateUtils.currentTimeHHmm()).getOrThrow()
     }
 }

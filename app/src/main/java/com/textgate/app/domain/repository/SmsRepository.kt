@@ -23,6 +23,16 @@ interface SmsRepository {
         locationLabel: String,
         routineTriggered: Boolean,
     ): Result<Unit>
+    suspend fun logAutoArrivalFailure(
+        uid: String,
+        phoneNumber: String,
+        recipientName: String,
+        message: String,
+        location: String,
+        locationLabel: String,
+        routineTriggered: Boolean,
+        error: String,
+    ): Result<Unit>
     suspend fun updateAutoHistoryStatus(uid: String, entryId: String, status: String): Result<Unit>
     suspend fun retryAutoArrivalSms(
         uid: String,

@@ -323,18 +323,52 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         location: String,
         locationLabel: String,
         routineTriggered: Boolean,
+    ): Result<Unit> = logAutoArrival(
+        uid, phoneNumber, recipientName, message, location, locationLabel,
+        routineTriggered, channel = "whatsapp", status = "sent", error = "",
+    )
+
+    // A recipient the gateway could not be queued for at all. Without this row
+    // that person simply disappears: the alert is not sent, nothing shows on the
+    // Auto page, and there is nothing to press retry on.
+    suspend fun logAutoArrivalFailure(
+        uid: String,
+        phoneNumber: String,
+        recipientName: String,
+        message: String,
+        location: String,
+        locationLabel: String,
+        routineTriggered: Boolean,
+        error: String,
+    ): Result<Unit> = logAutoArrival(
+        uid, phoneNumber, recipientName, message, location, locationLabel,
+        routineTriggered, channel = "sms", status = "failed", error = error,
+    )
+
+    private suspend fun logAutoArrival(
+        uid: String,
+        phoneNumber: String,
+        recipientName: String,
+        message: String,
+        location: String,
+        locationLabel: String,
+        routineTriggered: Boolean,
+        channel: String,
+        status: String,
+        error: String,
     ): Result<Unit> = runCatching {
         val autoDto = mapOf(
             "location" to location,
             "location_label" to locationLabel,
-            "channel" to "whatsapp",
+            "channel" to channel,
             "enque_by" to "app:$uid:arrival",
             "sent_at" to Timestamp.now(),
-            "status" to "sent",
+            "status" to status,
             "job_phone_key" to phoneNumber,
             "recipient_name" to recipientName,
             "message" to message,
             "routine_triggered" to routineTriggered,
+            "error" to error,
         )
         db.collection(Paths.USERS).document(uid)
             .collection(Paths.AUTO_HISTORY_SUB).document().set(autoDto).await()

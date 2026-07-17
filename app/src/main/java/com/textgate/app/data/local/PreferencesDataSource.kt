@@ -36,6 +36,10 @@ class PreferencesDataSource(private val context: Context) {
         // cache that can be hours stale, which is not something an alert may
         // depend on.
         private fun presenceKey(placeId: String) = stringPreferencesKey("presence_$placeId")
+        // What the surroundings sounded like while standing at this place, so a
+        // later scan can be compared against it rather than against a guess.
+        private fun placeEnvironmentKey(placeId: String) =
+            stringPreferencesKey("place_environment_$placeId")
         private val KEY_ENVIRONMENT = stringPreferencesKey("environment_fingerprint")
         private val KEY_LAST_OBSERVED_AT = longPreferencesKey("last_observed_at")
 
@@ -59,6 +63,14 @@ class PreferencesDataSource(private val context: Context) {
 
     suspend fun setEnvironment(bssids: Set<String>) {
         context.dataStore.edit { it[KEY_ENVIRONMENT] = bssids.joinToString(",") }
+    }
+
+    suspend fun getPlaceEnvironment(placeId: String): Set<String> =
+        context.dataStore.data.first()[placeEnvironmentKey(placeId)]
+            ?.split(",")?.filter { it.isNotBlank() }?.toSet().orEmpty()
+
+    suspend fun setPlaceEnvironment(placeId: String, bssids: Set<String>) {
+        context.dataStore.edit { it[placeEnvironmentKey(placeId)] = bssids.joinToString(",") }
     }
 
     suspend fun getLastObservedAt(): Long =

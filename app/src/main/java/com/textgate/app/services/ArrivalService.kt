@@ -129,7 +129,6 @@ class ArrivalService : Service() {
         Log.d(TAG, "Sweep: ${visible.size} networks in range, ${saved.size} saved places")
         prefs.setLastObservedAt(System.currentTimeMillis())
         prefs.setEnvironment(visible.keys)
-        val today = DateUtils.todayString()
 
         saved.forEach { place ->
             if (!place.alertsEnabled) {
@@ -157,19 +156,41 @@ class ArrivalService : Service() {
             }
 
             if (!present) {
+                // Leaving has to be seen, not assumed. A power cut leaves the
+                // neighbours' networks exactly where they were, so the
+                // surroundings barely move and this correctly refuses to call it
+                // a departure. Actually driving off changes almost all of them.
+                val familiar = prefs.getPlaceEnvironment(place.id)
+                val overlap = if (familiar.isEmpty()) 0f
+                    else familiar.intersect(visible.keys).size.toFloat() / familiar.size
                 val missed = (missedSweeps[place.id] ?: 0) + 1
                 missedSweeps[place.id] = missed
-                if (missed >= MISSED_SWEEPS_TO_LEAVE && firstSeenAt.remove(place.id) != null) {
-                    Log.d(TAG, "${place.id}: out of range, countdown dropped")
+                val departed = missed >= MISSED_SWEEPS_TO_LEAVE && overlap < FAMILIAR_OVERLAP_TO_STAY
+                if (departed && presence.state != PresenceState.AWAY) {
+                    Log.i(TAG, "${place.id}: departure observed, overlap ${"%.2f".format(overlap)}")
+                    firstSeenAt.remove(place.id)
                     prefs.setPresence(place.id, presence.copy(
                         state = PresenceState.AWAY, visitStartedAt = 0L, stationaryMillis = 0L,
                     ))
+                } else if (missed >= MISSED_SWEEPS_TO_LEAVE) {
+                    Log.d(TAG, "${place.id}: not heard but surroundings unchanged " +
+                        "(overlap ${"%.2f".format(overlap)}), still counted as here")
                 }
                 return@forEach
             }
             missedSweeps[place.id] = 0
-            if (user.lastArrivalDateByPlace[place.id] == today) {
-                Log.d(TAG, "${place.id}: already alerted today")
+            prefs.setPlaceEnvironment(place.id, visible.keys)
+
+            // One alert per VISIT. The visit only ends at an observed departure,
+            // which is what lets a second trip to the office on the same day
+            // alert, and stops a flickering boundary alerting twice.
+            if (presence.state == PresenceState.HERE) {
+                Log.d(TAG, "${place.id}: already alerted for this visit")
+                return@forEach
+            }
+            val sinceAlert = System.currentTimeMillis() - presence.lastAlertAt
+            if (presence.lastAlertAt > 0L && sinceAlert < REARM_MINUTES * 60_000L) {
+                Log.d(TAG, "${place.id}: within the ${REARM_MINUTES} minute cooling-off period")
                 return@forEach
             }
 
@@ -257,6 +278,13 @@ class ArrivalService : Service() {
         // stability window it is measuring.
         private const val SWEEP_SECONDS = 120
         private const val MISSED_SWEEPS_TO_LEAVE = 2
+        // How much of the surroundings has to still be recognisable for the phone
+        // to count as not having moved. Scans drop access points at random, so
+        // this is deliberately generous: below a third means somewhere else.
+        private const val FAMILIAR_OVERLAP_TO_STAY = 0.33f
+        // A floor under repeat alerts, never a permission to send one on its own.
+        // Only an observed departure re-arms a place.
+        private const val REARM_MINUTES = 45
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, ArrivalService::class.java))

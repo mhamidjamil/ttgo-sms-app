@@ -31,8 +31,10 @@ class RecordArrivalUseCase(
         val user = userRepo.getCurrentUser() ?: error("User not found")
         val place = user.places.find { it.id == placeId } ?: return@runCatching
 
+        // No day guard here. Whether this visit may alert is decided by the
+        // presence state machine in ArrivalService, which knows about departures;
+        // a calendar date cannot tell a second visit from a repeat.
         val today = DateUtils.todayString()
-        if (user.lastArrivalDateByPlace[placeId] == today) return@runCatching // one alert/day/place
 
         // The default guardian is ALWAYS notified, plus every contact configured
         // for this place, plus any linked account granted automatic updates. One

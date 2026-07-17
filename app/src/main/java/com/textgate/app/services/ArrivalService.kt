@@ -62,6 +62,9 @@ class ArrivalService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var sweepJob: Job? = null
+    // A restart must never read as a fresh arrival. Nothing may be sent until the
+    // first observations have had time to land and the state has been re-read.
+    private var startedAt = 0L
 
     // place id → sweeps in a row the network went missing, because scan results
     // drop an access point at random even while the phone sits next to it.
@@ -117,7 +120,9 @@ class ArrivalService : Service() {
     override fun onCreate() {
         super.onCreate()
         isRunning = true
+        startedAt = System.currentTimeMillis()
         startForeground(NOTIFICATION_ID, buildNotification())
+        ArrivalWatchdogReceiver.scheduleNextCheck(this)
         connectivityManager.registerNetworkCallback(buildNetworkRequest(), networkCallback)
         stepSensor?.let {
             sensorManager?.registerListener(stepListener, it, SensorManager.SENSOR_DELAY_NORMAL)
@@ -128,6 +133,10 @@ class ArrivalService : Service() {
 
     override fun onDestroy() {
         isRunning = false
+        // The watchdog keeps running on purpose: the common way this method is
+        // reached is the system killing the service, which is exactly the case
+        // the watchdog exists to undo. It is cancelled when the user switches
+        // monitoring off, not when the service goes away.
         try { connectivityManager.unregisterNetworkCallback(networkCallback) } catch (_: Exception) {}
         sensorManager?.unregisterListener(stepListener)
         scope.cancel()
@@ -251,6 +260,10 @@ class ArrivalService : Service() {
                 Log.d(TAG, "${place.id}: already alerted for this visit")
                 return@forEach
             }
+            if (System.currentTimeMillis() - startedAt < SETTLING_MILLIS) {
+                Log.d(TAG, "${place.id}: still settling after a restart, not alerting yet")
+                return@forEach
+            }
             val sinceAlert = System.currentTimeMillis() - presence.lastAlertAt
             if (presence.lastAlertAt > 0L && sinceAlert < REARM_MINUTES * 60_000L) {
                 Log.d(TAG, "${place.id}: within the ${REARM_MINUTES} minute cooling-off period")
@@ -360,6 +373,9 @@ class ArrivalService : Service() {
         // Picking the phone up off a desk registers a couple of steps; walking out
         // of the building registers far more than this.
         private const val STEPS_THAT_COUNT_AS_MOVING = 12
+        // Long enough for the persisted state and the first scans to be read back
+        // before anything is allowed to send.
+        private const val SETTLING_MILLIS = 2 * 60 * 1000L
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, ArrivalService::class.java))

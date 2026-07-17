@@ -2,6 +2,7 @@ package com.textgate.app.presentation.settings
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.wifi.ScanResult
 import android.net.wifi.WifiManager
@@ -44,6 +45,7 @@ import com.textgate.app.domain.model.Closeness
 import com.textgate.app.domain.model.PlaceContact
 import com.textgate.app.domain.model.Sensitivity
 import com.textgate.app.services.ArrivalService
+import com.textgate.app.services.ArrivalWatchdogReceiver
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 
@@ -208,6 +210,7 @@ fun SettingsScreen(
                 isMonitoring = false
                 scope.launch { viewModel.setMonitoringEnabled(false) }
                 ArrivalService.stop(context)
+                ArrivalWatchdogReceiver.cancelChecks(context)
             }
         },
         onSave = { guardian -> viewModel.save(guardian) },
@@ -339,6 +342,8 @@ private fun SettingsContent(
                 Switch(checked = isMonitoring, onCheckedChange = onMonitoringToggle)
             }
 
+            if (isMonitoring) BatteryExemptionNotice()
+
             uiState.error?.let {
                 Spacer(Modifier.height(8.dp))
                 Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -364,6 +369,59 @@ private fun SettingsContent(
         }
     }
 }
+
+/**
+ * Without this exemption the phone's battery manager is free to kill monitoring,
+ * and the background check that would restart it is not allowed to run either.
+ * It is the single setting that decides whether arrivals keep working for weeks
+ * or quietly stop after a few days, so it is shown until it is granted.
+ */
+@Composable
+private fun BatteryExemptionNotice() {
+    val context = LocalContext.current
+    var exempt by remember { mutableStateOf(isIgnoringBatteryOptimizations(context)) }
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { exempt = isIgnoringBatteryOptimizations(context) }
+    if (exempt) return
+
+    Spacer(Modifier.height(8.dp))
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Text(
+                "Battery saver can stop arrival alerts",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                "This phone is allowed to shut monitoring down in the background, which " +
+                    "is the usual reason alerts stop arriving after a few days. Allowing " +
+                    "it to run in the background fixes that.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(Modifier.height(6.dp))
+            OutlinedButton(onClick = {
+                runCatching {
+                    launcher.launch(
+                        Intent(
+                            android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                            android.net.Uri.parse("package:${context.packageName}"),
+                        )
+                    )
+                }.onFailure {
+                    Log.w(TAG_SETTINGS, "Battery optimisation screen unavailable: ${it.message}")
+                }
+            }) { Text("Allow background running") }
+        }
+    }
+}
+
+private fun isIgnoringBatteryOptimizations(context: Context): Boolean =
+    context.getSystemService(android.os.PowerManager::class.java)
+        ?.isIgnoringBatteryOptimizations(context.packageName) ?: false
 
 /**
  * "Where am I?" — answers what the arrival service would decide right now,

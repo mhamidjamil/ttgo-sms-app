@@ -16,6 +16,9 @@
     <!-- Step counter, used only to tell a real stop from driving past. Optional:
          without it the wait falls back to counting plain elapsed time. -->
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+    <!-- Restart monitoring after the phone reboots -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
         android:name=".App"
@@ -43,6 +46,20 @@
             android:name=".services.ArrivalService"
             android:foregroundServiceType="location"
             android:exported="false" />
+
+        <!-- Brings monitoring back after a restart, an app update, or the phone's
+             battery manager killing the service. -->
+        <receiver
+            android:name=".services.ArrivalWatchdogReceiver"
+            android:exported="false"
+            android:directBootAware="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="com.textgate.app.ARRIVAL_WATCHDOG" />
+            </intent-filter>
+        </receiver>
 
     </application>
 

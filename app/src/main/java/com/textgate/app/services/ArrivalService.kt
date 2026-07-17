@@ -10,6 +10,10 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -59,14 +63,46 @@ class ArrivalService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var sweepJob: Job? = null
 
-    // place id → when its network was first heard on this visit
-    private val firstSeenAt = mutableMapOf<String, Long>()
     // place id → sweeps in a row the network went missing, because scan results
     // drop an access point at random even while the phone sits next to it.
     private val missedSweeps = mutableMapOf<String, Int>()
 
     private val connectivityManager by lazy {
         getSystemService(ConnectivityManager::class.java)
+    }
+
+    // Step count is a free hardware counter kept by the sensor hub, so reading it
+    // costs almost nothing and needs no wake lock. It is used only to answer "has
+    // this phone actually moved since the last sweep", which is what separates a
+    // real visit from driving past. Phones without the sensor fall back to
+    // counting plain elapsed time, so detection degrades rather than stops.
+    private val sensorManager by lazy { getSystemService(SensorManager::class.java) }
+    private val stepSensor by lazy { sensorManager?.getDefaultSensor(Sensor.TYPE_STEP_COUNTER) }
+    @Volatile private var stepCount = -1f
+    private var lastStepCount = -1f
+    private var lastSweepAt = 0L
+
+    private val stepListener = object : SensorEventListener {
+        override fun onSensorChanged(event: SensorEvent) {
+            stepCount = event.values.firstOrNull() ?: stepCount
+        }
+
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+    }
+
+    /**
+     * Milliseconds since the last sweep that the phone spent still, which is zero
+     * when it walked anywhere in between.
+     */
+    private fun stationarySinceLastSweep(now: Long): Long {
+        val elapsed = if (lastSweepAt == 0L) 0L else now - lastSweepAt
+        lastSweepAt = now
+        val current = stepCount
+        val previous = lastStepCount
+        lastStepCount = current
+        // No sensor, or the counter reset on a reboot: fall back to elapsed time.
+        if (current < 0f || previous < 0f || current < previous) return elapsed
+        return if (current - previous > STEPS_THAT_COUNT_AS_MOVING) 0L else elapsed
     }
 
     // Joining a WiFi network is a strong arrival hint, so sweep immediately
@@ -83,6 +119,9 @@ class ArrivalService : Service() {
         isRunning = true
         startForeground(NOTIFICATION_ID, buildNotification())
         connectivityManager.registerNetworkCallback(buildNetworkRequest(), networkCallback)
+        stepSensor?.let {
+            sensorManager?.registerListener(stepListener, it, SensorManager.SENSOR_DELAY_NORMAL)
+        } ?: Log.w(TAG, "No step sensor — the wait will count plain elapsed time")
         startSweeping()
         watchLocationRequests()
     }
@@ -90,6 +129,7 @@ class ArrivalService : Service() {
     override fun onDestroy() {
         isRunning = false
         try { connectivityManager.unregisterNetworkCallback(networkCallback) } catch (_: Exception) {}
+        sensorManager?.unregisterListener(stepListener)
         scope.cancel()
         super.onDestroy()
     }
@@ -129,6 +169,9 @@ class ArrivalService : Service() {
         Log.d(TAG, "Sweep: ${visible.size} networks in range, ${saved.size} saved places")
         prefs.setLastObservedAt(System.currentTimeMillis())
         prefs.setEnvironment(visible.keys)
+        // Once per sweep: it advances the step baseline, so calling it per place
+        // would hand the first place the whole interval and the rest nothing.
+        val stillSinceLastSweep = stationarySinceLastSweep(System.currentTimeMillis())
 
         // "Where am I" is one answer, not one per place. A home above a shop or an
         // office across the road can both be audible from the same spot, and the
@@ -189,7 +232,6 @@ class ArrivalService : Service() {
                 val departed = missed >= MISSED_SWEEPS_TO_LEAVE && overlap < FAMILIAR_OVERLAP_TO_STAY
                 if (departed && presence.state != PresenceState.AWAY) {
                     Log.i(TAG, "${place.id}: departure observed, overlap ${"%.2f".format(overlap)}")
-                    firstSeenAt.remove(place.id)
                     prefs.setPresence(place.id, presence.copy(
                         state = PresenceState.AWAY, visitStartedAt = 0L, stationaryMillis = 0L,
                     ))
@@ -215,19 +257,25 @@ class ArrivalService : Service() {
                 return@forEach
             }
 
-            val since = firstSeenAt.getOrPut(place.id) {
-                Log.i(TAG, "${place.id}: in range, starting countdown")
-                prefs.setPresence(place.id, presence.copy(
-                    state = PresenceState.APPROACHING, visitStartedAt = System.currentTimeMillis(),
-                ))
-                System.currentTimeMillis()
-            }
+            val started = presence.state != PresenceState.APPROACHING
+            if (started) Log.i(TAG, "${place.id}: in range, starting the wait")
+            // The wait counts only the time the phone actually sat still. A 12
+            // minute visit is nearly all still time; driving past contains none,
+            // so a short setting stays safe instead of becoming trigger-happy.
+            val stationary = presence.stationaryMillis + if (started) 0L else stillSinceLastSweep
+            val running = presence.copy(
+                state = PresenceState.APPROACHING,
+                visitStartedAt = if (started) System.currentTimeMillis() else presence.visitStartedAt,
+                stationaryMillis = stationary,
+            )
+            prefs.setPresence(place.id, running)
+
             val arrivalTimes = user.arrivalTimesByPlace[place.id] ?: emptyList()
             val dwellMinutes = place.effectiveDwellMinutes(WifiConfig.STABILITY_MINUTES)
             val waitMinutes = routineAnalyzer.effectiveWait(arrivalTimes, dwellMinutes)
-            val elapsedMinutes = (System.currentTimeMillis() - since) / 60_000
-            if (elapsedMinutes < waitMinutes) {
-                Log.d(TAG, "${place.id}: $elapsedMinutes/$waitMinutes minutes in range")
+            val stillMinutes = stationary / 60_000
+            if (stillMinutes < waitMinutes) {
+                Log.d(TAG, "${place.id}: $stillMinutes/$waitMinutes still minutes here")
                 return@forEach
             }
             // Suppressing the send must not touch the countdown or the day guard,
@@ -241,13 +289,12 @@ class ArrivalService : Service() {
             recordArrival(uid, place.id, routineTriggered)
                 .onSuccess { Log.i(TAG, "${place.id}: arrival recorded") }
                 .onFailure { Log.w(TAG, "${place.id}: arrival not sent — ${it.message}") }
-            prefs.setPresence(place.id, prefs.getPresence(place.id).copy(
+            // Marked here whether or not the gateway accepted it: delivery is
+            // retried per recipient from the Auto page, and replaying the whole
+            // fan-out would double-message everyone who was already reached.
+            prefs.setPresence(place.id, running.copy(
                 state = PresenceState.HERE, lastAlertAt = System.currentTimeMillis(),
             ))
-            // Cleared either way: on success the day guard stops a repeat, and on
-            // failure the next attempt waits out the full window instead of
-            // retrying every sweep.
-            firstSeenAt.remove(place.id)
         }
     }
 
@@ -310,6 +357,9 @@ class ArrivalService : Service() {
         // strength wanders by a few dB while standing still, so anything closer
         // than this is not a real difference.
         private const val CONTEST_MARGIN_DBM = 8
+        // Picking the phone up off a desk registers a couple of steps; walking out
+        // of the building registers far more than this.
+        private const val STEPS_THAT_COUNT_AS_MOVING = 12
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, ArrivalService::class.java))

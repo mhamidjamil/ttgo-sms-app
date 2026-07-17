@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.net.wifi.ScanResult
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -45,6 +46,8 @@ import com.textgate.app.domain.model.Sensitivity
 import com.textgate.app.services.ArrivalService
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
+
+private const val TAG_SETTINGS = "TextGateSettings"
 
 /**
  * Arrival monitoring settings. Reached as its own bottom-bar tab, where there is
@@ -98,6 +101,7 @@ fun SettingsScreen(
     ) { grants ->
         val granted = requiredMonitoringPermissions()
             .all { permission -> grants[permission] == true || hasPermission(context, permission) }
+        if (!granted) Log.w(TAG_SETTINGS, "Monitoring not started: location permission refused")
         if (granted) {
             isMonitoring = true
             scope.launch { viewModel.setMonitoringEnabled(true) }
@@ -191,7 +195,7 @@ fun SettingsScreen(
         isMonitoring = isMonitoring,
         onMonitoringToggle = { enabled ->
             if (enabled) {
-                val missing = requiredMonitoringPermissions()
+                val missing = monitoringPermissionsToRequest()
                     .filterNot { permission -> hasPermission(context, permission) }
                 if (missing.isEmpty()) {
                     isMonitoring = true
@@ -981,10 +985,21 @@ private fun requestScanOrLaunch(
     else launcher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
 }
 
-private fun requiredMonitoringPermissions(): List<String> = buildList {
-    add(Manifest.permission.ACCESS_FINE_LOCATION)
+// Detection genuinely cannot work without this one.
+private fun requiredMonitoringPermissions(): List<String> =
+    listOf(Manifest.permission.ACCESS_FINE_LOCATION)
+
+// Asked for together, but declining any of these must not switch the feature
+// off. The notification permission only decides whether the ongoing notice is
+// visible, and step counting only sharpens the wait; treating either as a
+// precondition is how a single declined prompt used to disable arrivals for good.
+private fun monitoringPermissionsToRequest(): List<String> = buildList {
+    addAll(requiredMonitoringPermissions())
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         add(Manifest.permission.POST_NOTIFICATIONS)
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        add(Manifest.permission.ACTIVITY_RECOGNITION)
     }
 }
 

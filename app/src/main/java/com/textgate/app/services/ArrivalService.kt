@@ -130,13 +130,34 @@ class ArrivalService : Service() {
         prefs.setLastObservedAt(System.currentTimeMillis())
         prefs.setEnvironment(visible.keys)
 
+        // "Where am I" is one answer, not one per place. A home above a shop or an
+        // office across the road can both be audible from the same spot, and the
+        // old loop simply alerted for both, so one of the two was always wrong.
+        // The loudest wins, and only by a clear margin — a tie is an honest
+        // "cannot tell", which sends nothing.
+        val heardStrength = saved.filter { it.isPresentIn(visible) }
+            .associateWith { place -> place.savedBssids.mapNotNull { visible[it] }.max() }
+        val ranked = heardStrength.entries.sortedByDescending { it.value }
+        val winner = when {
+            ranked.isEmpty() -> null
+            ranked.size == 1 -> ranked.first().key
+            ranked[0].value - ranked[1].value >= CONTEST_MARGIN_DBM -> ranked.first().key
+            else -> null
+        }
+        if (winner == null && ranked.size > 1) {
+            Log.w(TAG, "Two places too close to separate: " +
+                ranked.take(2).joinToString { "${it.key.id} at ${it.value} dBm" })
+        }
+
         saved.forEach { place ->
             if (!place.alertsEnabled) {
                 Log.d(TAG, "${place.id}: alerts switched off for this place")
                 return@forEach
             }
             val presence = prefs.getPresence(place.id)
-            val present = place.isPresentIn(visible)
+            // Audible but beaten by a nearer place counts as not being here, so a
+            // losing place cannot quietly run its own countdown to an alert.
+            val present = place.isPresentIn(visible) && place.id == winner?.id
 
             // First look after a blind spell. Hearing this place now says nothing
             // about whether the phone travelled while nobody was watching, so the
@@ -285,6 +306,10 @@ class ArrivalService : Service() {
         // A floor under repeat alerts, never a permission to send one on its own.
         // Only an observed departure re-arms a place.
         private const val REARM_MINUTES = 45
+        // How much louder the winning place has to be than the runner-up. Signal
+        // strength wanders by a few dB while standing still, so anything closer
+        // than this is not a real difference.
+        private const val CONTEST_MARGIN_DBM = 8
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, ArrivalService::class.java))

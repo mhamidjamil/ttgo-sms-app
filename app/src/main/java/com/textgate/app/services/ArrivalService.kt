@@ -14,10 +14,13 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.hardware.TriggerEvent
+import android.hardware.TriggerEventListener
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.textgate.app.R
+import com.textgate.app.App
 import com.textgate.app.core.utils.DateUtils
 import com.textgate.app.core.utils.canScanWifi
 import com.textgate.app.core.utils.RoutineAnalyzer
@@ -26,7 +29,9 @@ import com.textgate.app.core.utils.requestWifiScan
 import com.textgate.app.core.utils.visibleAccessPoints
 import com.textgate.app.core.utils.visibleBssids
 import com.textgate.app.data.local.PreferencesDataSource
+import com.textgate.app.domain.model.Place
 import com.textgate.app.domain.model.PresenceState
+import com.textgate.app.domain.model.User
 import com.textgate.app.domain.repository.LinkRepository
 import com.textgate.app.domain.repository.UserRepository
 import com.textgate.app.domain.usecase.links.AnswerLocationRequestsUseCase
@@ -65,6 +70,12 @@ class ArrivalService : Service() {
     // A restart must never read as a fresh arrival. Nothing may be sent until the
     // first observations have had time to land and the state has been re-read.
     private var startedAt = 0L
+    // Settings are read from the server only while someone is in the app, plus a
+    // slow safety refresh so a change made on another device still lands.
+    private var cachedUser: User? = null
+    private var cachedUserAt = 0L
+    private var nextSweepSeconds = SWEEP_SECONDS_MOVING
+    private var stillSweeps = 0
 
     // place id → sweeps in a row the network went missing, because scan results
     // drop an access point at random even while the phone sits next to it.
@@ -84,6 +95,24 @@ class ArrivalService : Service() {
     @Volatile private var stepCount = -1f
     private var lastStepCount = -1f
     private var lastSweepAt = 0L
+
+    // A hardware trigger that runs on the sensor hub and wakes the device itself,
+    // so a long back-off ends the moment the phone is genuinely picked up and
+    // carried rather than at the end of the interval. It is one-shot and has to be
+    // re-armed every time it fires.
+    private val motionSensor by lazy { sensorManager?.getDefaultSensor(Sensor.TYPE_SIGNIFICANT_MOTION) }
+    private val motionTrigger = object : TriggerEventListener() {
+        override fun onTrigger(event: TriggerEvent?) {
+            Log.i(TAG, "Significant motion, looking again now")
+            stillSweeps = 0
+            armMotionTrigger()
+            scope.launch { sweep() }
+        }
+    }
+
+    private fun armMotionTrigger() {
+        motionSensor?.let { sensorManager?.requestTriggerSensor(motionTrigger, it) }
+    }
 
     private val stepListener = object : SensorEventListener {
         override fun onSensorChanged(event: SensorEvent) {
@@ -127,6 +156,7 @@ class ArrivalService : Service() {
         stepSensor?.let {
             sensorManager?.registerListener(stepListener, it, SensorManager.SENSOR_DELAY_NORMAL)
         } ?: Log.w(TAG, "No step sensor — the wait will count plain elapsed time")
+        armMotionTrigger()
         startSweeping()
         watchLocationRequests()
     }
@@ -139,6 +169,7 @@ class ArrivalService : Service() {
         // monitoring off, not when the service goes away.
         try { connectivityManager.unregisterNetworkCallback(networkCallback) } catch (_: Exception) {}
         sensorManager?.unregisterListener(stepListener)
+        motionSensor?.let { sensorManager?.cancelTriggerSensor(motionTrigger, it) }
         scope.cancel()
         super.onDestroy()
     }
@@ -150,14 +181,30 @@ class ArrivalService : Service() {
         sweepJob = scope.launch {
             while (isActive) {
                 sweep()
-                delay(SWEEP_SECONDS * 1000L)
+                delay(nextSweepSeconds * 1000L)
             }
         }
     }
 
+    /**
+     * Settings, without a network round trip on every sweep. A refresh happens on
+     * the first sweep, whenever the app is open on screen, and once every few
+     * hours as a safety net.
+     */
+    private suspend fun currentUser(): User? {
+        val stale = System.currentTimeMillis() - cachedUserAt > SETTINGS_REFRESH_MILLIS
+        if (cachedUser == null || App.isInForeground || stale) {
+            userRepo.getCurrentUser()?.let {
+                cachedUser = it
+                cachedUserAt = System.currentTimeMillis()
+            }
+        }
+        return cachedUser
+    }
+
     private suspend fun sweep() {
         val uid = userRepo.currentFirebaseUser()?.uid ?: return
-        val user = userRepo.getCurrentUser() ?: return
+        val user = currentUser() ?: return
         requestWifiScan(this)
         val visible = visibleAccessPoints(this)
         val saved = user.places.filter { it.savedBssids.isNotEmpty() }
@@ -166,6 +213,7 @@ class ArrivalService : Service() {
         // what turned switching the radios on in the morning into an arrival.
         if (!canScanWifi(this) || visible.isEmpty()) {
             Log.w(TAG, "Cannot observe: scanning=${canScanWifi(this)}, heard=${visible.size}")
+            nextSweepSeconds = SWEEP_SECONDS_SETTLED
             saved.forEach { place ->
                 val presence = prefs.getPresence(place.id)
                 if (presence.state != PresenceState.BLIND) {
@@ -309,6 +357,26 @@ class ArrivalService : Service() {
                 state = PresenceState.HERE, lastAlertAt = System.currentTimeMillis(),
             ))
         }
+
+        chooseNextCadence(saved, movedSinceLastSweep = stillSinceLastSweep == 0L)
+    }
+
+    /**
+     * How long to wait before looking again. Scanning hard is only worth it while
+     * something can change: moving, or already counting down at a place. Sitting
+     * still with nothing pending is the case that used to burn the battery all
+     * night for nothing.
+     */
+    private suspend fun chooseNextCadence(places: List<Place>, movedSinceLastSweep: Boolean) {
+        stillSweeps = if (movedSinceLastSweep) 0 else stillSweeps + 1
+        val approaching = places.any {
+            prefs.getPresence(it.id).state == PresenceState.APPROACHING
+        }
+        nextSweepSeconds = when {
+            approaching -> SWEEP_SECONDS_APPROACHING
+            stillSweeps >= STILL_SWEEPS_TO_BACK_OFF -> SWEEP_SECONDS_SETTLED
+            else -> SWEEP_SECONDS_MOVING
+        }
     }
 
     // A linked account can ask where we are at any moment, so this listens for
@@ -357,7 +425,16 @@ class ArrivalService : Service() {
         // Two minutes keeps every sweep inside Android's scan throttle (four
         // requests per two minutes) while still being far finer than the
         // stability window it is measuring.
-        private const val SWEEP_SECONDS = 120
+        // Cadence by state. Two minutes stays inside Android's scan throttle of
+        // four requests per two minutes; the longer ones exist because a phone on
+        // a desk all afternoon has nothing to detect and should not be scanning
+        // for it. Significant motion cuts any back-off short.
+        private const val SWEEP_SECONDS_MOVING = 120
+        private const val SWEEP_SECONDS_APPROACHING = 60
+        private const val SWEEP_SECONDS_SETTLED = 900
+        // Sweeps in a row with no movement before backing off.
+        private const val STILL_SWEEPS_TO_BACK_OFF = 5
+        private const val SETTINGS_REFRESH_MILLIS = 6 * 60 * 60 * 1000L
         private const val MISSED_SWEEPS_TO_LEAVE = 2
         // How much of the surroundings has to still be recognisable for the phone
         // to count as not having moved. Scans drop access points at random, so

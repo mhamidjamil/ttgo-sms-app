@@ -7,9 +7,14 @@
 
 ## Firebase/TTGO Data Flow
 - Outgoing SMS writes a Firestore batch in `FirestoreDataSource.enqueueJob`: `Paths.SMS_JOBS/{phone}` for the device and `Paths.USERS/{uid}/history/{autoId}` for the app UI.
-- `sms_jobs` doc IDs are normalized phone numbers, so there is one active job per phone number. Preserve `enque_by = "app:{uid}"` and `job_phone_key` because `RefreshJobStatusUseCase` uses them to avoid updating history from another user's overwritten job.
+- `sms_jobs` doc IDs are auto-generated, one document per queued message, so two messages to the same number can no longer overwrite each other. History rows carry `job_id`; rows written before this fall back to `job_phone_key`, which is what those older job documents were keyed by. The device finds work by querying `status == "pending"`, never by building an ID from a phone number.
 - OTP SMS uses the same TTGO queue but no history/quota: see `SendPhoneOtpUseCase` and `FirestoreDataSource.enqueueOtpSms`, with `enque_by = "app:{uid}:otp"`.
-- V2 arrival notifications run in `services/ArrivalService`: a foreground service sweeps WiFi scan results every two minutes and treats a saved place as reached when its BSSID is IN RANGE (connected or not), applies `RoutineAnalyzer`, calls `RecordArrivalUseCase`, then writes `auto_history`.
+- V2 arrival notifications run in `services/ArrivalService`. It holds a four-state presence machine per place (AWAY / APPROACHING / HERE / BLIND) persisted in `PreferencesDataSource`, NOT in Firestore: the Firestore user document falls back to an offline cache that can be hours stale, and no alert may depend on that.
+- A place is reached when enough of its saved BSSIDs are audible (`Place.isPresentIn`) and the loudest clears its closeness floor. Only ONE place can win a sweep; ties send nothing.
+- The alert guard is one per VISIT, cleared only by an OBSERVED departure (the place unheard AND the surroundings no longer overlapping what was heard there). A gap in observation is never a departure — that is what made switching the radios on in the morning look like arriving home.
+- The wait counts only time the phone spent still, measured from the step counter. Without that sensor it degrades to plain elapsed time rather than stopping.
+- Settings are read from the server only while the app is on screen (`App.isInForeground`) plus a six-hour safety refresh. Do not reintroduce a per-sweep Firestore read; it was the largest battery cost in the feature.
+- `services/ArrivalWatchdogReceiver` restarts monitoring after a reboot, an app update, or an OEM battery-manager kill.
 
 ## Configuration
 - Firestore paths and quotas come from `local.properties` via `app/build.gradle.kts` `buildConfigField`s, then through `core/utils/Constants.kt`. Do not hardcode paths in business logic.
@@ -26,7 +31,7 @@
 ## Versioning
 - App version is in `app/build.gradle.kts`: `versionCode` (integer, bumped for each release) and `versionName` (semver string, e.g. `1.0.1`).
 - **Whenever you make any solid changes or bug fixes, always bump `versionCode` by 1 and update `versionName` appropriately** (patch bump for fixes, minor for features). The version is displayed at the bottom of the Send screen via `BuildConfig.VERSION_NAME`.
-- Current version: `1.2.0` (versionCode=4).
+- Current version: `1.3.0` (versionCode=5).
 
 ## Developer Workflow
 - This repo may not include `gradle/wrapper/gradle-wrapper.jar`; Android Studio can generate/download it, or run `gradle wrapper --gradle-version 8.4` if local Gradle is installed.

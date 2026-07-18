@@ -1150,8 +1150,10 @@ private fun requestScanOrLaunch(
 }
 
 // Detection genuinely cannot work without this one.
-private fun requiredMonitoringPermissions(): List<String> =
-    listOf(Manifest.permission.ACCESS_FINE_LOCATION)
+private fun requiredMonitoringPermissions(): List<String> = listOf(
+    Manifest.permission.ACCESS_FINE_LOCATION,
+    Manifest.permission.ACCESS_COARSE_LOCATION,
+)
 
 // Asked for together, but declining any of these must not switch the feature
 // off. The notification permission only decides whether the ongoing notice is

@@ -6,12 +6,17 @@ Automatic guardian SMS notifications triggered by a saved WiFi network being in 
 
 ## How It Works
 
-1. User sets up home and office WiFi (BSSID + label) and a guardian phone number in **Profile → Arrival Settings**
-2. `ArrivalService` (foreground service) sweeps for nearby WiFi networks every two minutes
-3. When a saved network is heard, connected or not, a stability countdown starts
-4. If that network stays in range for the full stability period → a SMS is sent to the guardian via the TTGO gateway
-5. One notification per location per day (cooldown guard)
-6. Past arrival history is shown in the **Auto** tab
+1. User captures the WiFi networks at a place and sets a guardian phone number in **Profile → Arrival Settings**
+2. `ArrivalService` (foreground service) sweeps for nearby WiFi networks, every 1 to 15 minutes depending on what is happening
+3. When enough of a place's networks are heard loudly enough, and no other place is nearer, the wait starts
+4. The wait counts only the time the phone spends still, so driving past never completes it
+5. When the wait is met, one SMS per recipient goes out through the TTGO gateway
+6. One alert per VISIT. The next one is only possible after the app has actually seen the phone leave
+7. Past arrival history is shown in the **Auto** tab
+
+> The per-calendar-day guard this feature originally shipped with is gone. It
+> blocked every genuine second visit, and a false alert in the morning silently
+> ate the real arrival that evening. See `docs/V2-ARRIVAL-REDESIGN.md`.
 
 ---
 

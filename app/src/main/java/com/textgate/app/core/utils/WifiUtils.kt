@@ -1,6 +1,7 @@
 package com.textgate.app.core.utils
 
 import android.content.Context
+import android.location.LocationManager
 import android.net.wifi.WifiManager
 import android.util.Log
 import com.textgate.app.domain.model.Place
@@ -69,9 +70,13 @@ fun placeInRange(places: List<Place>, bssids: Set<String>): Place? =
 
 // Scanning still works with WiFi switched off when the system-wide "WiFi
 // scanning always available" toggle is on, which is exactly the case for
-// someone who lives on mobile data.
+// someone who lives on mobile data. Device location being switched off blocks
+// scan results outright, so it belongs in the same answer: without it the app
+// reports itself healthy while receiving nothing.
 @Suppress("DEPRECATION")
 fun canScanWifi(context: Context): Boolean {
-    val wm = context.applicationContext.getSystemService(WifiManager::class.java) ?: return false
-    return wm.isWifiEnabled || wm.isScanAlwaysAvailable
+    val app = context.applicationContext
+    val wm = app.getSystemService(WifiManager::class.java) ?: return false
+    val locationOn = app.getSystemService(LocationManager::class.java)?.isLocationEnabled ?: true
+    return locationOn && (wm.isWifiEnabled || wm.isScanAlwaysAvailable)
 }

@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.textgate.app.data.local.PreferencesDataSource
 import com.textgate.app.domain.model.Place
 import com.textgate.app.domain.model.PlaceContact
+import com.textgate.app.domain.model.PresenceState
 import com.textgate.app.core.utils.WifiConfig
 import com.textgate.app.domain.model.SettingsChange
 import com.textgate.app.domain.repository.UserRepository
@@ -34,6 +35,12 @@ data class SettingsUiState(
     val isLoadingRecipients: Boolean = false,
     val isSendingLocation: Boolean = false,
     val locationResult: String? = null,
+
+    // Detection health: the ongoing notification used to claim monitoring was
+    // active even after a week of seeing nothing, so a broken feature was
+    // invisible. These are what it actually knows.
+    val lastObservedAt: Long = 0L,
+    val placeStates: Map<String, PresenceState> = emptyMap(),
 )
 
 class SettingsViewModel(
@@ -48,7 +55,20 @@ class SettingsViewModel(
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
-    init { loadUser() }
+    init {
+        loadUser()
+        loadHealth()
+    }
+
+    fun loadHealth() {
+        viewModelScope.launch {
+            val places = _uiState.value.places.ifEmpty { userRepo.getCurrentUser()?.places.orEmpty() }
+            _uiState.value = _uiState.value.copy(
+                lastObservedAt = prefs.getLastObservedAt(),
+                placeStates = places.associate { it.id to prefs.getPresence(it.id).state },
+            )
+        }
+    }
 
     private fun loadUser() {
         viewModelScope.launch {

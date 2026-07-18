@@ -214,6 +214,7 @@ class ArrivalService : Service() {
         if (!canScanWifi(this) || visible.isEmpty()) {
             Log.w(TAG, "Cannot observe: scanning=${canScanWifi(this)}, heard=${visible.size}")
             nextSweepSeconds = SWEEP_SECONDS_SETTLED
+            updateNotification("Cannot check right now, WiFi scanning or location is off")
             saved.forEach { place ->
                 val presence = prefs.getPresence(place.id)
                 if (presence.state != PresenceState.BLIND) {
@@ -359,6 +360,11 @@ class ArrivalService : Service() {
         }
 
         chooseNextCadence(saved, movedSinceLastSweep = stillSinceLastSweep == 0L)
+        val here = saved.firstOrNull { prefs.getPresence(it.id).state == PresenceState.HERE }
+        updateNotification(
+            if (here != null) "At ${here.label.ifBlank { here.id }}, checked just now"
+            else "Checked just now, not at a saved place"
+        )
     }
 
     /**
@@ -398,7 +404,17 @@ class ArrivalService : Service() {
         .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
         .build()
 
-    private fun buildNotification(): Notification {
+    // Refreshed after each sweep so the ongoing notice reports what detection is
+    // really doing. Claiming "monitoring active" while blind for a week is how a
+    // broken feature stayed invisible.
+    private fun updateNotification(status: String) {
+        runCatching {
+            getSystemService(NotificationManager::class.java)
+                ?.notify(NOTIFICATION_ID, buildNotification(status))
+        }
+    }
+
+    private fun buildNotification(status: String = "Starting up"): Notification {
         val channelId = CHANNEL_ID
         val nm = getSystemService(NotificationManager::class.java)
         if (nm.getNotificationChannel(channelId) == null) {
@@ -409,7 +425,7 @@ class ArrivalService : Service() {
         }
         return NotificationCompat.Builder(this, channelId)
             .setContentTitle("TextGate")
-            .setContentText("Arrival monitoring active")
+            .setContentText(status)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setOngoing(true)
             .build()

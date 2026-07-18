@@ -39,10 +39,12 @@ import com.textgate.app.core.utils.PhoneNormalizer
 import com.textgate.app.core.utils.canScanWifi
 import com.textgate.app.core.utils.placeInRange
 import com.textgate.app.core.utils.requestWifiScan
+import com.textgate.app.core.utils.visibleAccessPoints
 import com.textgate.app.core.utils.visibleBssids
 import com.textgate.app.domain.model.Place
 import com.textgate.app.domain.model.Closeness
 import com.textgate.app.domain.model.PlaceContact
+import com.textgate.app.domain.model.PresenceState
 import com.textgate.app.domain.model.Sensitivity
 import com.textgate.app.services.ArrivalService
 import com.textgate.app.services.ArrivalWatchdogReceiver
@@ -342,7 +344,10 @@ private fun SettingsContent(
                 Switch(checked = isMonitoring, onCheckedChange = onMonitoringToggle)
             }
 
-            if (isMonitoring) BatteryExemptionNotice()
+            if (isMonitoring) {
+                BatteryExemptionNotice()
+                DetectionHealthCard(uiState)
+            }
 
             uiState.error?.let {
                 Spacer(Modifier.height(8.dp))
@@ -366,6 +371,107 @@ private fun SettingsContent(
                 }
             }
             Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+/**
+ * What detection currently believes, in plain words. The ongoing notification
+ * used to say "monitoring active" whether the app had checked a minute ago or
+ * had been unable to see anything for a week, so a dead feature looked identical
+ * to a working one.
+ */
+@Composable
+private fun DetectionHealthCard(uiState: SettingsUiState) {
+    val context = LocalContext.current
+    var verdict by remember { mutableStateOf<String?>(null) }
+    val sinceCheck = if (uiState.lastObservedAt == 0L) null
+        else System.currentTimeMillis() - uiState.lastObservedAt
+    val blindTooLong = sinceCheck != null && sinceCheck > 24 * 60 * 60 * 1000L
+
+    Spacer(Modifier.height(8.dp))
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (blindTooLong) MaterialTheme.colorScheme.errorContainer
+            else MaterialTheme.colorScheme.surfaceVariant,
+        ),
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Text("Is detection working?", style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold)
+            Text(
+                when {
+                    sinceCheck == null -> "Nothing checked yet. This fills in after the first sweep."
+                    blindTooLong -> "The app has not been able to see any networks for over a " +
+                        "day. Arrivals are not being detected. Check that WiFi scanning and " +
+                        "location are on."
+                    else -> "Last successful check ${describeAge(sinceCheck)}."
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
+            uiState.places.filter { it.savedBssids.isNotEmpty() }.forEach { place ->
+                Text(
+                    "${place.label.ifBlank { place.id }}: ${describeState(uiState.placeStates[place.id])}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            OutlinedButton(onClick = { verdict = describeDetectionNow(context, uiState.places) }) {
+                Text("Test detection here")
+            }
+            verdict?.let {
+                Spacer(Modifier.height(4.dp))
+                Text(it, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+private fun describeAge(millis: Long): String {
+    val minutes = millis / 60_000
+    return when {
+        minutes < 2 -> "just now"
+        minutes < 60 -> "$minutes minutes ago"
+        minutes < 60 * 24 -> "${minutes / 60} hours ago"
+        else -> "${minutes / (60 * 24)} days ago"
+    }
+}
+
+private fun describeState(state: PresenceState?): String = when (state) {
+    PresenceState.HERE -> "here, already alerted for this visit"
+    PresenceState.APPROACHING -> "here, waiting before alerting"
+    PresenceState.BLIND -> "cannot tell, nothing visible to check against"
+    PresenceState.AWAY, null -> "away"
+}
+
+// Answers what the app would decide right now and, more usefully, why it would
+// not alert. This is what turns a silent failure into a five second diagnosis.
+private fun describeDetectionNow(context: Context, places: List<Place>): String {
+    if (!canScanWifi(context)) {
+        return "Cannot scan. Switch WiFi on, or turn on WiFi scanning in location settings."
+    }
+    requestWifiScan(context)
+    val visible = visibleAccessPoints(context)
+    if (visible.isEmpty()) {
+        return "No networks heard at all. Location is probably switched off for the phone."
+    }
+    val saved = places.filter { it.savedBssids.isNotEmpty() }
+    if (saved.isEmpty()) return "Heard ${visible.size} networks, but no place has any saved yet."
+
+    return saved.joinToString("\n") { place ->
+        val heard = place.savedBssids.mapNotNull { visible[it] }
+        val name = place.label.ifBlank { place.id }
+        when {
+            heard.isEmpty() -> "$name: none of its ${place.savedBssids.size} networks heard."
+            heard.size < place.requiredMatches ->
+                "$name: heard ${heard.size} of its networks, needs ${place.requiredMatches}."
+            heard.max() < place.minRssi ->
+                "$name: heard at ${heard.max()} dBm, too weak for the closeness setting " +
+                    "(${place.minRssi} dBm). This is what walking past outside looks like."
+            !place.alertsEnabled -> "$name: here, but its alerts are switched off."
+            else -> "$name: here, at ${heard.max()} dBm. It would alert after the wait."
         }
     }
 }

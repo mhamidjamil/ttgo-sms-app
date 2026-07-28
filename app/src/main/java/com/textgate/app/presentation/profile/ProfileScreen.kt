@@ -24,6 +24,7 @@ import com.textgate.app.core.theme.TextGateTheme
 import com.textgate.app.core.theme.WarningAmber
 import com.textgate.app.core.theme.WarningAmberBorder
 import com.textgate.app.domain.model.User
+import com.textgate.app.services.ArrivalService
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 
@@ -46,7 +47,10 @@ fun ProfileScreen(
     }
     ProfileContent(
         uiState = uiState,
-        onSignOut = { scope.launch { viewModel.signOut(); onSignOut() } },
+        onSignOut = {
+            ArrivalService.stop(context)
+            scope.launch { viewModel.signOut(); onSignOut() }
+        },
         onVerifyPhone = onVerifyPhone,
         onNavigateToSettings = onNavigateToSettings,
         onNavigateToWhatsApp = onNavigateToWhatsApp,

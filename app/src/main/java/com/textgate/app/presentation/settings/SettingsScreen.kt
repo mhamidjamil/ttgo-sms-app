@@ -55,6 +55,20 @@ fun SettingsScreen(
     var editingPlaceId by remember { mutableStateOf<String?>(null) }
     var isMonitoring by remember { mutableStateOf(ArrivalService.isRunning) }
 
+    // Persist monitoring state so it survives process death / system service kill.
+    // On composition, restore from prefs — if the user intended monitoring ON but
+    // the service was killed (e.g. battery optimization), restart it silently.
+    LaunchedEffect(Unit) {
+        if (!isMonitoring && viewModel.getMonitoringEnabled()) {
+            val missing = requiredMonitoringPermissions()
+                .filterNot { permission -> hasPermission(context, permission) }
+            if (missing.isEmpty()) {
+                isMonitoring = true
+                ArrivalService.start(context)
+            }
+        }
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -71,12 +85,10 @@ fun SettingsScreen(
             .all { permission -> grants[permission] == true || hasPermission(context, permission) }
         if (granted) {
             isMonitoring = true
+            scope.launch { viewModel.setMonitoringEnabled(true) }
             ArrivalService.start(context)
         } else {
             isMonitoring = false
-            scope.launch {
-                snackbarHostState.showSnackbar("Location and notification permissions are required")
-            }
         }
     }
 
@@ -142,12 +154,14 @@ fun SettingsScreen(
                     .filterNot { permission -> hasPermission(context, permission) }
                 if (missing.isEmpty()) {
                     isMonitoring = true
+                    scope.launch { viewModel.setMonitoringEnabled(true) }
                     ArrivalService.start(context)
                 } else {
                     monitoringPermissionLauncher.launch(missing.toTypedArray())
                 }
             } else {
                 isMonitoring = false
+                scope.launch { viewModel.setMonitoringEnabled(false) }
                 ArrivalService.stop(context)
             }
         },

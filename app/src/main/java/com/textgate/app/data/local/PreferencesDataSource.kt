@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -15,6 +16,7 @@ class PreferencesDataSource(private val context: Context) {
 
     companion object {
         private val KEY_CACHED_UID = stringPreferencesKey("cached_uid")
+        private val KEY_MONITORING_ENABLED = booleanPreferencesKey("monitoring_enabled")
         // WhatsApp gateway link — local cache of the per-user key/session. The
         // source of truth is the Firestore user doc (owner-only via rules), so
         // the link survives reinstall/sign-out and other devices.
@@ -73,6 +75,13 @@ class PreferencesDataSource(private val context: Context) {
             it.remove(KEY_WA_API_KEY)
             it.remove(KEY_WA_SESSION_ID)
         }
+    }
+
+    suspend fun getMonitoringEnabled(): Boolean =
+        context.dataStore.data.first()[KEY_MONITORING_ENABLED] ?: false
+
+    suspend fun setMonitoringEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[KEY_MONITORING_ENABLED] = enabled }
     }
 
     suspend fun clearAll() {

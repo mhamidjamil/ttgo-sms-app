@@ -2,6 +2,7 @@ package com.textgate.app.presentation.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.textgate.app.data.local.PreferencesDataSource
 import com.textgate.app.domain.model.Place
 import com.textgate.app.domain.repository.UserRepository
 import com.textgate.app.domain.repository.WhatsAppRepository
@@ -27,6 +28,7 @@ class SettingsViewModel(
     private val userRepo: UserRepository,
     private val savePlaces: SavePlacesUseCase,
     private val waRepo: WhatsAppRepository,
+    private val prefs: PreferencesDataSource,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -98,4 +100,10 @@ class SettingsViewModel(
     }
 
     fun clearSuccess() { _uiState.value = _uiState.value.copy(saveSuccess = false) }
+
+    suspend fun getMonitoringEnabled(): Boolean = prefs.getMonitoringEnabled()
+
+    suspend fun setMonitoringEnabled(enabled: Boolean) {
+        prefs.setMonitoringEnabled(enabled)
+    }
 }

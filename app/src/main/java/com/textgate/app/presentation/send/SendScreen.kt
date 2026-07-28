@@ -12,9 +12,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.textgate.app.BuildConfig
 import com.textgate.app.core.theme.TextGateTheme
 import com.textgate.app.core.theme.WarningAmber
 import com.textgate.app.core.theme.WarningAmberBorder
@@ -190,6 +192,15 @@ private fun SendContent(
                 Spacer(Modifier.height(24.dp))
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
             }
+
+            Spacer(Modifier.height(32.dp))
+            Text(
+                "v${BuildConfig.VERSION_NAME}",
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
+            )
         }
     }
 }

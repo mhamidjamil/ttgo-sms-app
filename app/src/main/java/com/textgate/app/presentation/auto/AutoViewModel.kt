@@ -2,6 +2,7 @@ package com.textgate.app.presentation.auto
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.textgate.app.core.utils.DateUtils
 import com.textgate.app.core.utils.Quota
 import com.textgate.app.domain.model.AutoHistoryEntry
 import com.textgate.app.domain.model.SmsStatus
@@ -17,9 +18,30 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import java.util.Date
+
+/**
+ * One arrival, with every recipient that was messaged about it. Arriving at a
+ * place with four contacts writes four rows, and showing four near identical
+ * cards buried the one that failed.
+ */
+data class AutoArrivalGroup(
+    val key: String,
+    val location: String,
+    val locationLabel: String,
+    val sentAt: Date?,
+    val routineTriggered: Boolean,
+    val entries: List<AutoHistoryEntry>,
+) {
+    // Only the first line was written for this place; the sender signature and
+    // the opt-out line are appended by the app. The place message field is
+    // single-line, so this split is exact.
+    val headline: String get() = entries.first().message.lineSequence().first().trim()
+    val fullMessage: String get() = entries.first().message
+}
 
 data class AutoUiState(
-    val entries: List<AutoHistoryEntry> = emptyList(),
+    val groups: List<AutoArrivalGroup> = emptyList(),
     val isLoading: Boolean = true,
     val error: String? = null,
     val busyIds: Set<String> = emptySet(),
@@ -44,11 +66,29 @@ class AutoViewModel(
             val uid = userRepo.currentFirebaseUser()?.uid ?: return@launch
             getAutoHistory(uid)
                 .onEach { entries ->
-                    _uiState.value = _uiState.value.copy(entries = entries, isLoading = false)
+                    _uiState.value = _uiState.value.copy(groups = group(entries), isLoading = false)
                 }
                 .launchIn(this)
         }
     }
+
+    // A place plus a calendar day identifies exactly one arrival: recording an
+    // arrival refuses to fire twice for the same place on the same day, so every
+    // row sharing that pair is a recipient of the same message. The incoming
+    // list is already newest first, so the groups come out in that order too.
+    private fun group(entries: List<AutoHistoryEntry>): List<AutoArrivalGroup> =
+        entries.groupBy { it.location to DateUtils.dayString(it.sentAt) }
+            .map { (key, rows) ->
+                val (location, day) = key
+                AutoArrivalGroup(
+                    key = "$location|$day",
+                    location = location,
+                    locationLabel = rows.firstNotNullOfOrNull { it.locationLabel.ifBlank { null } }.orEmpty(),
+                    sentAt = rows.first().sentAt,
+                    routineTriggered = rows.any { it.routineTriggered },
+                    entries = rows,
+                )
+            }
 
     // Same pattern as the History page: while the screen is visible, copy the
     // gateway job status into stale pending/in-progress entries. Without this
@@ -64,6 +104,22 @@ class AutoViewModel(
     }
 
     fun stopPolling() { pollJob?.cancel(); pollJob = null }
+
+    // The card-level reload covers every recipient of that arrival at once, so
+    // the user does not have to open the recipient list to unstick a group.
+    fun refreshGroup(group: AutoArrivalGroup) {
+        val uid = userRepo.currentFirebaseUser()?.uid ?: return
+        val targets = group.entries.filter { it.channel == "sms" }
+        viewModelScope.launch {
+            targets.forEach { markBusy(it.id, true) }
+            targets.forEach { entry ->
+                refreshStatus(uid, entry).onFailure {
+                    _uiState.value = _uiState.value.copy(error = it.message ?: "Could not refresh status")
+                }
+            }
+            targets.forEach { markBusy(it.id, false) }
+        }
+    }
 
     // Manual reload of one entry, matching the refresh button on manual history.
     fun refreshEntry(entry: AutoHistoryEntry) {
@@ -97,7 +153,7 @@ class AutoViewModel(
 
     private suspend fun refreshPendingEntries() {
         val uid = userRepo.currentFirebaseUser()?.uid ?: return
-        _uiState.value.entries
+        _uiState.value.groups.flatMap { it.entries }
             .filter { it.channel == "sms" }
             .filter { it.status == SmsStatus.PENDING || it.status == SmsStatus.IN_PROGRESS }
             .forEach { refreshStatus(uid, it) }

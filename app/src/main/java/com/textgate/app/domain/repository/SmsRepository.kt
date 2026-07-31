@@ -17,6 +17,7 @@ interface SmsRepository {
     suspend fun logAutoWhatsAppArrival(
         uid: String,
         phoneNumber: String,
+        recipientName: String,
         message: String,
         location: String,
         locationLabel: String,
@@ -32,6 +33,7 @@ interface SmsRepository {
     suspend fun enqueueAutoArrivalSms(
         uid: String,
         phoneNumber: String,
+        recipientName: String,
         message: String,
         location: String,
         locationLabel: String,

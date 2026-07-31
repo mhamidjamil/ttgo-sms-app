@@ -17,10 +17,10 @@ class RecordArrivalUseCase(
     private val linkRepo: LinkRepository,
 ) {
     companion object {
-        // Recipients can turn these alerts off themselves, so every message has
-        // to say so. Kept short on purpose: a 90-char place message plus the
-        // signature plus this still fits one 160-char GSM-7 segment.
-        const val MANAGE_FOOTER = "\n- Stop alerts: TextGate app"
+        // Recipients can turn these alerts off themselves, but only from their own
+        // account, so the line has to say where to go and not just that it is
+        // possible. Plain ASCII only, or the whole SMS switches to UCS-2.
+        const val MANAGE_FOOTER = "\n- To stop alerts, sign up on TextGate"
     }
 
     suspend operator fun invoke(uid: String, placeId: String, routineTriggered: Boolean): Result<Unit> = runCatching {
@@ -84,6 +84,7 @@ class RecordArrivalUseCase(
                 smsRepo.logAutoWhatsAppArrival(
                     uid = uid,
                     phoneNumber = contact.number,
+                    recipientName = contact.name,
                     message = waText,
                     location = placeId,
                     locationLabel = label,
@@ -93,6 +94,7 @@ class RecordArrivalUseCase(
                 smsRepo.enqueueAutoArrivalSms(
                     uid = uid,
                     phoneNumber = contact.number,
+                    recipientName = contact.name,
                     message = message,
                     location = placeId,
                     locationLabel = label,

@@ -107,16 +107,26 @@ Per-user history of sent messages. Doc ID is Firestore auto-ID.
 
 ### `ttgo_users/{uid}/auto_history/{autoId}` (V2)
 
-Arrival-triggered jobs.
+Arrival-triggered jobs. One document per recipient, so arriving at a place with
+four contacts writes four rows.
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `location` | string | Place id (`"home"`, `"office"`, or a custom `place_*` id) |
-| `sent_at` | timestamp | When the arrival SMS was enqueued |
+| `location_label` | string | Human place name at the time the alert went out |
+| `channel` | string | `"sms"` or `"whatsapp"` |
+| `enque_by` | string | `"app:{uid}:arrival"` — cross-checked during polling to detect job overwrites |
+| `sent_at` | timestamp | When the arrival alert was enqueued |
 | `status` | string | Same status values as history |
-| `job_phone_key` | string | Phone number of the guardian |
-| `message` | string | `"{name} arrived at {label} N minutes ago"` |
+| `job_phone_key` | string | Recipient phone number; also the `sms_jobs` document id |
+| `recipient_name` | string | Contact name at send time, `""` for the default guardian and for rows written before this field existed |
+| `message` | string | Full outgoing text, including the appended sender signature and opt-out line |
 | `routine_triggered` | bool | `true` if routine learning reduced the wait |
+
+**Grouping in the app:** one alert per place per day is enforced when the arrival
+is recorded, so `location` plus the calendar day of `sent_at` identifies a single
+arrival. The history page groups the rows on that pair and shows one card per
+arrival with a status dot per recipient.
 
 ---
 

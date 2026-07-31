@@ -10,6 +10,8 @@ object DateUtils {
 
     fun todayString(): String = dateFmt.format(Date())
 
+    fun dayString(date: Date?): String = date?.let { dateFmt.format(it) } ?: ""
+
     fun currentTimeHHmm(): String = timeFmt.format(Date())
 
     // Human-facing 12-hour clock, e.g. "7:42 PM" — used in arrival messages.

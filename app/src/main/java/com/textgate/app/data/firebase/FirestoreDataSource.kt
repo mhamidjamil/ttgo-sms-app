@@ -273,6 +273,7 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
     suspend fun enqueueAutoArrivalSms(
         uid: String,
         phoneNumber: String,
+        recipientName: String,
         message: String,
         location: String,
         locationLabel: String,
@@ -295,6 +296,7 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
             "sent_at" to now,
             "status" to "pending",
             "job_phone_key" to phoneNumber,
+            "recipient_name" to recipientName,
             "message" to message,
             "routine_triggered" to routineTriggered,
         )
@@ -314,6 +316,7 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
     suspend fun logAutoWhatsAppArrival(
         uid: String,
         phoneNumber: String,
+        recipientName: String,
         message: String,
         location: String,
         locationLabel: String,
@@ -327,6 +330,7 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
             "sent_at" to Timestamp.now(),
             "status" to "sent",
             "job_phone_key" to phoneNumber,
+            "recipient_name" to recipientName,
             "message" to message,
             "routine_triggered" to routineTriggered,
         )

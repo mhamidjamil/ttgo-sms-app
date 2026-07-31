@@ -29,8 +29,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.textgate.app.core.theme.StatusFailed
+import com.textgate.app.core.theme.StatusSent
 import com.textgate.app.core.theme.TextGateTheme
 import com.textgate.app.core.utils.PhoneNormalizer
+import com.textgate.app.core.utils.currentBssid
 import com.textgate.app.domain.model.Place
 import com.textgate.app.domain.model.PlaceContact
 import com.textgate.app.services.ArrivalService
@@ -229,6 +232,9 @@ private fun SettingsContent(
                 .padding(horizontal = 20.dp, vertical = 8.dp)
                 .verticalScroll(rememberScrollState()),
         ) {
+            CurrentPlaceCheck(uiState.places)
+            Spacer(Modifier.height(20.dp))
+
             SectionTitle("Default Guardian")
             Text(
                 "Always notified, on top of any contacts a place has of its own",
@@ -317,6 +323,80 @@ private fun SettingsContent(
                 }
             }
             Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+/**
+ * TEMPORARY DEBUG SECTION - remove once arrival detection is trusted.
+ *
+ * It answers "does the app think I am at the hostel right now?" without waiting
+ * for the stability timer or an SMS. The match rule below is deliberately a copy
+ * of the one the arrival service uses, so a mismatch shown here is the real
+ * reason no alert went out. Delete this composable and its single call site
+ * together.
+ */
+@Composable
+private fun CurrentPlaceCheck(places: List<Place>) {
+    val context = LocalContext.current
+    var checked by remember { mutableStateOf(false) }
+    var bssid by remember { mutableStateOf<String?>(null) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Text(
+                "Where am I? (debug)",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                "Checks the WiFi network this phone is on right now against your saved places",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            )
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = {
+                bssid = currentBssid(context)
+                checked = true
+            }) {
+                Icon(Icons.Default.Wifi, contentDescription = null, Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Check current place")
+            }
+
+            if (checked) {
+                val current = bssid
+                val match = current?.let { value ->
+                    places.firstOrNull {
+                        it.bssid.isNotBlank() && it.bssid.equals(value, ignoreCase = true)
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    when {
+                        current == null -> "Not on WiFi"
+                        match != null -> "You are at ${match.label.ifBlank { match.id }}"
+                        else -> "Unknown place"
+                    },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (match != null) StatusSent else StatusFailed,
+                )
+                Text(
+                    when {
+                        current == null ->
+                            "Either WiFi is off or location permission is denied. Arrival alerts " +
+                                "cannot fire in this state."
+                        match != null -> "Network $current"
+                        else -> "Network $current is not saved on any place below"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                )
+            }
         }
     }
 }

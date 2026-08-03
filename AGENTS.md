@@ -9,7 +9,7 @@
 - Outgoing SMS writes a Firestore batch in `FirestoreDataSource.enqueueJob`: `Paths.SMS_JOBS/{phone}` for the device and `Paths.USERS/{uid}/history/{autoId}` for the app UI.
 - `sms_jobs` doc IDs are normalized phone numbers, so there is one active job per phone number. Preserve `enque_by = "app:{uid}"` and `job_phone_key` because `RefreshJobStatusUseCase` uses them to avoid updating history from another user's overwritten job.
 - OTP SMS uses the same TTGO queue but no history/quota: see `SendPhoneOtpUseCase` and `FirestoreDataSource.enqueueOtpSms`, with `enque_by = "app:{uid}:otp"`.
-- V2 arrival notifications run in `services/ArrivalService`: foreground service watches WiFi BSSID, applies `RoutineAnalyzer`, calls `RecordArrivalUseCase`, then writes `auto_history`.
+- V2 arrival notifications run in `services/ArrivalService`: a foreground service sweeps WiFi scan results every two minutes and treats a saved place as reached when its BSSID is IN RANGE (connected or not), applies `RoutineAnalyzer`, calls `RecordArrivalUseCase`, then writes `auto_history`.
 
 ## Configuration
 - Firestore paths and quotas come from `local.properties` via `app/build.gradle.kts` `buildConfigField`s, then through `core/utils/Constants.kt`. Do not hardcode paths in business logic.
@@ -26,7 +26,7 @@
 ## Versioning
 - App version is in `app/build.gradle.kts`: `versionCode` (integer, bumped for each release) and `versionName` (semver string, e.g. `1.0.1`).
 - **Whenever you make any solid changes or bug fixes, always bump `versionCode` by 1 and update `versionName` appropriately** (patch bump for fixes, minor for features). The version is displayed at the bottom of the Send screen via `BuildConfig.VERSION_NAME`.
-- Current version: `1.1.0` (versionCode=3).
+- Current version: `1.2.0` (versionCode=4).
 
 ## Developer Workflow
 - This repo may not include `gradle/wrapper/gradle-wrapper.jar`; Android Studio can generate/download it, or run `gradle wrapper --gradle-version 8.4` if local Gradle is installed.

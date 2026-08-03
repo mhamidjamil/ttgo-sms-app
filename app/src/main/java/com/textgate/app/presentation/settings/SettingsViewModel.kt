@@ -4,10 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.textgate.app.data.local.PreferencesDataSource
 import com.textgate.app.domain.model.Place
+import com.textgate.app.domain.model.PlaceContact
 import com.textgate.app.domain.model.SettingsChange
 import com.textgate.app.domain.repository.UserRepository
 import com.textgate.app.domain.repository.WhatsAppRepository
+import com.textgate.app.domain.usecase.location.GetPlaceRecipientsUseCase
 import com.textgate.app.domain.usecase.location.SavePlacesUseCase
+import com.textgate.app.domain.usecase.location.SendLocationNowUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,6 +26,13 @@ data class SettingsUiState(
     val saveSuccess: Boolean = false,
     // WhatsApp gateway set up → the place editor offers a WhatsApp message field.
     val waConfigured: Boolean = false,
+
+    // "Send my location now" prompt — non-null place id means it is open.
+    val locationPlaceId: String? = null,
+    val locationRecipients: List<PlaceContact> = emptyList(),
+    val isLoadingRecipients: Boolean = false,
+    val isSendingLocation: Boolean = false,
+    val locationResult: String? = null,
 )
 
 class SettingsViewModel(
@@ -30,6 +40,8 @@ class SettingsViewModel(
     private val savePlaces: SavePlacesUseCase,
     private val waRepo: WhatsAppRepository,
     private val prefs: PreferencesDataSource,
+    private val getPlaceRecipients: GetPlaceRecipientsUseCase,
+    private val sendLocationNow: SendLocationNowUseCase,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -124,6 +136,58 @@ class SettingsViewModel(
             place.bssid.isNotBlank() || place.contacts.isNotEmpty()
 
     fun clearSuccess() { _uiState.value = _uiState.value.copy(saveSuccess = false) }
+
+    // The prompt opens straight away and fills in as the recipients load, so the
+    // user is not left looking at a frozen button while links are read.
+    fun openLocationPrompt(placeId: String) {
+        val uid = userRepo.currentFirebaseUser()?.uid ?: return
+        _uiState.value = _uiState.value.copy(
+            locationPlaceId = placeId,
+            locationRecipients = emptyList(),
+            isLoadingRecipients = true,
+        )
+        viewModelScope.launch {
+            val recipients = getPlaceRecipients(uid, placeId)
+            _uiState.value = _uiState.value.copy(
+                locationRecipients = recipients,
+                isLoadingRecipients = false,
+            )
+        }
+    }
+
+    fun dismissLocationPrompt() {
+        _uiState.value = _uiState.value.copy(locationPlaceId = null, locationRecipients = emptyList())
+    }
+
+    fun sendCurrentLocation(placeId: String, recipients: List<PlaceContact>) {
+        val uid = userRepo.currentFirebaseUser()?.uid ?: return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isSendingLocation = true)
+            sendLocationNow(uid, placeId, recipients)
+                .onSuccess { queued ->
+                    _uiState.value = _uiState.value.copy(
+                        isSendingLocation = false,
+                        locationPlaceId = null,
+                        locationRecipients = emptyList(),
+                        locationResult = if (queued < recipients.size) {
+                            "Queued $queued of ${recipients.size} — daily quota reached"
+                        } else if (queued == 1) {
+                            "Message queued for 1 recipient"
+                        } else {
+                            "Messages queued for $queued recipients"
+                        },
+                    )
+                }
+                .onFailure {
+                    _uiState.value = _uiState.value.copy(
+                        isSendingLocation = false,
+                        locationResult = it.message ?: "Could not send your location",
+                    )
+                }
+        }
+    }
+
+    fun clearLocationResult() { _uiState.value = _uiState.value.copy(locationResult = null) }
 
     suspend fun getMonitoringEnabled(): Boolean = prefs.getMonitoringEnabled()
 

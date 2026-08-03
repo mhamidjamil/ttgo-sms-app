@@ -1,15 +1,15 @@
 # V2 Arrival Feature
 
-Automatic guardian SMS notifications triggered by WiFi BSSID detection.
+Automatic guardian SMS notifications triggered by a saved WiFi network being in range.
 
 ---
 
 ## How It Works
 
 1. User sets up home and office WiFi (BSSID + label) and a guardian phone number in **Profile → Arrival Settings**
-2. `ArrivalService` (foreground service) runs in the background monitoring WiFi connections
-3. When the phone joins a known network, a stability countdown starts
-4. If the phone stays on that network for the full stability period → a SMS is sent to the guardian via the TTGO gateway
+2. `ArrivalService` (foreground service) sweeps for nearby WiFi networks every two minutes
+3. When a saved network is heard, connected or not, a stability countdown starts
+4. If that network stays in range for the full stability period → a SMS is sent to the guardian via the TTGO gateway
 5. One notification per location per day (cooldown guard)
 6. Past arrival history is shown in the **Auto** tab
 
@@ -61,8 +61,8 @@ The `routine_triggered` flag in `auto_history` records whether the shortened wai
 
 | Permission | Why |
 |-----------|-----|
-| `ACCESS_FINE_LOCATION` | Required to read WiFi BSSID (Android 8.1+) |
-| `ACCESS_BACKGROUND_LOCATION` | Required on Android 10+ for background BSSID reads |
+| `ACCESS_FINE_LOCATION` | Required to read WiFi scan results and BSSIDs (Android 8.1+) |
+| `ACCESS_BACKGROUND_LOCATION` | Required on Android 10+ to keep scanning in the background |
 | `FOREGROUND_SERVICE` | ArrivalService runs as foreground service |
 | `FOREGROUND_SERVICE_LOCATION` | Required for foreground services using location on Android 14+ |
 | `POST_NOTIFICATIONS` | Persistent foreground notification (Android 13+) |
@@ -74,17 +74,20 @@ The Settings screen requests `ACCESS_FINE_LOCATION` before showing the WiFi scan
 ## ArrivalService Architecture
 
 ```
-ConnectivityManager.NetworkCallback
+sweep loop (every 120s, plus immediately on NetworkCallback.onAvailable)
     │
-    ├─ onAvailable → checkAndStartTimer()
-    │       └─ reads current BSSID (WifiManager.connectionInfo)
-    │           └─ matches home/office BSSID?
-    │               └─ RoutineAnalyzer.effectiveWait()
-    │                   └─ coroutine delay(waitMinutes * 60_000)
-    │                       └─ still on BSSID? → RecordArrivalUseCase
-    │
-    └─ onLost → cancel all pending timers
+    ├─ WifiManager.startScan() + scanResults + connected BSSID
+    │       └─ any saved place BSSID in that set?
+    │           ├─ yes, first time  → remember when it came into range
+    │           ├─ yes, still short → RoutineAnalyzer.effectiveWait() not reached yet
+    │           ├─ yes, long enough → RecordArrivalUseCase
+    │           └─ no, twice in a row → drop the countdown
 ```
+
+Detection is in-range, not connected: someone on mobile data all day still walks
+past their own router, and the old connection-only rule never fired for them. The
+countdown survives a single missed sweep because scan results drop an access
+point at random even when the phone has not moved.
 
 The service is started/stopped by the toggle in SettingsScreen. `ArrivalService.isRunning` is a static flag set in `onCreate`/`onDestroy` — used to reflect current state when the Settings screen opens.
 
@@ -104,4 +107,19 @@ The service is started/stopped by the toggle in SettingsScreen. `ArrivalService.
 
 The app stores **BSSID** (hardware MAC address), not SSID (network name). This prevents spoofing — anyone can set their hotspot to "HomeWiFi" but BSSID is tied to the physical access point.
 
-`WifiManager.connectionInfo.bssid` returns the BSSID of the currently-connected AP. This API is deprecated on Android 12+ but remains functional. The `02:00:00:00:00:00` value (returned when location is off or permission denied) is explicitly filtered out.
+`WifiManager.scanResults` lists every access point in range; the connected BSSID from `WifiManager.connectionInfo` is folded into the same set. Both APIs are deprecated on Android 12+ but remain functional. The `02:00:00:00:00:00` value (returned when location is off or permission denied) is explicitly filtered out.
+
+Scanning needs either WiFi switched on or the system-wide "WiFi scanning always available" toggle, plus device location on. The "Where am I?" card on the Arrival tab reports which of those is missing.
+
+---
+
+## Sending your location by hand
+
+The "Where am I?" card also offers **Send message** once a saved place is in
+range. It prompts with everyone that place would alert (guardian, place contacts,
+linked accounts with automatic updates), all pre-checked and individually
+removable, then queues one SMS each.
+
+That message is a manual send: it lands in **Manual** history, it costs daily
+SMS quota, and its signature ends in `(via manual trigger)`. An automated arrival
+alert ends in `(via automation)` instead, so the receiver can tell the two apart.

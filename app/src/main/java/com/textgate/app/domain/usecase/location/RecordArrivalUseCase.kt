@@ -21,6 +21,10 @@ class RecordArrivalUseCase(
         // account, so the line has to say where to go and not just that it is
         // possible. Plain ASCII only, or the whole SMS switches to UCS-2.
         const val MANAGE_FOOTER = "\n- To stop alerts, sign up on TextGate"
+
+        // Marks the sender signature as machine-sent. Its counterpart on a
+        // hand-pressed location share is SendLocationNowUseCase.MANUAL_SUFFIX.
+        const val AUTOMATION_SUFFIX = " (via automation)"
     }
 
     suspend operator fun invoke(uid: String, placeId: String, routineTriggered: Boolean): Result<Unit> = runCatching {
@@ -62,8 +66,13 @@ class RecordArrivalUseCase(
         // Same accountability signature as a manual send: the SMS gateway number
         // is shared between users, so an arrival alert has to name the verified
         // sender it came from. Skipped only when there is no verified number yet.
-        val signature =
-            if (user.phoneNumber.isBlank()) "" else EnqueueSmsUseCase.signature(user.phoneNumber)
+        // The trailing marker separates an alert nobody pressed send on from the
+        // location the user shared by hand.
+        val signature = if (user.phoneNumber.isBlank()) {
+            ""
+        } else {
+            EnqueueSmsUseCase.signature(user.phoneNumber) + AUTOMATION_SUFFIX
+        }
         val suffix = " at $arrivalTime" + signature + MANAGE_FOOTER
         val message = place.message.ifBlank { defaultLine } + suffix
         val waText = place.waMessage.ifBlank { place.message }.ifBlank { defaultLine } + suffix

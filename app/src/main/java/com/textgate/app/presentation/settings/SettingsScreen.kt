@@ -14,6 +14,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -111,6 +112,25 @@ fun SettingsScreen(
         }
     }
 
+    LaunchedEffect(uiState.locationResult) {
+        uiState.locationResult?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearLocationResult()
+        }
+    }
+
+    uiState.locationPlaceId?.let { placeId ->
+        val place = uiState.places.firstOrNull { it.id == placeId }
+        LocationRecipientsDialog(
+            placeLabel = place?.label?.ifBlank { placeId } ?: placeId,
+            recipients = uiState.locationRecipients,
+            isLoading = uiState.isLoadingRecipients,
+            isSending = uiState.isSendingLocation,
+            onSend = { selected -> viewModel.sendCurrentLocation(placeId, selected) },
+            onDismiss = viewModel::dismissLocationPrompt,
+        )
+    }
+
     if (showScanDialog) {
         WifiPickerDialog(
             results = scanResults,
@@ -178,6 +198,7 @@ fun SettingsScreen(
             }
         },
         onSave = { guardian -> viewModel.save(guardian) },
+        onSendLocation = viewModel::openLocationPrompt,
         onBack = onBack,
         onViewChangeHistory = onViewChangeHistory,
     )
@@ -197,6 +218,7 @@ private fun SettingsContent(
     isMonitoring: Boolean,
     onMonitoringToggle: (Boolean) -> Unit,
     onSave: (String) -> Unit,
+    onSendLocation: (String) -> Unit = {},
     onBack: (() -> Unit)? = null,
     onViewChangeHistory: () -> Unit = {},
 ) {
@@ -235,7 +257,7 @@ private fun SettingsContent(
                 .padding(horizontal = 20.dp, vertical = 8.dp)
                 .verticalScroll(rememberScrollState()),
         ) {
-            CurrentPlaceCheck(uiState.places)
+            CurrentPlaceCheck(uiState.places, onSendLocation)
             Spacer(Modifier.height(20.dp))
 
             SectionTitle("Default Guardian")
@@ -337,7 +359,7 @@ private fun SettingsContent(
  * range, connected or not.
  */
 @Composable
-private fun CurrentPlaceCheck(places: List<Place>) {
+private fun CurrentPlaceCheck(places: List<Place>, onSendLocation: (String) -> Unit) {
     val context = LocalContext.current
     var checked by remember { mutableStateOf(false) }
     var inRange by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -360,19 +382,40 @@ private fun CurrentPlaceCheck(places: List<Place>) {
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
             Spacer(Modifier.height(8.dp))
-            Button(onClick = {
-                requestWifiScan(context)
-                inRange = visibleBssids(context)
-                scanningAvailable = canScanWifi(context)
-                checked = true
-            }) {
-                Icon(Icons.Default.Wifi, contentDescription = null, Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Check current place")
+            val match = if (checked) placeInRange(places, inRange) else null
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Button(
+                    onClick = {
+                        requestWifiScan(context)
+                        inRange = visibleBssids(context)
+                        scanningAvailable = canScanWifi(context)
+                        checked = true
+                    },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Icon(Icons.Default.Wifi, contentDescription = null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Check current place")
+                }
+                // Only worth offering once we know where the phone is — the
+                // message names the place.
+                if (match != null) {
+                    Button(
+                        onClick = { onSendLocation(match.id) },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Send message")
+                    }
+                }
             }
 
             if (checked) {
-                val match = placeInRange(places, inRange)
                 Spacer(Modifier.height(10.dp))
                 Text(
                     when {
@@ -401,6 +444,85 @@ private fun CurrentPlaceCheck(places: List<Place>) {
             }
         }
     }
+}
+
+/**
+ * Who to tell that the user is here. Everyone this place would alert starts
+ * checked, because that is the usual answer, and anyone can be dropped for this
+ * one message without touching the place's saved contacts.
+ */
+@Composable
+private fun LocationRecipientsDialog(
+    placeLabel: String,
+    recipients: List<PlaceContact>,
+    isLoading: Boolean,
+    isSending: Boolean,
+    onSend: (List<PlaceContact>) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val excluded = remember { mutableStateListOf<String>() }
+    val selected = recipients.filterNot { it.number in excluded }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Send your location") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    "Tells them you are at $placeLabel right now. This is a manual message, so " +
+                        "it uses your daily SMS quota and shows up under Manual history.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+                Spacer(Modifier.height(8.dp))
+                when {
+                    isLoading -> CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                    recipients.isEmpty() -> Text(
+                        "This place has nobody to message yet. Add a guardian number or contacts first.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    else -> recipients.forEach { contact ->
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = contact.number !in excluded,
+                                onCheckedChange = { keep ->
+                                    if (keep) excluded.remove(contact.number)
+                                    else excluded.add(contact.number)
+                                },
+                            )
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    contact.name.ifBlank { contact.number },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                                if (contact.name.isNotBlank()) {
+                                    Text(
+                                        contact.number,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSend(selected) },
+                enabled = selected.isNotEmpty() && !isSending,
+            ) {
+                if (isSending) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                else Text("Send to ${selected.size}")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable

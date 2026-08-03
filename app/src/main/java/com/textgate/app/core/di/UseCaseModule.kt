@@ -12,8 +12,10 @@ import com.textgate.app.domain.usecase.auto.RefreshAutoJobStatusUseCase
 import com.textgate.app.domain.usecase.auto.RetryAutoArrivalUseCase
 import com.textgate.app.domain.usecase.links.AnswerLocationRequestsUseCase
 import com.textgate.app.domain.usecase.links.InviteLinkUseCase
+import com.textgate.app.domain.usecase.location.GetPlaceRecipientsUseCase
 import com.textgate.app.domain.usecase.location.RecordArrivalUseCase
 import com.textgate.app.domain.usecase.location.SavePlacesUseCase
+import com.textgate.app.domain.usecase.location.SendLocationNowUseCase
 import com.textgate.app.domain.usecase.quota.CheckAndResetQuotaUseCase
 import com.textgate.app.domain.usecase.quota.DecrementQuotaUseCase
 import com.textgate.app.domain.usecase.quota.GetEffectiveQuotaUseCase
@@ -40,6 +42,8 @@ val useCaseModule = module {
     // V2
     factory { SavePlacesUseCase(get()) }
     factory { RecordArrivalUseCase(get(), get(), get(), get(), get()) }
+    factory { GetPlaceRecipientsUseCase(get(), get()) }
+    factory { SendLocationNowUseCase(get(), get(), get(), get()) }
     factory { GetAutoHistoryUseCase(get()) }
     factory { RefreshAutoJobStatusUseCase(get()) }
     factory { RetryAutoArrivalUseCase(get()) }

@@ -22,7 +22,7 @@ val viewModelModule = module {
     viewModel { PhoneVerifyViewModel(get(), get(), get(), get(), get()) }
     // V2
     viewModel { AutoViewModel(get(), get(), get(), get()) }
-    viewModel { SettingsViewModel(get(), get(), get(), get()) }
+    viewModel { SettingsViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { SettingsHistoryViewModel(get()) }
     viewModel { WhatsAppViewModel(get(), get()) }
     // Sharing: who may see my location, and who is alerting me

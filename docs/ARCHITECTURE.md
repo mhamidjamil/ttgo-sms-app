@@ -125,20 +125,22 @@ VerifyPhoneOtpUseCase(uid, code)
 ```
 ArrivalService (foreground service, persistent notification)
       │
-NetworkCallback.onAvailable(network)
+sweep every 120s (and on NetworkCallback.onAvailable)
       │
-   read BSSID (requires ACCESS_BACKGROUND_LOCATION on API 29+)
+   read WiFi scan results + connected BSSID
+   (requires ACCESS_BACKGROUND_LOCATION on API 29+)
       │
-   match against home_bssid / office_bssid in user doc
+   match any saved place BSSID against what is IN RANGE
+   (being connected to it is not required)
       │
    RoutineAnalyzer.effectiveWait(location)
    → if ≥5 arrival times: compute μ ± σ of HH:mm
    → if current time within μ±σ: wait = max(MIN, full/2)
    → else: wait = full stability_minutes
       │
-   CountDownTimer(wait minutes)
+   in range continuously for that wait?
       │
-   on finish: check BSSID still matches + last_*_arrival_date ≠ today
+   on reaching it: last_*_arrival_date ≠ today
       │
    EnqueueSmsUseCase → guardian_number, message "{name} arrived at {label} N min ago"
    write to users/{uid}/auto_history/

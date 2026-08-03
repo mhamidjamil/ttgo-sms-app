@@ -8,7 +8,7 @@ import androidx.lifecycle.lifecycleScope
 import com.textgate.app.core.navigation.AppNavGraph
 import com.textgate.app.core.navigation.Screen
 import com.textgate.app.core.theme.TextGateTheme
-import com.textgate.app.core.utils.currentBssid
+import com.textgate.app.core.utils.visibleBssids
 import com.textgate.app.data.local.PreferencesDataSource
 import com.textgate.app.domain.repository.LinkRepository
 import com.textgate.app.domain.repository.UserRepository
@@ -56,7 +56,7 @@ class MainActivity : ComponentActivity() {
             val uid = userRepo.currentFirebaseUser()?.uid ?: return@launch
             linkRepo.watchPendingRequests(uid).collect { pending ->
                 pending.forEach { request ->
-                    answerLocationRequest(uid, request, currentBssid(this@MainActivity))
+                    answerLocationRequest(uid, request, visibleBssids(this@MainActivity))
                 }
             }
         }

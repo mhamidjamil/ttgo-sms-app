@@ -33,7 +33,10 @@ import com.textgate.app.core.theme.StatusFailed
 import com.textgate.app.core.theme.StatusSent
 import com.textgate.app.core.theme.TextGateTheme
 import com.textgate.app.core.utils.PhoneNormalizer
-import com.textgate.app.core.utils.currentBssid
+import com.textgate.app.core.utils.canScanWifi
+import com.textgate.app.core.utils.placeInRange
+import com.textgate.app.core.utils.requestWifiScan
+import com.textgate.app.core.utils.visibleBssids
 import com.textgate.app.domain.model.Place
 import com.textgate.app.domain.model.PlaceContact
 import com.textgate.app.services.ArrivalService
@@ -328,19 +331,17 @@ private fun SettingsContent(
 }
 
 /**
- * TEMPORARY DEBUG SECTION - remove once arrival detection is trusted.
- *
- * It answers "does the app think I am at the hostel right now?" without waiting
- * for the stability timer or an SMS. The match rule below is deliberately a copy
- * of the one the arrival service uses, so a mismatch shown here is the real
- * reason no alert went out. Delete this composable and its single call site
- * together.
+ * "Where am I?" — answers what the arrival service would decide right now,
+ * without waiting out the stability window or an SMS. The match rule is the
+ * same one the service uses: a place counts as here when its network is within
+ * range, connected or not.
  */
 @Composable
 private fun CurrentPlaceCheck(places: List<Place>) {
     val context = LocalContext.current
     var checked by remember { mutableStateOf(false) }
-    var bssid by remember { mutableStateOf<String?>(null) }
+    var inRange by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var scanningAvailable by remember { mutableStateOf(true) }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -348,18 +349,21 @@ private fun CurrentPlaceCheck(places: List<Place>) {
     ) {
         Column(Modifier.padding(14.dp)) {
             Text(
-                "Where am I? (debug)",
+                "Where am I?",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                "Checks the WiFi network this phone is on right now against your saved places",
+                "Checks the WiFi networks within range of this phone against your saved places. " +
+                    "You do not have to be connected to them.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
             Spacer(Modifier.height(8.dp))
             Button(onClick = {
-                bssid = currentBssid(context)
+                requestWifiScan(context)
+                inRange = visibleBssids(context)
+                scanningAvailable = canScanWifi(context)
                 checked = true
             }) {
                 Icon(Icons.Default.Wifi, contentDescription = null, Modifier.size(16.dp))
@@ -368,17 +372,12 @@ private fun CurrentPlaceCheck(places: List<Place>) {
             }
 
             if (checked) {
-                val current = bssid
-                val match = current?.let { value ->
-                    places.firstOrNull {
-                        it.bssid.isNotBlank() && it.bssid.equals(value, ignoreCase = true)
-                    }
-                }
+                val match = placeInRange(places, inRange)
                 Spacer(Modifier.height(10.dp))
                 Text(
                     when {
-                        current == null -> "Not on WiFi"
                         match != null -> "You are at ${match.label.ifBlank { match.id }}"
+                        inRange.isEmpty() -> "No networks in range"
                         else -> "Unknown place"
                     },
                     style = MaterialTheme.typography.titleMedium,
@@ -387,11 +386,14 @@ private fun CurrentPlaceCheck(places: List<Place>) {
                 )
                 Text(
                     when {
-                        current == null ->
-                            "Either WiFi is off or location permission is denied. Arrival alerts " +
-                                "cannot fire in this state."
-                        match != null -> "Network $current"
-                        else -> "Network $current is not saved on any place below"
+                        match != null -> "${inRange.size} networks in range, one of them is this place"
+                        !scanningAvailable ->
+                            "Turn on WiFi, or turn on \"WiFi scanning always available\" in the " +
+                                "system WiFi settings. Arrival alerts cannot fire in this state."
+                        inRange.isEmpty() ->
+                            "Location permission or device location is off, so the phone cannot " +
+                                "see any networks. Arrival alerts cannot fire in this state."
+                        else -> "${inRange.size} networks in range, none of them saved on a place below"
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
@@ -638,6 +640,9 @@ private fun WifiPickerDialog(
 
 @Suppress("DEPRECATION")
 private fun scanWifi(context: Context): List<ScanResult> {
+    // Ask for a fresh sweep first, otherwise the picker can list networks from
+    // wherever the phone was the last time something scanned.
+    requestWifiScan(context)
     val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
     return wm?.scanResults ?: emptyList()
 }

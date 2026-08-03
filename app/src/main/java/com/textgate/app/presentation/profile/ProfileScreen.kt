@@ -23,10 +23,17 @@ import androidx.compose.ui.unit.dp
 import com.textgate.app.core.theme.TextGateTheme
 import com.textgate.app.core.theme.WarningAmber
 import com.textgate.app.core.theme.WarningAmberBorder
+import com.textgate.app.data.local.PreferencesDataSource
 import com.textgate.app.domain.model.User
 import com.textgate.app.services.ArrivalService
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
+
+// Default History tab choices, in the order the History page shows them.
+private val historyTabOptions = listOf(
+    PreferencesDataSource.HISTORY_TAB_AUTOMATED to "Automated",
+    PreferencesDataSource.HISTORY_TAB_MANUAL to "Manual",
+)
 
 @Composable
 fun ProfileScreen(
@@ -61,9 +68,11 @@ fun ProfileScreen(
         onSendEmailCode = viewModel::sendEmailCode,
         onVerifyEmailCode = viewModel::verifyEmailCode,
         onUpdateName = viewModel::updateName,
+        onDefaultHistoryTabChange = viewModel::setDefaultHistoryTab,
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ProfileContent(
     uiState: ProfileUiState,
@@ -76,6 +85,7 @@ private fun ProfileContent(
     onSendEmailCode: () -> Unit = {},
     onVerifyEmailCode: (String) -> Unit = {},
     onUpdateName: (String) -> Unit = {},
+    onDefaultHistoryTabChange: (String) -> Unit = {},
 ) {
     var showSignOutDialog by remember { mutableStateOf(false) }
     var showEditNameDialog by remember { mutableStateOf(false) }
@@ -228,6 +238,32 @@ private fun ProfileContent(
                 }
 
                 Spacer(Modifier.height(16.dp))
+
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Preferences", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Which half of the History page opens first.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                            historyTabOptions.forEachIndexed { index, (value, label) ->
+                                SegmentedButton(
+                                    selected = uiState.defaultHistoryTab == value,
+                                    onClick = { onDefaultHistoryTabChange(value) },
+                                    shape = SegmentedButtonDefaults.itemShape(
+                                        index, historyTabOptions.size,
+                                    ),
+                                ) { Text(label) }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
 
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {

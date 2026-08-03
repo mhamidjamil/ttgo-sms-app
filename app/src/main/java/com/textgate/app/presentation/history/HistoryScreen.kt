@@ -13,24 +13,35 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.textgate.app.core.theme.*
 import com.textgate.app.core.utils.DateUtils
+import com.textgate.app.data.local.PreferencesDataSource
 import com.textgate.app.domain.model.HistoryEntry
 import com.textgate.app.domain.model.SmsStatus
 import com.textgate.app.presentation.auto.AutoHistorySection
 import org.koin.androidx.compose.koinViewModel
 
 private enum class HistoryFilter(val label: String) {
-    MANUAL("Manual"),
     AUTOMATED("Automated"),
+    MANUAL("Manual"),
 }
 
 /**
  * Single History page for both message types. Manual and automated messages are
  * both history, so they share one destination and a filter instead of two tabs.
+ * Which half opens first is the user's choice, made on the Profile page.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen(viewModel: HistoryViewModel = koinViewModel()) {
-    var filter by remember { mutableStateOf(HistoryFilter.MANUAL) }
+    val uiState by viewModel.uiState.collectAsState()
+    // The stored preference arrives a moment after the first composition, so it
+    // is the key here: it changes once, from the placeholder to the real choice,
+    // and after that the user's taps stick.
+    var filter by remember(uiState.defaultTab) {
+        mutableStateOf(
+            if (uiState.defaultTab == PreferencesDataSource.HISTORY_TAB_MANUAL) HistoryFilter.MANUAL
+            else HistoryFilter.AUTOMATED
+        )
+    }
 
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
         Text("History", style = MaterialTheme.typography.headlineMedium)

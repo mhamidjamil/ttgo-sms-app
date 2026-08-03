@@ -27,6 +27,18 @@ class PreferencesDataSource(private val context: Context) {
         private fun otpSentAtKey(channel: String) = longPreferencesKey("last_otp_sent_at_$channel")
         // Last date (YYYY-MM-DD) the user sent a quota-increase request.
         private val KEY_QUOTA_REQUEST_DATE = stringPreferencesKey("last_quota_request_date")
+        // Which half of the History page opens first: "automated" or "manual".
+        private val KEY_DEFAULT_HISTORY_TAB = stringPreferencesKey("default_history_tab")
+
+        const val HISTORY_TAB_AUTOMATED = "automated"
+        const val HISTORY_TAB_MANUAL = "manual"
+    }
+
+    suspend fun getDefaultHistoryTab(): String =
+        context.dataStore.data.first()[KEY_DEFAULT_HISTORY_TAB] ?: HISTORY_TAB_AUTOMATED
+
+    suspend fun setDefaultHistoryTab(tab: String) {
+        context.dataStore.edit { it[KEY_DEFAULT_HISTORY_TAB] = tab }
     }
 
     suspend fun getOtpSentAt(channel: String): Long? =

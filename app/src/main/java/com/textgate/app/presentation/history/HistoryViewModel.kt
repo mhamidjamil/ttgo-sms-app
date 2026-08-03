@@ -8,6 +8,7 @@ import com.textgate.app.domain.repository.UserRepository
 import com.textgate.app.domain.usecase.sms.GetHistoryUseCase
 import com.textgate.app.domain.usecase.sms.RefreshJobStatusUseCase
 import com.textgate.app.core.utils.Quota
+import com.textgate.app.data.local.PreferencesDataSource
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,12 +23,15 @@ data class HistoryUiState(
     val isLoading: Boolean = true,
     val error: String? = null,
     val refreshingIds: Set<String> = emptySet(),
+    // Which half of the page opens first, from the user's own preference.
+    val defaultTab: String = PreferencesDataSource.HISTORY_TAB_AUTOMATED,
 )
 
 class HistoryViewModel(
     private val userRepo: UserRepository,
     private val getHistory: GetHistoryUseCase,
     private val refreshStatus: RefreshJobStatusUseCase,
+    private val prefs: PreferencesDataSource,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HistoryUiState())
@@ -35,7 +39,12 @@ class HistoryViewModel(
 
     private var pollJob: Job? = null
 
-    init { loadHistory() }
+    init {
+        loadHistory()
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(defaultTab = prefs.getDefaultHistoryTab())
+        }
+    }
 
     private fun loadHistory() {
         viewModelScope.launch {

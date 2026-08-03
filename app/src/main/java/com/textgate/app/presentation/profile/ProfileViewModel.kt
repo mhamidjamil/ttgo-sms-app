@@ -2,6 +2,7 @@ package com.textgate.app.presentation.profile
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.textgate.app.data.local.PreferencesDataSource
 import com.textgate.app.domain.model.User
 import com.textgate.app.domain.repository.OtpChannel
 import com.textgate.app.domain.repository.ThrottleRepository
@@ -32,6 +33,8 @@ data class ProfileUiState(
     val emailCooldownSeconds: Int = 0,
     // One-shot toast text; the screen shows it and calls clearToast().
     val toastMessage: String? = null,
+    // Which half of the History page opens first.
+    val defaultHistoryTab: String = PreferencesDataSource.HISTORY_TAB_AUTOMATED,
 )
 
 class ProfileViewModel(
@@ -41,6 +44,7 @@ class ProfileViewModel(
     private val verifyEmailOtp: VerifyEmailOtpUseCase,
     private val throttle: ThrottleRepository,
     private val waRepo: WhatsAppRepository,
+    private val prefs: PreferencesDataSource,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ProfileUiState())
@@ -73,7 +77,19 @@ class ProfileViewModel(
             userRepo.refreshEmailVerified()
             val user = userRepo.getCurrentUser()
             val quota = user?.let { getEffectiveQuota(it) } ?: 0
-            _uiState.value = ProfileUiState(user = user, effectiveQuota = quota, isLoading = false)
+            _uiState.value = ProfileUiState(
+                user = user,
+                effectiveQuota = quota,
+                isLoading = false,
+                defaultHistoryTab = prefs.getDefaultHistoryTab(),
+            )
+        }
+    }
+
+    fun setDefaultHistoryTab(tab: String) {
+        viewModelScope.launch {
+            prefs.setDefaultHistoryTab(tab)
+            _uiState.value = _uiState.value.copy(defaultHistoryTab = tab)
         }
     }
 

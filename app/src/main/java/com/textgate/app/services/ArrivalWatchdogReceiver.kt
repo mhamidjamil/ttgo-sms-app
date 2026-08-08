@@ -53,17 +53,32 @@ class ArrivalWatchdogReceiver : BroadcastReceiver(), KoinComponent {
             try {
                 if (!prefs.getMonitoringEnabled()) return@launch
                 scheduleNextCheck(appContext)
+                // Null means the settings could not be read at all, which is not
+                // the same as having no places: the checks below fall back to
+                // the old unconditional behaviour rather than guess from it.
+                val places = runCatching { userRepo.getCurrentUser()?.places }
+                    .onFailure { Log.w(TAG, "Could not read the saved places", it) }
+                    .getOrNull()
                 // A reboot wipes every fence the system was watching, and
                 // nothing else puts them back. Done before the running check
                 // because a service that survived says nothing about the fences.
-                if (reason == Intent.ACTION_BOOT_COMPLETED) {
-                    runCatching {
-                        userRepo.getCurrentUser()?.let {
-                            GeofenceManager.refresh(appContext, it.places, monitorLog)
-                        }
-                    }.onFailure { Log.w(TAG, "Could not re-register the geofences after the reboot", it) }
+                // The stale check is for the quieter failure: Play services
+                // dropping a fence with nothing to say about it, which this
+                // undoes within a few hours instead of never.
+                val staleFences =
+                    System.currentTimeMillis() - prefs.getGeofencesRefreshedAt() > FENCE_REFRESH_MILLIS
+                if (places != null && (reason == Intent.ACTION_BOOT_COMPLETED || staleFences)) {
+                    GeofenceManager.refresh(appContext, places, monitorLog)
+                    prefs.setGeofencesRefreshedAt(System.currentTimeMillis())
                 }
                 if (ArrivalService.isRunning) return@launch
+                // Nothing to bring back when every alerting place is watched by
+                // a fence: starting here would only show a notification for the
+                // seconds the service takes to stop itself again.
+                if (places != null && !ArrivalService.needsResidentService(places, appContext)) {
+                    Log.i(TAG, "Not restarting monitoring after $reason: the fences are watching")
+                    return@launch
+                }
                 Log.i(TAG, "Restarting arrival monitoring after $reason")
                 ArrivalService.start(appContext)
             } catch (e: Exception) {
@@ -80,6 +95,10 @@ class ArrivalWatchdogReceiver : BroadcastReceiver(), KoinComponent {
         private const val TAG = "TextGateWatchdog"
         const val ACTION_CHECK = "com.textgate.app.ARRIVAL_WATCHDOG"
         private const val CHECK_INTERVAL_MILLIS = 15 * 60 * 1000L
+        // How old the registered fences may get before they are put back on
+        // trust. Long enough that the tick stays free, short enough that a fence
+        // the system quietly dropped is not missing for a whole day.
+        private const val FENCE_REFRESH_MILLIS = 6 * 60 * 60 * 1000L
 
         // Inexact on purpose: the system batches it with other wake-ups, so the
         // check costs nothing extra. Catching a killed service ten minutes late

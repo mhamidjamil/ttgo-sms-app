@@ -28,6 +28,9 @@ data class MonitorLogUiState(
     val serviceRunning: Boolean = false,
     val lastObservedAt: Long = 0L,
     val placeStatuses: List<PlaceStatus> = emptyList(),
+    // The saved places themselves, which is what says whether a stopped service
+    // is a failure or the geofence mode doing its job.
+    val places: List<Place> = emptyList(),
     val entries: List<MonitorLogStore.Entry> = emptyList(),
 )
 
@@ -50,16 +53,16 @@ class MonitorLogViewModel(
             // Only a read that actually returned an account is worth keeping. A
             // single failed read used to be remembered as "this phone has no
             // places", and the page then hid them until it was left and reopened.
-            val saved = places ?: userRepo.getCurrentUser()?.places
-                ?.filter { it.savedBssids.isNotEmpty() }?.also { places = it }.orEmpty()
+            val saved = places ?: userRepo.getCurrentUser()?.places?.also { places = it }.orEmpty()
             _uiState.value = MonitorLogUiState(
                 isLoading = false,
                 monitoringEnabled = prefs.getMonitoringEnabled(),
                 serviceRunning = ArrivalService.isRunning,
                 lastObservedAt = prefs.getLastObservedAt(),
-                placeStatuses = saved.map {
+                placeStatuses = saved.filter { it.savedBssids.isNotEmpty() }.map {
                     PlaceStatus(it.label.ifBlank { it.id }, prefs.getPresence(it.id).state)
                 },
+                places = saved,
                 entries = monitorLog.entries(),
             )
         }

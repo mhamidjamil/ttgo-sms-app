@@ -90,18 +90,35 @@ fun SettingsScreen(
     var editingPlaceId by remember { mutableStateOf<String?>(null) }
     var isMonitoring by remember { mutableStateOf(false) }
     var showLocationDisclosure by remember { mutableStateOf(false) }
+    var showBackgroundDisclosure by remember { mutableStateOf(false) }
+    // Re-read rather than sampled once: on Android 11 and up the answer is given
+    // on a system screen that hands nothing back, so the only way to know is to
+    // look again.
+    var backgroundLocationAllowed by remember { mutableStateOf(hasBackgroundLocation(context)) }
+
+    // Offered only once monitoring is already on: Android refuses the
+    // all-the-time grant until the while-in-use one has been given, and a place
+    // with no point on the map has no fence that could fire anyway.
+    fun offerBackgroundLocation() {
+        if (backgroundLocationAllowed || uiState.places.none { it.hasGeofence }) return
+        showBackgroundDisclosure = true
+    }
 
     // The switch says what the user asked for, which is what prefs hold, not
     // whether the service happens to be alive: a service the system killed used
     // to turn the switch off by itself. Whether it is actually running is a
-    // separate line under it. If it was killed, restart it silently here.
-    LaunchedEffect(Unit) {
+    // separate line under it. If it was killed, restart it silently here, but
+    // only once the places are loaded and only if the sweeps are needed at all:
+    // starting a service that stops itself again would flash a notification
+    // every time this tab is opened.
+    LaunchedEffect(uiState.isLoading) {
+        if (uiState.isLoading) return@LaunchedEffect
         isMonitoring = viewModel.getMonitoringEnabled()
-        if (isMonitoring && !ArrivalService.isRunning) {
-            val missing = requiredMonitoringPermissions()
-                .filterNot { permission -> hasPermission(context, permission) }
-            if (missing.isEmpty()) ArrivalService.start(context)
-        }
+        if (!isMonitoring || ArrivalService.isRunning) return@LaunchedEffect
+        if (!ArrivalService.needsResidentService(uiState.places, context)) return@LaunchedEffect
+        val missing = requiredMonitoringPermissions()
+            .filterNot { permission -> hasPermission(context, permission) }
+        if (missing.isEmpty()) ArrivalService.start(context)
     }
 
     // Detection health used to be read once per process, so coming back to this
@@ -110,6 +127,7 @@ fun SettingsScreen(
     LaunchedEffect(Unit) {
         while (true) {
             viewModel.loadHealth()
+            backgroundLocationAllowed = hasBackgroundLocation(context)
             delay(10_000)
         }
     }
@@ -133,9 +151,31 @@ fun SettingsScreen(
             isMonitoring = true
             scope.launch { viewModel.setMonitoringEnabled(true) }
             ArrivalService.start(context)
+            offerBackgroundLocation()
         } else {
             isMonitoring = false
         }
+    }
+
+    val backgroundLocationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {
+        // The result handed back on Android 11 and up is the answer from before
+        // the settings screen opened, so the permission is read again rather
+        // than believed. A grant has to reach the fence watcher now: nothing
+        // else would register them until the next service start.
+        backgroundLocationAllowed = hasBackgroundLocation(context)
+        if (backgroundLocationAllowed) viewModel.refreshGeofences(context, uiState.places)
+    }
+
+    if (showBackgroundDisclosure) {
+        BackgroundLocationDialog(
+            onContinue = {
+                showBackgroundDisclosure = false
+                backgroundLocationLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+            },
+            onDismiss = { showBackgroundDisclosure = false },
+        )
     }
 
     if (showLocationDisclosure) {
@@ -245,6 +285,7 @@ fun SettingsScreen(
                     isMonitoring = true
                     scope.launch { viewModel.setMonitoringEnabled(true) }
                     ArrivalService.start(context)
+                    offerBackgroundLocation()
                 } else {
                     // Google Play requires the app to say what it collects, that
                     // it keeps collecting while the app is closed, and why,
@@ -260,6 +301,8 @@ fun SettingsScreen(
                 viewModel.clearGeofences(context)
             }
         },
+        geofencesBlocked = !backgroundLocationAllowed && uiState.places.any { it.hasGeofence },
+        onFixGeofences = { showBackgroundDisclosure = true },
         onSave = { guardian -> viewModel.save(guardian) },
         onSendLocation = viewModel::openLocationPrompt,
         onBack = onBack,
@@ -281,6 +324,8 @@ private fun SettingsContent(
     onScanPlace: (String) -> Unit,
     isMonitoring: Boolean,
     onMonitoringToggle: (Boolean) -> Unit,
+    geofencesBlocked: Boolean = false,
+    onFixGeofences: () -> Unit = {},
     onSave: (String) -> Unit,
     onSendLocation: (String) -> Unit = {},
     onBack: (() -> Unit)? = null,
@@ -375,6 +420,12 @@ private fun SettingsContent(
 
             Spacer(Modifier.height(20.dp))
             SectionTitle("Monitoring")
+            // A service that is down because it has nothing to do must not read
+            // like one the system killed: in hybrid mode not running IS the
+            // healthy state, and the old line told the user to wait for a
+            // recovery that is never coming.
+            val fencesAreWatching =
+                ArrivalService.watchedByGeofenceOnly(uiState.places, LocalContext.current)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -389,6 +440,8 @@ private fun SettingsContent(
                         when {
                             !isMonitoring -> "Tap to start"
                             uiState.serviceRunning -> "Running in background"
+                            fencesAreWatching ->
+                                "Watching by geofence, nothing needs to run in the background"
                             else -> "Not running right now, it will be brought back by the " +
                                 "15 minute check"
                         },
@@ -403,6 +456,7 @@ private fun SettingsContent(
             // service is down: a stopped service is exactly when the battery
             // notice and the last successful check are worth reading.
             if (isMonitoring) {
+                if (geofencesBlocked) GeofenceBlockedNotice(onFixGeofences)
                 BatteryExemptionNotice()
                 DetectionHealthCard(uiState)
             }
@@ -599,6 +653,54 @@ private fun BatteryExemptionNotice() {
                     Log.w(TAG_SETTINGS, "Battery optimisation screen unavailable: ${it.message}")
                 }
             }) { Text("Allow background running") }
+        }
+    }
+}
+
+/**
+ * Places that know where they are cannot be watched by the system's fence
+ * watcher without the all-the-time grant, and the difference is invisible
+ * otherwise: arrivals still work, they just cost the battery a service running
+ * around the clock. The settings button is also the only way back from a
+ * permanently denied grant, which the copy elsewhere already promises.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun GeofenceBlockedNotice(onExplain: () -> Unit) {
+    val context = LocalContext.current
+    Spacer(Modifier.height(8.dp))
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Text(
+                "Geofences are off: background location is not allowed",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                "Your places are still found by sweeping for WiFi networks, which works but " +
+                    "keeps monitoring running all day. Choosing \"Allow all the time\" lets " +
+                    "Android wake the app only when you actually arrive.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(Modifier.height(6.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onExplain) { Text("Allow all the time") }
+                OutlinedButton(onClick = {
+                    runCatching {
+                        context.startActivity(
+                            Intent(
+                                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                android.net.Uri.parse("package:${context.packageName}"),
+                            )
+                        )
+                    }.onFailure {
+                        Log.w(TAG_SETTINGS, "App settings screen unavailable: ${it.message}")
+                    }
+                }) { Text("Open app settings") }
+            }
         }
     }
 }
@@ -846,9 +948,17 @@ private fun PlaceCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     )
-                    if (place.hasGeofence) {
+                    // How this place is actually watched, in one quiet line: a
+                    // fence costs nothing until it fires, WiFi-only means the
+                    // sweeps have to keep running for it.
+                    val watchMode = when {
+                        place.hasGeofence -> "Geofence: ${place.radiusMeters} m radius"
+                        place.savedBssids.isNotEmpty() -> "WiFi sweeps only"
+                        else -> null
+                    }
+                    watchMode?.let {
                         Text(
-                            "Geofence: ${place.radiusMeters} m radius",
+                            it,
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                         )
@@ -1456,6 +1566,47 @@ private fun LocationDisclosureDialog(onAgree: () -> Unit, onDismiss: () -> Unit)
     )
 }
 
+/**
+ * The second half of the disclosure, asked only after monitoring is on. It has
+ * to explain what the phone gains rather than just name a permission, because
+ * "Allow all the time" sounds like more surveillance when it actually buys the
+ * opposite: the app sleeps until a fence fires instead of scanning all day.
+ */
+@Composable
+private fun BackgroundLocationDialog(onContinue: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Allow all-the-time location") },
+        text = {
+            Column {
+                Text(
+                    "Your places have a point on the map, so Android itself can watch for you " +
+                        "crossing into them and wake TextGate at the moment you arrive, even " +
+                        "with the app closed. That only happens if location is set to " +
+                        "\"Allow all the time\".",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Without it, arrivals are found by sweeping for WiFi networks around the " +
+                        "clock instead. That still works, it just keeps monitoring running all " +
+                        "day and costs noticeably more battery.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "On newer phones Continue opens Android's own location screen for this app, " +
+                        "where the choice is listed as \"Allow all the time\".",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = onContinue) { Text("Continue") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Not now") } },
+    )
+}
+
 private fun requiredMonitoringPermissions(): List<String> = listOf(
     Manifest.permission.ACCESS_FINE_LOCATION,
     Manifest.permission.ACCESS_COARSE_LOCATION,
@@ -1477,6 +1628,12 @@ private fun monitoringPermissionsToRequest(): List<String> = buildList {
 
 private fun hasPermission(context: Context, permission: String): Boolean =
     ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+
+// Before Android 10 there is no separate all-the-time grant to ask for: the
+// while-in-use one already covers a service running in the background.
+private fun hasBackgroundLocation(context: Context): Boolean =
+    Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+        hasPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
 
 // ── Preview helpers ───────────────────────────────────────────────────────────
 

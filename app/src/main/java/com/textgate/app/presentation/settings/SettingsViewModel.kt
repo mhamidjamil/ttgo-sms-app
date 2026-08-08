@@ -301,6 +301,16 @@ class SettingsViewModel(
     // just turned off.
     fun clearGeofences(context: Context) = GeofenceManager.clear(context, monitorLog)
 
+    // The all-the-time location grant is the one thing fences cannot be
+    // registered without, so the moment it arrives they are put in place rather
+    // than waiting for the next service start.
+    fun refreshGeofences(context: Context, places: List<Place>) {
+        viewModelScope.launch {
+            prefs.setGeofencesRefreshedAt(System.currentTimeMillis())
+            GeofenceManager.refresh(context, places, monitorLog)
+        }
+    }
+
     suspend fun setMonitoringEnabled(enabled: Boolean) {
         val was = prefs.getMonitoringEnabled()
         prefs.setMonitoringEnabled(enabled)

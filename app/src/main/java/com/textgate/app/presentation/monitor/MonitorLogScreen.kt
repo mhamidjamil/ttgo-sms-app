@@ -51,6 +51,7 @@ import com.textgate.app.core.utils.DateUtils
 import com.textgate.app.core.utils.scanBlocker
 import com.textgate.app.data.local.MonitorLogStore
 import com.textgate.app.domain.model.PresenceState
+import com.textgate.app.services.ArrivalService
 import kotlinx.coroutines.delay
 import org.koin.androidx.compose.koinViewModel
 import java.text.SimpleDateFormat
@@ -103,7 +104,11 @@ fun MonitorLogScreen(
                 .padding(padding)
                 .padding(horizontal = 20.dp, vertical = 8.dp),
         ) {
-            StatusCard(uiState, blocker)
+            StatusCard(
+                uiState,
+                blocker,
+                ArrivalService.watchedByGeofenceOnly(uiState.places, context),
+            )
             Spacer(Modifier.height(16.dp))
             Text(
                 "Last 3 days",
@@ -134,11 +139,16 @@ fun MonitorLogScreen(
 }
 
 @Composable
-private fun StatusCard(uiState: MonitorLogUiState, blocker: String?) {
+private fun StatusCard(uiState: MonitorLogUiState, blocker: String?, watchedByGeofence: Boolean) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
             val (dotColor, statusText) = when {
                 !uiState.monitoringEnabled -> StatusFailed to "Monitoring is switched off"
+                // Not running is the healthy state once the fences cover every
+                // place that can alert, so it must not be reported as the system
+                // having stopped something.
+                !uiState.serviceRunning && watchedByGeofence ->
+                    StatusSent to "Watching by geofence, the app runs only when a fence fires"
                 !uiState.serviceRunning -> StatusPending to "Monitoring is starting or was stopped by the system"
                 blocker != null -> StatusBlocked to "Monitoring is on but cannot observe"
                 else -> StatusSent to "Monitoring is active"

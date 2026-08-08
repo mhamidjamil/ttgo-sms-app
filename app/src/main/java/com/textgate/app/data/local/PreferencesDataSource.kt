@@ -48,6 +48,10 @@ class PreferencesDataSource(private val context: Context) {
             stringPreferencesKey("place_environment_$placeId")
         private val KEY_ENVIRONMENT = stringPreferencesKey("environment_fingerprint")
         private val KEY_LAST_OBSERVED_AT = longPreferencesKey("last_observed_at")
+        // When the fences last went to the system's watcher. On disk because in
+        // hybrid mode the process that registered them is dead most of the time,
+        // so an in-memory stamp would say "never" after every fence event.
+        private val KEY_GEOFENCES_REFRESHED_AT = longPreferencesKey("geofences_refreshed_at")
 
         const val HISTORY_TAB_AUTOMATED = "automated"
         const val HISTORY_TAB_MANUAL = "manual"
@@ -94,6 +98,13 @@ class PreferencesDataSource(private val context: Context) {
 
     suspend fun setLastObservedAt(atMillis: Long) {
         context.dataStore.edit { it[KEY_LAST_OBSERVED_AT] = atMillis }
+    }
+
+    suspend fun getGeofencesRefreshedAt(): Long =
+        context.dataStore.data.first()[KEY_GEOFENCES_REFRESHED_AT] ?: 0L
+
+    suspend fun setGeofencesRefreshedAt(atMillis: Long) {
+        context.dataStore.edit { it[KEY_GEOFENCES_REFRESHED_AT] = atMillis }
     }
 
     suspend fun getDefaultHistoryTab(): String =

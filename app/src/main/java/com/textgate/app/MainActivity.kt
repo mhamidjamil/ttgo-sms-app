@@ -32,9 +32,17 @@ class MainActivity : ComponentActivity() {
         // or system kill. This ensures the foreground service survives reboots,
         // battery optimization kills, and Android's foreground service restrictions.
         lifecycleScope.launch {
-            if (prefs.getMonitoringEnabled() && !ArrivalService.isRunning) {
-                ArrivalService.start(this@MainActivity)
+            if (!prefs.getMonitoringEnabled() || ArrivalService.isRunning) return@launch
+            // With every alerting place watched by a fence there is nothing for
+            // the service to do, and starting it here would flash a notification
+            // on every app open for the seconds it takes to stop itself again.
+            // Settings that could not be read fall back to starting it, because
+            // a guess must not be the reason detection stays dead.
+            val places = runCatching { userRepo.getCurrentUser()?.places }.getOrNull()
+            if (places != null && !ArrivalService.needsResidentService(places, this@MainActivity)) {
+                return@launch
             }
+            ArrivalService.start(this@MainActivity)
         }
 
         answerPendingLocationRequests()

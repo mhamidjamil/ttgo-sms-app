@@ -135,6 +135,14 @@ class ArrivalService : Service() {
     // When the fences last matched the saved places, so an edit made in the app
     // reaches the system's fence watcher on the next sweep instead of never.
     private var geofencesRefreshedAt = 0L
+    // Set the moment a validation is handed over, before the session has marked
+    // its place as approaching. A sweep finishing inside that window would
+    // otherwise see nothing pending and stop the service it was started for.
+    @Volatile private var validationStartedAt = 0L
+    // Stopping is asked for once. The sweep loop keeps ticking until the system
+    // actually tears the service down, and a second stop would write the line
+    // explaining it twice.
+    private var stopping = false
 
     // Doze parks the sweep's delay and takes the dwell clock down with it, so an
     // arrival at night was never counted long enough to alert. A bounded lock,
@@ -261,9 +269,18 @@ class ArrivalService : Service() {
         when (intent?.action) {
             ACTION_VALIDATE -> placeId?.let { id ->
                 val enteredAt = intent.getLongExtra(EXTRA_ENTERED_AT, System.currentTimeMillis())
+                validationStartedAt = System.currentTimeMillis()
                 scope.launch { onGeofenceEnter(id, enteredAt) }
             }
-            ACTION_DEPART -> placeId?.let { id -> scope.launch { onGeofenceExit(id) } }
+            ACTION_DEPART -> placeId?.let { id ->
+                scope.launch {
+                    onGeofenceExit(id)
+                    // A departure check is not a reason to go on sweeping once
+                    // it has answered: the fences are still watching for the way
+                    // back in.
+                    currentUser()?.let { stopIfOnlyFencesAreNeeded(it.places) }
+                }
+            }
         }
         return START_STICKY
     }
@@ -338,9 +355,39 @@ class ArrivalService : Service() {
         return cachedUser
     }
 
-    private fun refreshGeofences(places: List<Place>) {
+    private suspend fun refreshGeofences(places: List<Place>) {
         geofencesRefreshedAt = System.currentTimeMillis()
+        // Kept on disk as well, because the watchdog re-registers stale fences
+        // and the process this counter lives in is meant to be dead most of the
+        // time in hybrid mode.
+        prefs.setGeofencesRefreshedAt(geofencesRefreshedAt)
         GeofenceManager.refresh(this, places, monitorLog)
+    }
+
+    /**
+     * The battery win of the hybrid mode, and the only place it is taken: with
+     * every alerting place watched by a fence there is nothing for a resident
+     * service to do, and the fences go on firing with this process dead.
+     */
+    private suspend fun stopIfOnlyFencesAreNeeded(places: List<Place>): Boolean {
+        if (stopping) return true
+        // Only the fences can bring monitoring back, and they are registered
+        // only while the master switch is on. Off, this would be a service that
+        // stopped and nothing to start it again.
+        if (!prefs.getMonitoringEnabled()) return false
+        if (System.currentTimeMillis() - validationStartedAt < SETTLING_MILLIS) return false
+        if (places.any { prefs.getPresence(it.id).state == PresenceState.APPROACHING }) return false
+        if (needsResidentService(places, this)) return false
+        // The fences are the only thing left watching, so they have to be with
+        // the system before this hands over: the refresh started with the
+        // service may still be waiting on the settings read, and cancelling it
+        // here would leave nothing watching at all.
+        if (geofencesRefreshedAt == 0L) refreshGeofences(places)
+        stopping = true
+        monitorLog.append(MonitorLogStore.Kind.EVENT,
+            "Nothing needs the background service, geofences are watching; stopping until a fence fires")
+        stopSelf()
+        return true
     }
 
     /**
@@ -744,6 +791,7 @@ class ArrivalService : Service() {
         if (saved.none { prefs.getPresence(it.id).state == PresenceState.APPROACHING }) {
             releaseWakeLock()
         }
+        if (stopIfOnlyFencesAreNeeded(user.places)) return
         val here = saved.firstOrNull { prefs.getPresence(it.id).state == PresenceState.HERE }
         // What each place sounded like on this check, kept with the row because
         // "not at a saved place" is only arguable next to the numbers that
@@ -977,6 +1025,30 @@ class ArrivalService : Service() {
                     .putExtra(EXTRA_PLACE_ID, placeId)
             )
         }
+
+        /**
+         * Whether the sweep loop still has anything to do. A place that wants
+         * alerts and has a fence the system will actually accept is watched
+         * without this service running at all; one that has to be heard on WiFi
+         * is not. A place with no saved networks and no usable fence has nothing
+         * that could detect it either way, so it keeps nothing alive.
+         */
+        fun needsResidentService(places: List<Place>, context: Context): Boolean {
+            val fencesWatch = GeofenceManager.canRegister(context)
+            return places.any {
+                it.alertsEnabled && it.savedBssids.isNotEmpty() && !(it.hasGeofence && fencesWatch)
+            }
+        }
+
+        /**
+         * Monitoring is on, and everything it watches is watched by a fence. The
+         * status lines read this so a stopped service is reported as the mode it
+         * is rather than as a failure the phone has to recover from.
+         */
+        fun watchedByGeofenceOnly(places: List<Place>, context: Context): Boolean =
+            GeofenceManager.canRegister(context) &&
+                places.any { it.alertsEnabled && it.hasGeofence } &&
+                !needsResidentService(places, context)
 
         // Approximate location cannot read scan results, so starting on it only
         // produces a service that watches forever and hears nothing.

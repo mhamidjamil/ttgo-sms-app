@@ -39,6 +39,7 @@ import com.textgate.app.core.utils.PhoneNormalizer
 import com.textgate.app.core.utils.canScanWifi
 import com.textgate.app.core.utils.placeInRange
 import com.textgate.app.core.utils.requestWifiScan
+import com.textgate.app.core.utils.scanBlocker
 import com.textgate.app.core.utils.visibleAccessPoints
 import com.textgate.app.core.utils.visibleBssids
 import com.textgate.app.domain.model.Place
@@ -471,13 +472,11 @@ private fun describeState(state: PresenceState?): String = when (state) {
 // Answers what the app would decide right now and, more usefully, why it would
 // not alert. This is what turns a silent failure into a five second diagnosis.
 private fun describeDetectionNow(context: Context, places: List<Place>): String {
-    if (!canScanWifi(context)) {
-        return "Cannot scan. Switch WiFi on, or turn on WiFi scanning in location settings."
-    }
+    scanBlocker(context)?.let { return "Cannot scan. $it." }
     requestWifiScan(context)
     val visible = visibleAccessPoints(context)
     if (visible.isEmpty()) {
-        return "No networks heard at all. Location is probably switched off for the phone."
+        return "No networks heard on this read. A fresh scan takes a few seconds, try again."
     }
     val saved = places.filter { it.savedBssids.isNotEmpty() }
     if (saved.isEmpty()) return "Heard ${visible.size} networks, but no place has any saved yet."

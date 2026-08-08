@@ -1,9 +1,12 @@
 package com.textgate.app.core.utils
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.net.wifi.WifiManager
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.textgate.app.domain.model.Place
 
 private const val TAG = "TextGateWifi"
@@ -68,15 +71,34 @@ fun requestWifiScan(context: Context) {
 fun placeInRange(places: List<Place>, bssids: Set<String>): Place? =
     places.firstOrNull { place -> place.savedBssids.any { it in bssids } }
 
-// Scanning still works with WiFi switched off when the system-wide "WiFi
-// scanning always available" toggle is on, which is exactly the case for
-// someone who lives on mobile data. Device location being switched off blocks
-// scan results outright, so it belongs in the same answer: without it the app
-// reports itself healthy while receiving nothing.
+/**
+ * Why a sweep cannot observe anything right now, as a sentence the user can act
+ * on, or null when scanning should work. Every one of these causes looks
+ * identical from the outside (an empty scan list), which is how "scanning or
+ * location is off" ended up on screen for someone whose settings were fine.
+ *
+ * Scanning still works with WiFi switched off when the system-wide "WiFi
+ * scanning always available" toggle is on, which is exactly the case for
+ * someone who lives on mobile data. Device location being switched off blocks
+ * scan results outright, so it belongs in the same answer: without it the app
+ * reports itself healthy while receiving nothing.
+ */
 @Suppress("DEPRECATION")
-fun canScanWifi(context: Context): Boolean {
+fun scanBlocker(context: Context): String? {
     val app = context.applicationContext
-    val wm = app.getSystemService(WifiManager::class.java) ?: return false
-    val locationOn = app.getSystemService(LocationManager::class.java)?.isLocationEnabled ?: true
-    return locationOn && (wm.isWifiEnabled || wm.isScanAlwaysAvailable)
+    val wm = app.getSystemService(WifiManager::class.java)
+        ?: return "This phone has no usable WiFi"
+    // Approximate location is not enough: Android hands coarse-only callers an
+    // empty scan list without any error, so it has to be named here or the
+    // failure is invisible.
+    if (ContextCompat.checkSelfPermission(app, Manifest.permission.ACCESS_FINE_LOCATION) !=
+        PackageManager.PERMISSION_GRANTED
+    ) return "Precise location permission is needed, allow it in the app's settings"
+    if (app.getSystemService(LocationManager::class.java)?.isLocationEnabled == false)
+        return "Device location is switched off"
+    if (!wm.isWifiEnabled && !wm.isScanAlwaysAvailable)
+        return "WiFi and WiFi scanning are both switched off"
+    return null
 }
+
+fun canScanWifi(context: Context): Boolean = scanBlocker(context) == null

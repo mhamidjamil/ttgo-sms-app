@@ -25,10 +25,10 @@ import androidx.core.content.ContextCompat
 import com.textgate.app.R
 import com.textgate.app.App
 import com.textgate.app.core.utils.DateUtils
-import com.textgate.app.core.utils.canScanWifi
 import com.textgate.app.core.utils.RoutineAnalyzer
 import com.textgate.app.core.utils.WifiConfig
 import com.textgate.app.core.utils.requestWifiScan
+import com.textgate.app.core.utils.scanBlocker
 import com.textgate.app.core.utils.visibleAccessPoints
 import com.textgate.app.core.utils.visibleBssids
 import com.textgate.app.data.local.PreferencesDataSource
@@ -219,22 +219,35 @@ class ArrivalService : Service() {
         val uid = userRepo.currentFirebaseUser()?.uid ?: return
         val user = currentUser() ?: return
         requestWifiScan(this)
-        val visible = visibleAccessPoints(this)
+        var visible = visibleAccessPoints(this)
+        val blocker = scanBlocker(this)
+        // A requested scan takes a few seconds to land, and right after a
+        // service start the cache is empty. Give the request one chance to
+        // land before treating the sweep as unobservable.
+        if (blocker == null && visible.isEmpty()) {
+            delay(SCAN_RESULTS_WAIT_MILLIS)
+            visible = visibleAccessPoints(this)
+        }
         val saved = user.places.filter { it.savedBssids.isNotEmpty() }
 
         // Not being able to look is its own answer. Inferring "away" from it is
         // what turned switching the radios on in the morning into an arrival.
-        if (!canScanWifi(this) || visible.isEmpty()) {
-            Log.w(TAG, "Cannot observe: scanning=${canScanWifi(this)}, heard=${visible.size}")
+        if (blocker != null) {
+            Log.w(TAG, "Cannot observe: $blocker")
             nextSweepSeconds = SWEEP_SECONDS_SETTLED
-            updateNotification("Cannot check right now, WiFi scanning or location is off")
-            saved.forEach { place ->
-                val presence = prefs.getPresence(place.id)
-                if (presence.state != PresenceState.BLIND) {
-                    Log.i(TAG, "${place.id}: going blind, was ${presence.state}")
-                    prefs.setPresence(place.id, presence.goBlind())
-                }
-            }
+            updateNotification(blocker)
+            goBlind(saved)
+            return
+        }
+        // Scanning should work, the scan just came back with nothing. That is
+        // a cold cache or a throttled request far more often than a genuine
+        // absence of networks, so retry soon instead of blaming settings that
+        // are on and then sitting on the wrong message for fifteen minutes.
+        if (visible.isEmpty()) {
+            Log.w(TAG, "Scan returned no networks although scanning is available")
+            nextSweepSeconds = SWEEP_SECONDS_MOVING
+            updateNotification("No WiFi networks heard on this check, trying again soon")
+            goBlind(saved)
             return
         }
         Log.d(TAG, "Sweep: ${visible.size} networks in range, ${saved.size} saved places")
@@ -380,6 +393,16 @@ class ArrivalService : Service() {
         )
     }
 
+    private suspend fun goBlind(saved: List<Place>) {
+        saved.forEach { place ->
+            val presence = prefs.getPresence(place.id)
+            if (presence.state != PresenceState.BLIND) {
+                Log.i(TAG, "${place.id}: going blind, was ${presence.state}")
+                prefs.setPresence(place.id, presence.goBlind())
+            }
+        }
+    }
+
     /**
      * How long to wait before looking again. Scanning hard is only worth it while
      * something can change: moving, or already counting down at a place. Sitting
@@ -482,6 +505,9 @@ class ArrivalService : Service() {
         // Long enough for the persisted state and the first scans to be read back
         // before anything is allowed to send.
         private const val SETTLING_MILLIS = 2 * 60 * 1000L
+        // How long a freshly requested scan gets to deliver results before an
+        // empty cache is taken at its word.
+        private const val SCAN_RESULTS_WAIT_MILLIS = 6_000L
 
         /**
          * Android revokes the permissions of apps that have not been opened for

@@ -1,5 +1,8 @@
 # Firebase Schema
 
+Firebase project: `textgate-344f2` (dedicated, since August 2026; previously the
+shared `myacademiaapp` project, where the old data still lives).
+
 The TTGO firmware uses `sim_module/` in Firestore. The app adds its own top-level collection `ttgo_users` (outside `sim_module`) so the two namespaces never conflict.
 
 ---
@@ -20,9 +23,11 @@ The app reads `free_sms_quota` once at sign-up and stores the value in the user 
 
 ---
 
-### `sim_module/sms/sms_jobs/{phone_number}` (shared with TTGO)
+### `sim_module/sms/sms_jobs/{jobId}` (shared with TTGO)
 
-Doc ID = E.164 phone number. One active job per number (device constraint).
+Doc ID = Firestore auto id, one document per queued message, so two messages to
+the same number can never overwrite each other. The firmware reads the
+`phone_number` field, never the id.
 
 | Field | Type | Written by | Description |
 |-------|------|-----------|-------------|
@@ -122,11 +127,16 @@ four contacts writes four rows.
 | `recipient_name` | string | Contact name at send time, `""` for the default guardian and for rows written before this field existed |
 | `message` | string | Full outgoing text, including the appended sender signature and opt-out line |
 | `routine_triggered` | bool | `true` if routine learning reduced the wait |
+| `job_id` | string | The `sms_jobs` document id this row tracks (rows before it fall back to `job_phone_key`) |
+| `detected_at` | timestamp | When the visit began (geofence crossing or first sweep), as opposed to `sent_at` |
+| `detection_method` | string | `"wifi"`, `"geofence_wifi"`, or `"geofence"` (V4) |
+| `wifi_match` | bool | Whether the place's saved networks confirmed the arrival (V4) |
+| `latitude` / `longitude` / `radius_m` | number | The place's circle at send time, only on geofenced places (V4) |
+| `error` | string | Why this recipient failed, `""` otherwise |
 
-**Grouping in the app:** one alert per place per day is enforced when the arrival
-is recorded, so `location` plus the calendar day of `sent_at` identifies a single
-arrival. The history page groups the rows on that pair and shows one card per
-arrival with a status dot per recipient.
+**Grouping in the app:** a visit ends only at an observed departure (the
+presence state machine decides, not a calendar date), and the history page
+groups rows into one card per arrival with a status dot per recipient.
 
 ---
 

@@ -49,6 +49,7 @@ If `~/.claude/knowledge/` is missing on this machine, clone it:
 - `sms_jobs` doc IDs are auto-generated, one document per queued message, so two messages to the same number can no longer overwrite each other. History rows carry `job_id`; rows written before this fall back to `job_phone_key`, which is what those older job documents were keyed by. The device finds work by querying `status == "pending"`, never by building an ID from a phone number.
 - OTP SMS uses the same TTGO queue but no history/quota: see `SendPhoneOtpUseCase` and `FirestoreDataSource.enqueueOtpSms`, with `enque_by = "app:{uid}:otp"`.
 - V2 arrival notifications run in `services/ArrivalService`. It holds a four-state presence machine per place (AWAY / APPROACHING / HERE / BLIND) persisted in `PreferencesDataSource`, NOT in Firestore: the Firestore user document falls back to an offline cache that can be hours stale, and no alert may depend on that.
+- V4 makes Android geofences the primary trigger (`services/GeofenceManager` + `services/GeofenceEventReceiver`): a fence ENTER opens a bounded wake-locked validation session in `ArrivalService`, WiFi confirms through the same presence machine, and a place with no saved networks falls back to one fused-location fix. When every alerting place is fence-covered the resident service stops itself; places without coordinates keep the old always-on WiFi sweeps. Design and diagnosis: `docs/V4-GEOFENCE-HYBRID.md`.
 - A place is reached when enough of its saved BSSIDs are audible (`Place.isPresentIn`) and the loudest clears its closeness floor. Only ONE place can win a sweep; ties send nothing.
 - The alert guard is one per VISIT, cleared only by an OBSERVED departure (the place unheard AND the surroundings no longer overlapping what was heard there). A gap in observation is never a departure — that is what made switching the radios on in the morning look like arriving home.
 - The wait counts only time the phone spent still, measured from the step counter. Without that sensor it degrades to plain elapsed time rather than stopping.
@@ -61,7 +62,7 @@ If `~/.claude/knowledge/` is missing on this machine, clone it:
 - Setup requires `app/google-services.json`; use `local.properties.example` as the local config template. Do not commit secrets or machine-local Firebase files.
 - **No credential may ever be a `buildConfigField`.** They compile to `public static final String`, so the literal is inlined before R8 runs and `strings` reads it straight out of the published APK. The SMTP mailer and the WhatsApp SSO secret were removed for exactly this reason; email verification now goes through Firebase, which holds its own credentials server-side.
 - Release signing reads the gitignored `keystore.properties` at the repo root, pointing at a keystore kept outside the repository. Without it the release variant still builds, just unsigned, so a fresh clone works.
-- Firestore security rules live in `firestore.rules` and are deployed with `firebase deploy --only firestore:rules`. The project is shared with the academia app and the TTGO firmware, so read `docs/PLAY-RELEASE.md` before changing them.
+- Firebase project is the dedicated `textgate-344f2` (since August 2026; the old shared `myacademiaapp` project still holds the pre-migration data and serves academia). Firestore rules live in `firestore.rules`, Realtime Database rules in `database.rules.json`, deployed with `firebase deploy --only firestore:rules,database`. The TTGO firmware shares this database, so read the firmware repo before changing `sim_module` paths.
 
 ## Code Patterns
 - Domain use cases expose `suspend operator fun invoke(...)` and usually return `Result<T>`; data sources wrap Firebase calls with `runCatching { ... await() }`.
@@ -69,12 +70,12 @@ If `~/.claude/knowledge/` is missing on this machine, clone it:
 - Firestore DTOs live in `data/model` and map to domain with `toDomain()`. Use `@PropertyName` for snake_case Firestore fields, as in `UserDto` and `HistoryEntryDto`.
 - Phone inputs must pass through `PhoneNormalizer`; only Pakistani mobile formats `03...`, `923...`, and `+923...` are accepted and normalized to `+923XXXXXXXXX`.
 - Navigation is centralized in `core/navigation/AppNavGraph.kt`; bottom tabs are `Send`, `History`, `Arrival`, and `Profile`, while auth and the detail screens (settings history, WhatsApp, incoming alerts, linked accounts, monitoring log) are outside the bottom bar. `History` carries a Manual/Automated filter rather than a separate Auto tab.
-- Arrival monitoring writes a 24-hour on-device activity log through `MonitorLogStore` (JSON lines in app storage), shown on the Monitoring Log page reached from the Arrival tab. New sweep-level decisions should log there as well as to Logcat, with repeat-per-sweep conditions written once when they appear.
+- Arrival monitoring writes a 72-hour on-device activity log through `MonitorLogStore` (JSON lines in app storage), shown on the Monitoring Log page reached from the Arrival tab and exportable through the share sheet from that page. New sweep-level decisions should log there as well as to Logcat, with repeat-per-sweep conditions written once when they appear.
 
 ## Versioning
 - App version is in `app/build.gradle.kts`: `versionCode` (integer, bumped for each release) and `versionName` (semver string, e.g. `1.0.1`).
 - **Whenever you make any solid changes or bug fixes, always bump `versionCode` by 1 and update `versionName` appropriately** (patch bump for fixes, minor for features). The version is displayed at the bottom of the Send screen via `BuildConfig.VERSION_NAME`.
-- Current version: `1.5.0` (versionCode=8).
+- Current version: `1.6.0` (versionCode=9).
 
 ## Developer Workflow
 - Toolchain is AGP 8.9.1 / Gradle 8.11.1 / JDK 17, compiling against SDK 36. `targetSdk` must stay at 36 or above: Play refuses a lower target for new apps and updates from 31 August 2026.

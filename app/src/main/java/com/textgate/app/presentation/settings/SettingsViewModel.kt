@@ -136,9 +136,9 @@ class SettingsViewModel(
         _uiState.value = _uiState.value.copy(places = _uiState.value.places + newPlace)
     }
 
-    // home/office are permanent; only user-added places can be removed.
+    // Any place can go, including the seeded home/office pair: the people who
+    // asked had places they never used sitting undeletable at the top.
     fun removePlace(id: String) {
-        if (Place.isDefaultId(id)) return
         val places = _uiState.value.places.filterNot { it.id == id }
         _uiState.value = _uiState.value.copy(places = places)
         persistPlaces(places)

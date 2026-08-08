@@ -105,7 +105,12 @@ data class UserDto(
                 quietTo = raw["quiet_to"] as? String ?: "",
             )
         }.ifEmpty {
-            listOf(
+            // Only a genuinely legacy document, one that predates the places
+            // array and shows it by carrying the old fixed fields, gets
+            // home/office synthesized. An array the user emptied by deleting
+            // every place must stay empty rather than resurrect the pair.
+            if (listOf(homeLabel, homeBssid, officeLabel, officeBssid).all { it.isBlank() }) emptyList()
+            else listOf(
                 Place(Place.HOME_ID, homeLabel.ifBlank { "Home" }, homeBssid),
                 Place(Place.OFFICE_ID, officeLabel.ifBlank { "Office" }, officeBssid),
             )

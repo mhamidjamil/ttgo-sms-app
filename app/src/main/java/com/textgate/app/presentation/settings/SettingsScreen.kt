@@ -334,7 +334,7 @@ private fun SettingsContent(
                         place = place,
                         onClick = { onEditPlace(place.id) },
                         onScan = { onScanPlace(place.id) },
-                        onRemove = if (Place.isDefaultId(place.id)) null else ({ onRemovePlace(place.id) }),
+                        onRemove = { onRemovePlace(place.id) },
                     )
                     Spacer(Modifier.height(10.dp))
                 }

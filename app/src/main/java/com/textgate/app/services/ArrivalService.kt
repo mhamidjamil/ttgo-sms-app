@@ -102,6 +102,9 @@ class ArrivalService : Service() {
     // place id → sweeps in a row the network went missing, because scan results
     // drop an access point at random even while the phone sits next to it.
     private val missedSweeps = mutableMapOf<String, Int>()
+    // Sweeps in a row the scan came back completely empty while scanning was
+    // available. One empty read is nearly always the cache, not the world.
+    private var emptySweeps = 0
 
     private val connectivityManager by lazy {
         getSystemService(ConnectivityManager::class.java)
@@ -268,13 +271,18 @@ class ArrivalService : Service() {
         // absence of networks, so retry soon instead of blaming settings that
         // are on and then sitting on the wrong message for fifteen minutes.
         if (visible.isEmpty()) {
-            Log.w(TAG, "Scan returned no networks although scanning is available")
+            emptySweeps += 1
+            Log.w(TAG, "Scan returned no networks although scanning is available ($emptySweeps in a row)")
             nextSweepSeconds = SWEEP_SECONDS_MOVING
             updateNotification("No WiFi networks heard on this check, trying again soon")
             noteProblem("Scan returned no networks although scanning is on, retrying soon")
-            goBlind(saved)
+            // Presence keeps its last observed state through a short gap; going
+            // blind on the first empty read is what made every service restart
+            // adopt the current place silently and swallow its arrival alert.
+            if (emptySweeps >= EMPTY_SWEEPS_TO_GO_BLIND) goBlind(saved)
             return
         }
+        emptySweeps = 0
         if (lastProblem != null) {
             lastProblem = null
             monitorLog.append(MonitorLogStore.Kind.EVENT, "Able to observe again")
@@ -560,6 +568,8 @@ class ArrivalService : Service() {
         // How long a freshly requested scan gets to deliver results before an
         // empty cache is taken at its word.
         private const val SCAN_RESULTS_WAIT_MILLIS = 6_000L
+        // Consecutive empty scans before presence is parked as unobservable.
+        private const val EMPTY_SWEEPS_TO_GO_BLIND = 3
 
         /**
          * Android revokes the permissions of apps that have not been opened for

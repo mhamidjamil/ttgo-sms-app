@@ -74,7 +74,7 @@ If `~/.claude/knowledge/` is missing on this machine, clone it:
 ## Versioning
 - App version is in `app/build.gradle.kts`: `versionCode` (integer, bumped for each release) and `versionName` (semver string, e.g. `1.0.1`).
 - **Whenever you make any solid changes or bug fixes, always bump `versionCode` by 1 and update `versionName` appropriately** (patch bump for fixes, minor for features). The version is displayed at the bottom of the Send screen via `BuildConfig.VERSION_NAME`.
-- Current version: `1.4.1` (versionCode=7).
+- Current version: `1.5.0` (versionCode=8).
 
 ## Developer Workflow
 - Toolchain is AGP 8.9.1 / Gradle 8.11.1 / JDK 17, compiling against SDK 36. `targetSdk` must stay at 36 or above: Play refuses a lower target for new apps and updates from 31 August 2026.

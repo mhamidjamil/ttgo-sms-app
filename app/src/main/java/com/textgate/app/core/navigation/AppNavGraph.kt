@@ -28,6 +28,7 @@ import com.textgate.app.presentation.auth.PhoneVerifyScreen
 import com.textgate.app.presentation.auth.SignupScreen
 import com.textgate.app.presentation.history.HistoryScreen
 import com.textgate.app.presentation.links.LinkedAccountsScreen
+import com.textgate.app.presentation.monitor.MonitorLogScreen
 import com.textgate.app.presentation.profile.ProfileScreen
 import com.textgate.app.presentation.send.SendScreen
 import com.textgate.app.presentation.settings.SettingsHistoryScreen
@@ -126,6 +127,7 @@ fun AppNavGraph(startDestination: String) {
                 SettingsScreen(
                     onBack = null,
                     onViewChangeHistory = { navController.navigate(Screen.SettingsHistory.route) },
+                    onViewMonitorLog = { navController.navigate(Screen.MonitorLog.route) },
                 )
             }
             composable(Screen.Profile.route) {
@@ -154,6 +156,9 @@ fun AppNavGraph(startDestination: String) {
             }
             composable(Screen.SettingsHistory.route) {
                 SettingsHistoryScreen(onBack = { navController.popBackStack() })
+            }
+            composable(Screen.MonitorLog.route) {
+                MonitorLogScreen(onBack = { navController.popBackStack() })
             }
             composable(Screen.WhatsApp.route) {
                 WhatsAppScreen(onBack = { navController.popBackStack() })

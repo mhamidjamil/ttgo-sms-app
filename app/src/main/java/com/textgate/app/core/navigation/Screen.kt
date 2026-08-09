@@ -11,6 +11,7 @@ sealed class Screen(val route: String) {
     data object Arrival : Screen("arrival")
     data object Profile : Screen("profile")
     data object SettingsHistory : Screen("settings_history")
+    data object MonitorLog : Screen("monitor_log")
     data object WhatsApp : Screen("whatsapp")
     data object AlertSources : Screen("alert_sources")
     data object LinkedAccounts : Screen("linked_accounts")

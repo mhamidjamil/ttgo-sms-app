@@ -16,6 +16,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ListAlt
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -63,6 +64,7 @@ private const val TAG_SETTINGS = "TextGateSettings"
 fun SettingsScreen(
     onBack: (() -> Unit)? = null,
     onViewChangeHistory: () -> Unit = {},
+    onViewMonitorLog: () -> Unit = {},
     viewModel: SettingsViewModel = koinViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -242,6 +244,7 @@ fun SettingsScreen(
         onSendLocation = viewModel::openLocationPrompt,
         onBack = onBack,
         onViewChangeHistory = onViewChangeHistory,
+        onViewMonitorLog = onViewMonitorLog,
     )
 }
 
@@ -262,6 +265,7 @@ private fun SettingsContent(
     onSendLocation: (String) -> Unit = {},
     onBack: (() -> Unit)? = null,
     onViewChangeHistory: () -> Unit = {},
+    onViewMonitorLog: () -> Unit = {},
 ) {
     val phoneNormalizer = remember { PhoneNormalizer() }
     val guardianError = phoneNormalizer.validationError(guardianNumber)
@@ -280,6 +284,9 @@ private fun SettingsContent(
                     }
                 },
                 actions = {
+                    IconButton(onClick = onViewMonitorLog) {
+                        Icon(Icons.AutoMirrored.Filled.ListAlt, contentDescription = "Monitoring log")
+                    }
                     IconButton(onClick = onViewChangeHistory) {
                         Icon(Icons.Default.History, contentDescription = "Change history")
                     }

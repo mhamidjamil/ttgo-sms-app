@@ -98,6 +98,30 @@ The service is started/stopped by the toggle in SettingsScreen. `ArrivalService.
 
 ---
 
+## Monitoring log
+
+Every sweep writes what it saw and decided to `MonitorLogStore`, a JSON-lines
+file in app storage pruned to the last 24 hours. Rows are: routine checks (how
+many networks were heard, where the phone is, when the next check runs), state
+changes (wait started, departure observed, resumed after a gap), alerts that
+went out, and problems that stopped observation. Conditions that persist across
+sweeps are written once when they appear, not once per sweep.
+
+The **Monitoring Log** page (list icon on the Arrival tab) shows the current
+status (service running, last successful check, per-place presence, and the
+exact reason scanning is blocked if it is) above the 24-hour log. It refreshes
+itself every few seconds while open.
+
+When a sweep cannot observe, the ongoing notification names the actual cause
+(device location off, WiFi plus WiFi scanning off, precise location permission
+missing) instead of one catch-all message. An empty scan while scanning is
+available is treated as the cache being cold: the sweep retries on the fast
+cadence and presence only parks as unobservable after three empty reads in a
+row, because parking it on the first read made every service restart adopt the
+current place silently and swallow its arrival alert.
+
+---
+
 ## Enqueue flow (auto arrival)
 
 `RecordArrivalUseCase` → `SmsRepository.enqueueAutoArrivalSms` → Firestore batch:

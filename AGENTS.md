@@ -68,7 +68,8 @@ If `~/.claude/knowledge/` is missing on this machine, clone it:
 - ViewModels keep immutable `data class *UiState` in `MutableStateFlow`, expose `StateFlow` via `asStateFlow()`, and launch work in `viewModelScope`.
 - Firestore DTOs live in `data/model` and map to domain with `toDomain()`. Use `@PropertyName` for snake_case Firestore fields, as in `UserDto` and `HistoryEntryDto`.
 - Phone inputs must pass through `PhoneNormalizer`; only Pakistani mobile formats `03...`, `923...`, and `+923...` are accepted and normalized to `+923XXXXXXXXX`.
-- Navigation is centralized in `core/navigation/AppNavGraph.kt`; bottom tabs are `Send`, `History`, `Arrival`, and `Profile`, while auth and the detail screens (settings history, WhatsApp, incoming alerts, linked accounts) are outside the bottom bar. `History` carries a Manual/Automated filter rather than a separate Auto tab.
+- Navigation is centralized in `core/navigation/AppNavGraph.kt`; bottom tabs are `Send`, `History`, `Arrival`, and `Profile`, while auth and the detail screens (settings history, WhatsApp, incoming alerts, linked accounts, monitoring log) are outside the bottom bar. `History` carries a Manual/Automated filter rather than a separate Auto tab.
+- Arrival monitoring writes a 24-hour on-device activity log through `MonitorLogStore` (JSON lines in app storage), shown on the Monitoring Log page reached from the Arrival tab. New sweep-level decisions should log there as well as to Logcat, with repeat-per-sweep conditions written once when they appear.
 
 ## Versioning
 - App version is in `app/build.gradle.kts`: `versionCode` (integer, bumped for each release) and `versionName` (semver string, e.g. `1.0.1`).

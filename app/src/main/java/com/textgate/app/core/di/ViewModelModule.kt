@@ -6,6 +6,7 @@ import com.textgate.app.presentation.auth.PhoneVerifyViewModel
 import com.textgate.app.presentation.auto.AutoViewModel
 import com.textgate.app.presentation.history.HistoryViewModel
 import com.textgate.app.presentation.links.LinkedAccountsViewModel
+import com.textgate.app.presentation.monitor.MonitorLogViewModel
 import com.textgate.app.presentation.profile.ProfileViewModel
 import com.textgate.app.presentation.send.SendViewModel
 import com.textgate.app.presentation.settings.SettingsHistoryViewModel
@@ -24,6 +25,7 @@ val viewModelModule = module {
     viewModel { AutoViewModel(get(), get(), get(), get()) }
     viewModel { SettingsViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { SettingsHistoryViewModel(get()) }
+    viewModel { MonitorLogViewModel(get(), get(), get()) }
     viewModel { WhatsAppViewModel(get(), get()) }
     // Sharing: who may see my location, and who is alerting me
     viewModel { AlertSourcesViewModel(get(), get(), get()) }

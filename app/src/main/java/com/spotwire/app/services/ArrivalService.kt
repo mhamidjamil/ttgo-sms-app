@@ -853,27 +853,45 @@ class ArrivalService : Service() {
         }
         if (stopIfOnlyFencesAreNeeded(user.places)) return
         val here = saved.firstOrNull { prefs.getPresence(it.id).state == PresenceState.HERE }
+        // A place mid-confirmation is not "not at a saved place": the screen in
+        // the user's hand says "You are at Hostel" while the wait runs, and the
+        // notice claiming otherwise for those same minutes read as a real bug.
+        val confirming = if (here == null) {
+            saved.firstOrNull { prefs.getPresence(it.id).state == PresenceState.APPROACHING }
+        } else null
         // What each place sounded like on this check, kept with the row because
         // "not at a saved place" is only arguable next to the numbers that
         // produced it: one network short, or heard but too faint for its floor.
+        // A strongest of zero is the marker for being connected to the place's
+        // own network, not a real reading, so it is named instead of printed.
         val readings = presenceNow.readings.joinToString("\n") { reading ->
             val name = reading.place.label.ifBlank { reading.place.id }
-            if (reading.heardCount == 0) "$name: 0/${reading.place.savedBssids.size} heard"
-            else "$name: ${reading.heardCount}/${reading.place.savedBssids.size} heard, " +
-                "strongest ${reading.strongest} dBm (floor ${reading.place.minRssi})"
+            when {
+                reading.heardCount == 0 -> "$name: 0/${reading.place.savedBssids.size} heard"
+                reading.strongest == 0 -> "$name: ${reading.heardCount}/${reading.place.savedBssids.size} " +
+                    "heard, connected to its network"
+                else -> "$name: ${reading.heardCount}/${reading.place.savedBssids.size} heard, " +
+                    "strongest ${reading.strongest} dBm (floor ${reading.place.minRssi})"
+            }
+        }
+        val whereabouts = when {
+            here != null -> "At ${here.label.ifBlank { here.id }}."
+            confirming != null -> "Confirming ${confirming.label.ifBlank { confirming.id }}."
+            else -> "Not at a saved place."
         }
         monitorLog.append(MonitorLogStore.Kind.CHECK,
-            "Heard ${visible.size} networks. " +
-                (if (here != null) "At ${here.label.ifBlank { here.id }}." else "Not at a saved place.") +
+            "Heard ${visible.size} networks. $whereabouts" +
                 " Next check in ${nextSweepSeconds / 60} min.",
             readings.ifBlank { null })
         // The clock time, never "just now": a loop frozen by Doze used to keep
         // claiming it had only this moment looked, hours after its last sweep.
         val checkedAt = DateUtils.time12h(System.currentTimeMillis())
-        updateNotification(
-            if (here != null) "At ${here.label.ifBlank { here.id }}, checked $checkedAt"
-            else "Checked $checkedAt, not at a saved place"
-        )
+        updateNotification(when {
+            here != null -> "At ${here.label.ifBlank { here.id }}, checked $checkedAt"
+            confirming != null ->
+                "Confirming ${confirming.label.ifBlank { confirming.id }}, checked $checkedAt"
+            else -> "Checked $checkedAt, not at a saved place"
+        })
     }
 
     // Says what became of each recipient. One green row used to be written

@@ -613,6 +613,10 @@ private suspend fun describeDetectionNow(context: Context, places: List<Place>):
             winner == null -> "$name: in range at ${reading.strongest} dBm, but no place wins this check."
             winner.id != place.id -> "$name: in range at ${reading.strongest} dBm, but " +
                 "${winner.label.ifBlank { winner.id }} is nearer."
+            // Zero is the marker for being connected to the place's own
+            // network, which outranks any real reading and looks absurd printed.
+            reading.strongest == 0 ->
+                "$name: here, connected to its network. It would alert after the wait."
             else -> "$name: here, at ${reading.strongest} dBm. It would alert after the wait."
         }
     }

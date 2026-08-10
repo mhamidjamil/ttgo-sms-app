@@ -32,8 +32,8 @@ android {
         applicationId = "com.spotwire.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 11
-        versionName = "1.6.2"
+        versionCode = 12
+        versionName = "1.6.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }

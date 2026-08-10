@@ -4,6 +4,7 @@ import android.util.Log
 import com.spotwire.app.core.utils.DateUtils
 import com.spotwire.app.domain.model.EnqueueResult
 import com.spotwire.app.domain.model.PlaceContact
+import com.spotwire.app.domain.model.User
 import com.spotwire.app.domain.repository.AlertRepository
 import com.spotwire.app.domain.repository.LinkRepository
 import com.spotwire.app.domain.repository.SmsRepository
@@ -56,8 +57,14 @@ class RecordArrivalUseCase(
         visitStartedAt: Long,
         detectionMethod: String = "wifi",
         wifiMatch: Boolean = true,
+        fallbackUser: User? = null,
     ): Result<ArrivalOutcome> = runCatching {
-        val user = userRepo.getCurrentUser() ?: error("User not found")
+        // The fresh read fails at exactly the moments arrivals happen: the phone
+        // is mid-handover onto the place's own WiFi, which may be portal-gated
+        // or dead. The caller hands over the user its detection was based on,
+        // so a read that cannot be made never costs the alert itself.
+        val user = userRepo.getCurrentUser() ?: fallbackUser
+            ?: error("Could not read the account from the server or the cache")
         val place = user.places.find { it.id == placeId } ?: return@runCatching ArrivalOutcome()
 
         // No day guard here. Whether this visit may alert is decided by the

@@ -57,12 +57,15 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeoutOrNull
 import org.koin.android.ext.android.inject
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Watches for the WiFi networks of saved places being IN RANGE, whether or not
@@ -116,6 +119,10 @@ class ArrivalService : Service() {
     // would both find the same place still counting down and send the whole
     // fan-out twice.
     private val sweeping = AtomicBoolean(false)
+    // Alerts handed off by a sweep and not yet delivered to Firestore. The
+    // geofence-mode stop must wait for zero, or it cancels the very send the
+    // sweep just launched.
+    private val sendsInFlight = AtomicInteger(0)
     // A restart must never read as a fresh arrival. Nothing may be sent until the
     // first observations have had time to land and the state has been re-read.
     private var startedAt = 0L
@@ -384,6 +391,10 @@ class ArrivalService : Service() {
         // stopped and nothing to start it again.
         if (!prefs.getMonitoringEnabled()) return false
         if (System.currentTimeMillis() - validationStartedAt < SETTLING_MILLIS) return false
+        // An alert still on its way out needs the process alive. Stopping here
+        // is what cancelled every send launched by the sweep that then decided
+        // nothing was left to do.
+        if (sendsInFlight.get() > 0) return false
         if (places.any { prefs.getPresence(it.id).state == PresenceState.APPROACHING }) return false
         if (needsResidentService(places, this)) return false
         // The fences are the only thing left watching, so they have to be with
@@ -417,6 +428,21 @@ class ArrivalService : Service() {
         // at here swallows every arrival that follows it, which is exactly what
         // happened to the hostel.
         if (presence.state == PresenceState.HERE) {
+            // A fence that jitters at night fires EXIT and ENTER without anyone
+            // moving. The EXIT was already ignored because the place's WiFi
+            // stayed loud; if the WiFi still confirms the place now, this ENTER
+            // is the other half of the same wobble, and clearing the visit here
+            // is what queued a fresh arrival SMS at four in the morning. A real
+            // leave-and-return produces an EXIT whose departure check goes
+            // through (the WiFi genuinely absent), so it arrives here as AWAY.
+            val stillAudible = place.savedBssids.isNotEmpty() && scanBlocker(this) == null &&
+                place.isPresentIn(freshScan(this))
+            if (stillAudible) {
+                notePlace(place, MonitorLogStore.Kind.EVENT,
+                    "geofence re-entered but its WiFi never stopped confirming the visit, keeping it")
+                geofenceEnteredAt[placeId] = enteredAt
+                return
+            }
             notePlace(place, MonitorLogStore.Kind.EVENT,
                 "geofence entered while still marked here, clearing the old visit")
             presence = presence.copy(
@@ -788,15 +814,34 @@ class ArrivalService : Service() {
             ))
             // On its own coroutine so the sweep never waits on the network. A
             // phone with no signal has to keep watching for the departure that
-            // re-arms this place.
+            // re-arms this place. NonCancellable because the same sweep that
+            // launched this is about to decide the service can stop, and the
+            // stop used to cancel the send a few milliseconds in: every field
+            // arrival after the last place gained a fence failed exactly here,
+            // surfacing as "User not found" from the dying account read.
+            sendsInFlight.incrementAndGet()
             scope.launch {
-                recordArrival(uid, place.id, routineTriggered, running.visitStartedAt,
-                    detectionMethod, wifiMatch = !geofenceOnly)
-                    .onSuccess { outcome -> noteArrivalOutcome(place, outcome) }
-                    .onFailure {
-                        Log.w(TAG, "${place.id}: arrival not sent, ${it.message}")
-                        notePlace(place, MonitorLogStore.Kind.PROBLEM, "arrival alert failed, ${it.message}")
+                try {
+                    withContext(NonCancellable) {
+                        recordArrival(uid, place.id, routineTriggered, running.visitStartedAt,
+                            detectionMethod, wifiMatch = !geofenceOnly, fallbackUser = user)
+                            .onSuccess { outcome -> noteArrivalOutcome(place, outcome) }
+                            .onFailure {
+                                Log.w(TAG, "${place.id}: arrival not sent, ${it.message}")
+                                notePlace(place, MonitorLogStore.Kind.PROBLEM,
+                                    "arrival alert failed, ${it.message}")
+                            }
                     }
+                } finally {
+                    // The stop the sweep skipped while this was in flight still
+                    // has to happen, or a fully fenced phone keeps the service
+                    // alive until the next fence event for no reason.
+                    if (sendsInFlight.decrementAndGet() == 0) {
+                        withContext(NonCancellable) {
+                            cachedUser?.let { stopIfOnlyFencesAreNeeded(it.places) }
+                        }
+                    }
+                }
             }
         }
 

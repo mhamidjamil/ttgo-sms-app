@@ -321,6 +321,7 @@ fun SettingsScreen(
         onBack = onBack,
         onViewChangeHistory = onViewChangeHistory,
         onViewMonitorLog = onViewMonitorLog,
+        onAccountCheck = { viewModel.accountHealthLine() },
     )
 }
 
@@ -344,6 +345,7 @@ private fun SettingsContent(
     onBack: (() -> Unit)? = null,
     onViewChangeHistory: () -> Unit = {},
     onViewMonitorLog: () -> Unit = {},
+    onAccountCheck: suspend () -> String = { "" },
 ) {
     val phoneNormalizer = remember { PhoneNormalizer() }
     val guardianError = phoneNormalizer.validationError(guardianNumber)
@@ -471,7 +473,7 @@ private fun SettingsContent(
             if (isMonitoring) {
                 if (geofencesBlocked) GeofenceBlockedNotice(onFixGeofences)
                 BatteryExemptionNotice()
-                DetectionHealthCard(uiState)
+                DetectionHealthCard(uiState, onAccountCheck)
             }
 
             uiState.error?.let {
@@ -507,7 +509,7 @@ private fun SettingsContent(
  * to a working one.
  */
 @Composable
-private fun DetectionHealthCard(uiState: SettingsUiState) {
+private fun DetectionHealthCard(uiState: SettingsUiState, onAccountCheck: suspend () -> String) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var verdict by remember { mutableStateOf<String?>(null) }
@@ -551,7 +553,7 @@ private fun DetectionHealthCard(uiState: SettingsUiState) {
                 onClick = {
                     scope.launch {
                         testing = true
-                        verdict = describeDetectionNow(context, uiState.places)
+                        verdict = onAccountCheck() + "\n" + describeDetectionNow(context, uiState.places)
                         testing = false
                     }
                 },

@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
 
 data class SettingsUiState(
@@ -305,6 +306,21 @@ class SettingsViewModel(
     // system goes on waking the app at every boundary for a feature the user
     // just turned off.
     fun clearGeofences(context: Context) = GeofenceManager.clear(context, monitorLog)
+
+    /**
+     * The first line of "Test detection here". Detection can be perfect while
+     * sending is impossible, and that split is exactly what the field logs
+     * showed: the place confirmed, then the alert failed on the account read.
+     * So the button now proves the whole chain, not just the WiFi.
+     */
+    suspend fun accountHealthLine(): String {
+        userRepo.currentFirebaseUser() ?: return "Not signed in: nothing can be sent. Sign in again."
+        val fresh = withTimeoutOrNull(10_000) { userRepo.getCurrentUser() }
+            ?: return "Signed in, but your account could not be read from the server just now. " +
+                "An arrival at this moment would fall back to the copy already on the phone."
+        val guardian = if (fresh.guardianNumber.isBlank()) "no guardian number set" else "guardian number set"
+        return "Account readable: ${fresh.places.size} place(s), $guardian."
+    }
 
     // The all-the-time location grant is the one thing fences cannot be
     // registered without, so the moment it arrives they are put in place rather

@@ -3,7 +3,8 @@
 **SMS Gateway Client for Android** — queue SMS messages through your TTGO T-Call GSM device via Firebase Firestore.
 
 [![Min SDK](https://img.shields.io/badge/minSdk-26-blue)](https://developer.android.com/about/versions/oreo/android-8.0)
-[![Target SDK](https://img.shields.io/badge/targetSdk-34-green)](https://developer.android.com/about/versions/14)
+[![Target SDK](https://img.shields.io/badge/targetSdk-36-green)](https://developer.android.com/about/versions/16)
+[![Version](https://img.shields.io/badge/version-1.7.0-informational)](docs/PLAY-RELEASE.md)
 [![Kotlin](https://img.shields.io/badge/Kotlin-1.9.22-purple)](https://kotlinlang.org)
 [![Jetpack Compose](https://img.shields.io/badge/Compose-2024.02.00-blueviolet)](https://developer.android.com/jetpack/compose)
 
@@ -18,7 +19,7 @@
 - **Phone number collection** — Pakistani mobile number (03XX format) collected at sign-up
 - **Pakistani-number-only enforcement** — app accepts `03XXXXXXXXX`, `923XXXXXXXXX`, or `+923XXXXXXXXX`; auto-normalizes to E.164 (`+923XXXXXXXXX`) before sending to Firestore; displays a clear error for any other format
 - **Daily SMS quota** with automatic midnight reset — quota sourced from `sim_module/device/free_sms_quota` (no hardcoded values; change it in Firebase without a new app release)
-- **Per-user SMS history** — stored in `sim_module/ttgo_users/{uid}/history/`, independent of the shared `sms_jobs` collection so two users sending to the same number never overwrite each other's history
+- **Per-user SMS history** — stored in `ttgo_users/{uid}/history/`, independent of the shared `sms_jobs` collection so two users sending to the same number never overwrite each other's history
 - **Live status polling** — history screen auto-refreshes pending/in-progress jobs every 10 s (configurable); per-item manual refresh button
 - **Status chips** — color-coded: pending (amber), in-progress (blue), sent (green), failed (red), blocked (orange)
 - **Configurable Firestore paths** — all collection paths in `local.properties` so a schema change is a one-line edit, not a code change
@@ -44,17 +45,37 @@
 - **In-app guide + status + test send** — Profile → WhatsApp Settings; see [`docs/WHATSAPP.md`](docs/WHATSAPP.md)
 - Service URL configurable via `WHATSAPP_SERVICE_URL` (TODO(@dev): make dynamic via Firebase so URL changes don't need a rebuild)
 
-### V2 — Automated Arrival Notifications (WiFi-Based)
+### V2 — Automated Arrival Notifications (WiFi)
 
-- **Dynamic places** — Home and Office are seeded; add unlimited custom places (friend's home, gym, …) each with its own WiFi BSSID and an optional custom arrival message; delete custom places any time
+- **Dynamic places** — Home and Office are seeded; add any number of custom places, each with its own saved WiFi networks, arrival message, contacts and quiet hours. Every place is deletable.
+- **BSSID, not SSID** — a place is recognised by the access-point hardware addresses captured there, so renaming a phone hotspot "Office" cannot spoof it.
+- **In range, not connected** — someone on mobile data all day still walks past their own router, so detection never required joining the network.
+- **One decision per check** — a home above a shop and an office across the road can both be audible from one spot, so the loudest place wins and only by a clear margin. A tie sends nothing rather than guessing.
+- **Per-place sensitivity and closeness** — how long the phone must settle before alerting (Quick / Balanced / Careful, or an exact number of minutes) and how strong the signal must be (Any signal / Nearby / Inside only).
+- **One alert per visit**, cleared only by an *observed* departure, so a second trip to the office the same day alerts again while a flickering signal does not alert twice.
+- **The wait counts still time only**, measured from the step counter, so a twelve-minute visit alerts while driving past does not.
+- **Quiet hours per place** — suppress the message without disturbing the detection itself.
+- **Recipients** — the default guardian, plus per-place contacts, plus any linked account granted automatic updates. Recipients can opt out from their own copy of the app.
 
-- **BSSID-based location detection** — stores home and office WiFi BSSIDs (MAC addresses), not SSIDs, to prevent spoofing
-- **Stability timer** — must stay connected to the target BSSID for N minutes (configurable) before triggering; a quick pass-through does not fire
-- **One notification per day per location** — daily cooldown guard prevents multiple alerts
-- **Guardian SMS** — queues a message `"{name} arrived at {label} N minutes ago"` to a saved guardian phone number
-- **Routine learning** — stores the last 30 arrival times per location; if ≥ 5 samples exist, uses μ ± σ of HH:mm values to detect "expected arrival" and reduces the stability wait to `max(MIN_STABILITY_MINUTES, stability_minutes / 2)` when within the routine window
-- **Foreground service** — `ArrivalService` registers a `NetworkCallback` and keeps BSSID access alive in the background (Android 10+ requires `ACCESS_BACKGROUND_LOCATION` — rationale screen explains why)
-- **Auto-jobs tab** — fourth bottom-nav tab streams `users/{uid}/auto_history` with the same status-chip UI as the regular history
+### V3 — Geofence + WiFi Hybrid Detection
+
+The WiFi engine alone could not survive Android's background limits, so Android's own geofence watcher became the trigger and WiFi became the confirmation.
+
+- **Geofences are the primary trigger** — give a place a position and a radius, and Android wakes the app at the moment you cross in, with the app closed and the process dead. Between events the app runs nothing at all.
+- **WiFi confirms the crossing** — a fence says "something crossed a line", the saved networks say "and it is really this place". A place with no saved networks falls back to a single location fix instead.
+- **The resident service stops itself** when every alerting place is covered by a fence, which is the whole battery win. Places without coordinates keep the always-on WiFi sweeps, so nothing regressed.
+- **Continuous location capture** — capturing a place's position keeps refining and shows the accuracy improving live, the way a map app tightens its circle. You stop when you are happy with it, and a fix worse than 25 m warns you before it is saved.
+- **A fence at the wrong spot can no longer blind a place** — every 15 minutes, and on app open, a free read of the cached WiFi scan starts a normal check if a fenced place is audible while the app thinks you are away.
+- **Fence wobble is ignored** — a fence that fires exit and re-entry while you sit still, which phones do at night, no longer clears the visit and re-alerts.
+- **Sends survive the shutdown** — an alert handed off for delivery keeps the process alive until it lands, and falls back to the on-device account copy if the server cannot be read at that moment.
+- **Honest timestamps** — the message carries the moment the visit began, not the moment the dwell wait finished or the gateway got round to sending.
+
+### Diagnostics
+
+- **Monitoring log** — 72 hours of what every check saw, decided and sent, on the phone, with the per-place signal readings behind each row. Exportable to a text file through the Android share sheet.
+- **Test detection here** — proves the whole chain in one tap: signed in, account readable from the server, then per place how many networks were heard, how strong, and whether it would alert.
+- **Where am I?** — answers with the same matching rule the detector uses, so the screen and the engine can never disagree.
+- **Status notice with a clock** — "At Office, checked 2:41 PM" or "Confirming Hostel, checked ...", never a vague "just now" that hides a frozen loop.
 
 ---
 
@@ -82,21 +103,23 @@ sim_module/                          # existing TTGO device collection
     free_sms_quota: 10               # app reads at sign-up
 
   sms/
-    sms_jobs/{phone_number}/         # ONE active job per number (device constraint)
-      message, status, enque_by
+    sms_jobs/{autoId}/               # one document per queued message
+      phone_number, message, status, enque_by, created_at
 
-  users/{uid}/                       # NEW — one doc per Firebase Auth user
-    email, name
-    email_verified, phone_number, phone_verified, phone_otp
-    assigned_quota, remaining_quota, last_quota_reset_date
-    created_at
+ttgo_users/{uid}/                    # top level, one doc per Firebase Auth user
+  email, name
+  email_verified, phone_number, phone_verified, phone_otp
+  assigned_quota, remaining_quota, last_quota_reset_date
+  places[]                           # each with its WiFi networks, position and radius
+  created_at
 
-  users/{uid}/history/{autoId}/      # per-user sent-message history
+  history/{autoId}/                  # per-user sent-message history
     phone_number, message, status
-    enqueued_at, job_phone_key, enque_by
+    enqueued_at, job_id, enque_by
 
-  users/{uid}/auto_history/{autoId}/ # V2 — arrival-triggered jobs
-    location, sent_at, status, message, routine_triggered
+  auto_history/{autoId}/             # arrival-triggered jobs, one per recipient
+    location, sent_at, detected_at, status, message
+    detection_method, wifi_match, latitude, longitude, radius_m
 ```
 
 Full field reference → [`docs/FIREBASE-SCHEMA.md`](docs/FIREBASE-SCHEMA.md)
@@ -162,7 +185,7 @@ Detailed Firebase console steps → [`docs/SETUP.md`](docs/SETUP.md)
 |-----|---------|-------------|
 | `FIREBASE_PROJECT_ID` | — | Required. Firebase project ID. |
 | `SMS_JOBS_PATH` | `sim_module/sms/sms_jobs` | Firestore collection for outgoing SMS jobs. |
-| `USERS_PATH` | `sim_module/ttgo_users` | Firestore collection for user documents. |
+| `USERS_PATH` | `ttgo_users` | Firestore collection for user documents. |
 | `DEVICE_DOC_PATH` | `sim_module/device` | Firestore path to the device config document. |
 | `SMTP_HOST/PORT/SECURE/USER/PASS/FROM_EMAIL/SENDER_NAME` | blank | SMTP mailer for admin "request more" emails (blank = disabled; values are compiled into the APK — use a low-privilege account). |
 | `ADMIN_EMAIL` | blank | Recipient of quota-increase requests. |
@@ -175,7 +198,7 @@ Detailed Firebase console steps → [`docs/SETUP.md`](docs/SETUP.md)
 ## Running & Testing
 
 1. Sign up with a valid Pakistani number (03XXXXXXXXX) and an email address.
-2. Confirm the `sim_module/ttgo_users/{uid}` document was created in Firebase console.
+2. Confirm the `ttgo_users/{uid}` document was created in Firebase console.
 3. Check your phone for the OTP SMS (delivered via the TTGO device — it must be online).
 4. Send a test SMS — verify `sim_module/sms/sms_jobs/{normalizedNumber}` appears with `status: "pending"`.
 5. Open History — confirm the entry appears and status updates as the TTGO processes the job.
@@ -186,9 +209,20 @@ Detailed Firebase console steps → [`docs/SETUP.md`](docs/SETUP.md)
 
 ## Known Limitations
 
-- **One active SMS job per phone number** — `sms_jobs` doc ID = the phone number (device constraint). If two users send to the same number simultaneously, the second write overwrites the job. Each user's history record is independent (stored in `users/{uid}/history/`), and `enque_by` is used to detect overwrites during status polling.
-- **OTP delivery depends on TTGO** — if the device is offline, the OTP SMS will not arrive until it comes back online.
-- **V2 requires `ACCESS_BACKGROUND_LOCATION`** — Android 10+ shows a permission dialog that requires a rationale; the V2 setup screen includes this explanation.
+- **Background location is required for geofencing.** Declining it drops every place to the always-on WiFi mode, which still works and costs more battery. Google Play requires a declaration form and a demo video for this permission.
+- **OTP delivery depends on the TTGO device** — if it is offline, the verification SMS waits until it comes back.
+- **Geofence accuracy is the phone's, not the app's.** A position captured from a poor fix places the circle badly; the capture screen shows the accuracy for exactly this reason, and the WiFi rescue check exists as the net under it.
+- **A queued gateway message cannot be withdrawn.** Account deletion erases everything else, but a job already handed to the device stays in its queue until the hardware finishes with it.
+- **No crash reporting yet.** See [`docs/PLAY-RELEASE.md`](docs/PLAY-RELEASE.md).
+
+---
+
+## Release
+
+- Publishing checklist and console steps: [`docs/PLAY-RELEASE.md`](docs/PLAY-RELEASE.md)
+- Readiness audit and what is still open: [`docs/PLAY-READINESS.md`](docs/PLAY-READINESS.md)
+- Hybrid detection design and the diagnosis behind it: [`docs/V4-GEOFENCE-HYBRID.md`](docs/V4-GEOFENCE-HYBRID.md)
+- Privacy policy source: [`policy/public/index.html`](policy/public/index.html), published at <https://spotsire-policy.innovorix.com/>
 
 ---
 

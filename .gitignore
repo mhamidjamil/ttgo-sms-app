@@ -32,3 +32,6 @@ run-build.sh
 keystore.properties
 *.jks
 *.keystore
+
+# Firebase CLI debug output
+firebase-debug.log

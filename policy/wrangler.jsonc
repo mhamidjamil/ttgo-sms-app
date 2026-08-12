@@ -1,0 +1,15 @@
+{
+  // Deploy configuration for the published privacy policy. Cloudflare runs
+  // `npx wrangler deploy` from this directory, and without this file wrangler
+  // has nothing to deploy and the build fails.
+  //
+  // Only ./public is served. The config lives OUTSIDE it on purpose: anything
+  // inside the assets directory is uploaded and becomes publicly readable, and
+  // the rest of this repository is an Android app plus internal engineering
+  // notes that must never be served.
+  "name": "spotwire-policy",
+  "compatibility_date": "2026-08-13",
+  "assets": {
+    "directory": "./public"
+  }
+}

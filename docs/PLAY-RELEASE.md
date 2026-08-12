@@ -33,7 +33,7 @@ serves to users):
 | Background location | **Declared and used.** Geofencing needs it, so the console declaration form and a demo video are required on every submission. See `docs/PLAY-READINESS.md` |
 | Prominent disclosure | Shown before the location prompt, Settings screen |
 | In-app account deletion | Profile, with a real erase of the stored data |
-| Privacy policy | `site/index.html`, published by Cloudflare Pages from the `site` folder, linked from Profile |
+| Privacy policy | `policy/public/index.html`, published by Cloudflare from the `policy` folder, linked from Profile |
 
 ## What you have to do in the console
 
@@ -42,14 +42,16 @@ serves to users):
 2. **Create the app** in Play Console. The package name `com.spotwire.app` is
    registered automatically at creation, and Play App Signing registers the key,
    so the developer-verification email needs no separate action for this app.
-3. **Host the privacy policy** on Cloudflare Pages, connected to this repository
-   so a push republishes it. In the Pages project set the build output directory
-   to `site` and leave the build command empty: that publishes `site/index.html`
-   and NOTHING else, which is the point, because `docs/` holds internal notes
-   that must never be served. Then set `PRIVACY_POLICY_URL` in
-   `ProfileScreen.kt` to the live address. Play requires a live, public,
-   non-PDF page, and the deletion section has the anchor `#delete` for the
-   account-deletion URL Play asks for separately.
+3. **Host the privacy policy** on Cloudflare, connected to this repository so a
+   push republishes it. Settings: root directory `policy/`, build command
+   empty, deploy command `npx wrangler deploy`. The config it reads is
+   `policy/wrangler.jsonc`, which serves `policy/public/` and nothing else.
+   That separation is the point: everything inside the assets directory becomes
+   publicly readable, and `docs/` holds internal notes that must never be
+   served. Then set `PRIVACY_POLICY_URL` in `ProfileScreen.kt` to the live
+   address. Play requires a live, public, non-PDF page, and the deletion
+   section carries the anchor `#delete` for the account-deletion URL Play asks
+   for separately.
 4. **App content declarations**, all mandatory even when the answer is "none":
    privacy policy URL, Data safety, content rating questionnaire, health apps,
    financial features, and the target audience.

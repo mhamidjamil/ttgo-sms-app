@@ -988,7 +988,7 @@ class ArrivalService : Service() {
         return NotificationCompat.Builder(this, channelId)
             .setContentTitle("Spotwire")
             .setContentText(status)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_notification)
             .setOngoing(true)
             .build()
     }

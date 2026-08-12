@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="window_background">#FFFBFE</color>
+    <!-- The launcher icon's navy field, taken from the Spotwire mark. -->
+    <color name="ic_launcher_background">#03214D</color>
 </resources>

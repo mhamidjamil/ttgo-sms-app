@@ -4,7 +4,7 @@
 
 [![Min SDK](https://img.shields.io/badge/minSdk-26-blue)](https://developer.android.com/about/versions/oreo/android-8.0)
 [![Target SDK](https://img.shields.io/badge/targetSdk-36-green)](https://developer.android.com/about/versions/16)
-[![Version](https://img.shields.io/badge/version-1.7.0-informational)](docs/PLAY-RELEASE.md)
+[![Version](https://img.shields.io/badge/version-1.7.1-informational)](docs/PLAY-RELEASE.md)
 [![Kotlin](https://img.shields.io/badge/Kotlin-1.9.22-purple)](https://kotlinlang.org)
 [![Jetpack Compose](https://img.shields.io/badge/Compose-2024.02.00-blueviolet)](https://developer.android.com/jetpack/compose)
 

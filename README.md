@@ -222,7 +222,7 @@ Detailed Firebase console steps → [`docs/SETUP.md`](docs/SETUP.md)
 - Publishing checklist and console steps: [`docs/PLAY-RELEASE.md`](docs/PLAY-RELEASE.md)
 - Readiness audit and what is still open: [`docs/PLAY-READINESS.md`](docs/PLAY-READINESS.md)
 - Hybrid detection design and the diagnosis behind it: [`docs/V4-GEOFENCE-HYBRID.md`](docs/V4-GEOFENCE-HYBRID.md)
-- Privacy policy source: [`policy/public/index.html`](policy/public/index.html), published at <https://spotsire-policy.innovorix.com/>
+- Privacy policy source: [`policy/public/index.html`](policy/public/index.html), published at <https://spotwire-policy.innovorix.com/>
 
 ---
 

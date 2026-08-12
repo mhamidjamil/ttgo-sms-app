@@ -33,7 +33,7 @@ import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 
 // Play requires a policy link inside the app as well as in the listing.
-const val PRIVACY_POLICY_URL = "https://spotsire-policy.innovorix.com/"
+const val PRIVACY_POLICY_URL = "https://spotwire-policy.innovorix.com/"
 
 // Default History tab choices, in the order the History page shows them.
 private val historyTabOptions = listOf(

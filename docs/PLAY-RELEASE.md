@@ -33,7 +33,7 @@ serves to users):
 | Background location | **Declared and used.** Geofencing needs it, so the console declaration form and a demo video are required on every submission. See `docs/PLAY-READINESS.md` |
 | Prominent disclosure | Shown before the location prompt, Settings screen |
 | In-app account deletion | Profile, with a real erase of the stored data |
-| Privacy policy | `docs/privacy-policy.html`, linked from Profile |
+| Privacy policy | `site/index.html`, published by Cloudflare Pages from the `site` folder, linked from Profile |
 
 ## What you have to do in the console
 
@@ -42,12 +42,14 @@ serves to users):
 2. **Create the app** in Play Console. The package name `com.spotwire.app` is
    registered automatically at creation, and Play App Signing registers the key,
    so the developer-verification email needs no separate action for this app.
-3. **Host the privacy policy.** Enable GitHub Pages on this repository, serving
-   from `main` and the `/docs` folder, which publishes
-   `https://mhamidjamil.github.io/ttgo-sms-app/privacy-policy.html`. That exact
-   URL is already linked inside the app, so if you host it anywhere else, change
-   `PRIVACY_POLICY_URL` in `ProfileScreen.kt` to match. Play requires a live,
-   public, non-PDF page.
+3. **Host the privacy policy** on Cloudflare Pages, connected to this repository
+   so a push republishes it. In the Pages project set the build output directory
+   to `site` and leave the build command empty: that publishes `site/index.html`
+   and NOTHING else, which is the point, because `docs/` holds internal notes
+   that must never be served. Then set `PRIVACY_POLICY_URL` in
+   `ProfileScreen.kt` to the live address. Play requires a live, public,
+   non-PDF page, and the deletion section has the anchor `#delete` for the
+   account-deletion URL Play asks for separately.
 4. **App content declarations**, all mandatory even when the answer is "none":
    privacy policy URL, Data safety, content rating questionnaire, health apps,
    financial features, and the target audience.

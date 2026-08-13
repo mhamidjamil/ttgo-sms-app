@@ -6,13 +6,15 @@ rules_version = '2';
 //
 //   1. The TTGO T-Call gateway firmware (TTGO_TCall/v8/sms_calls). It talks to
 //      the Firestore REST API with an Authorization: Bearer <Firebase ID token>
-//      header (FirebaseManager.cpp:1755/1771/1788). The token comes from
-//      identitytoolkit accounts:signUp with returnSecureToken and NO email
-//      (FirebaseManager.cpp:594), because secrets.h sets
-//      FIREBASE_USE_ANONYMOUS_DEFAULT 1 with an empty email/password. It is an
-//      ANONYMOUS user. It stores no refresh token, so it signs up again roughly
-//      every hour (FirebaseManager.cpp:578) and gets a brand-new uid each time.
-//      The sign-in provider is the only stable thing about its identity.
+//      header (FirebaseManager.cpp:1755/1771/1788), signing in with the gateway's
+//      own email and password (FirebaseManager.cpp:597). Its uid is fixed and is
+//      listed in deviceUids() below. The device's local web dashboard signs in as
+//      the same account (data/dashboard.js), so it gets the same access.
+//
+//      It used to sign in ANONYMOUSLY, and because it keeps no refresh token it
+//      signed up again every time the hour-long token expired
+//      (FirebaseManager.cpp:578) — a brand-new account each time, several hundred
+//      of them. Anonymous is now trusted nowhere in this file.
 //
 //   2. The Android app. It only ever signs in with email + password
 //      (FirebaseAuthDataSource.kt:11 and :16), never anonymously.
@@ -32,21 +34,25 @@ service cloud.firestore {
       return request.auth.token.firebase.sign_in_provider;
     }
 
-    // Put the gateway's real uid here once it runs on a dedicated account, then
-    // delete the 'anonymous' clause in isDevice(). Anonymous sign-up is open to
-    // anyone who has the (public) Firebase API key, so the anonymous clause is
-    // a partition between the two clients, NOT a security boundary.
+    // The gateway account (mhamidjamil99+ttgo@gmail.com). Add a second entry
+    // here, and only here, if a second board is ever put in the field.
     function deviceUids() {
-      return [];
+      return ['NpGqL1q5lLUlzRjz1uDQwmalwBX2'];
     }
 
     function isDevice() {
-      return signedIn() &&
-             (provider() == 'anonymous' || request.auth.uid in deviceUids());
+      return signedIn() && request.auth.uid in deviceUids();
     }
 
+    // The gateway account signs in with a password like everybody else, so it
+    // would otherwise pass as an ordinary customer and be handed a quota, a
+    // profile and the sms_jobs create grant. It is excluded here instead.
+    // Anonymous is excluded too: anyone holding the public API key can mint an
+    // anonymous account, so it must never satisfy either half of this file.
     function isAppUser() {
-      return signedIn() && provider() != 'anonymous';
+      return signedIn() &&
+             provider() != 'anonymous' &&
+             !(request.auth.uid in deviceUids());
     }
 
     function isOwner(uid) {

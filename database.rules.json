@@ -3,8 +3,8 @@
     ".read": false,
     ".write": false,
     "ttgo_tcall": {
-      ".read": "auth != null",
-      ".write": "auth != null"
+      ".read": "auth != null && auth.uid === 'NpGqL1q5lLUlzRjz1uDQwmalwBX2'",
+      ".write": "auth != null && auth.uid === 'NpGqL1q5lLUlzRjz1uDQwmalwBX2'"
     }
   }
 }

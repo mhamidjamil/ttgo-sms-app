@@ -27,7 +27,7 @@ interface UserRepository {
     fun currentFirebaseUser(): FirebaseUser?
 
     // Phone verification (V1.5)
-    suspend fun savePhoneNumber(uid: String, phoneNumber: String): Result<Unit>
+    suspend fun savePhoneNumber(uid: String, phoneNumber: String, countryIso: String): Result<Unit>
     suspend fun savePhoneOtp(uid: String, otp: String): Result<Unit>
     // Returns (code, createdAtMillis) or null when no code is pending.
     suspend fun getPhoneOtp(uid: String): Result<Pair<String, Long>?>

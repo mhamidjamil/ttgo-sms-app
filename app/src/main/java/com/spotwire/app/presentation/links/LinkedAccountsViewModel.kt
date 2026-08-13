@@ -65,10 +65,10 @@ class LinkedAccountsViewModel(
         }
     }
 
-    fun invite(rawPhone: String, permissions: LinkPermissions) {
+    fun invite(rawPhone: String, permissions: LinkPermissions, countryIso: String) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isInviting = true, error = null, message = null)
-            inviteLink(rawPhone, permissions)
+            inviteLink(rawPhone, permissions, countryIso)
                 .onSuccess {
                     _uiState.value = _uiState.value.copy(
                         isInviting = false,

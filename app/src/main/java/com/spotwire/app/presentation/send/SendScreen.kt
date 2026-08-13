@@ -24,6 +24,8 @@ import com.spotwire.app.core.theme.WarningAmberBorder
 import com.spotwire.app.core.utils.PhoneNormalizer
 import com.spotwire.app.domain.model.User
 import com.spotwire.app.domain.usecase.sms.EnqueueSmsUseCase
+import com.spotwire.app.presentation.components.PhoneNumberField
+import com.spotwire.app.presentation.components.rememberDefaultCountry
 import org.koin.androidx.compose.koinViewModel
 
 @Composable
@@ -41,7 +43,7 @@ fun SendScreen(viewModel: SendViewModel = koinViewModel()) {
 @Composable
 private fun SendContent(
     uiState: SendUiState,
-    onSend: (String, String) -> Unit,
+    onSend: (String, String, String) -> Unit,
     onClearMessage: () -> Unit,
     onRequestMore: (String) -> Unit = {},
     onClearRequestMoreResult: () -> Unit = {},
@@ -53,6 +55,8 @@ private fun SendContent(
     // Hoisted so the queued-toast effect can clear the field for the next message.
     var phone by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
+    val defaultCountry = rememberDefaultCountry()
+    var country by remember { mutableStateOf(defaultCountry) }
 
     if (showRequestDialog) {
         RequestMoreDialog(
@@ -145,18 +149,27 @@ private fun SendContent(
                 Spacer(Modifier.height(8.dp))
             }
 
-            val phoneError = phoneNormalizer.validationError(phone)
+            val normalizedPhone = phoneNormalizer.normalize(phone, country)
+            // The device holds a Pakistani SIM, so it is the recipient's country
+            // that decides whether a text can be sent at all.
+            val smsReaches = normalizedPhone != null && phoneNormalizer.isPakistaniMobile(normalizedPhone)
 
-            OutlinedTextField(
-                value = phone,
-                onValueChange = { phone = it },
-                label = { Text("Phone Number (Pakistani only, e.g. 03001234567)") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+            PhoneNumberField(
+                number = phone,
+                onNumberChange = { phone = it },
+                country = country,
+                onCountryChange = { country = it },
+                label = "Phone Number",
                 modifier = Modifier.fillMaxWidth(),
-                isError = phoneError != null,
-                supportingText = phoneError?.let { { Text(it) } },
             )
+            if (normalizedPhone != null && !smsReaches) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Text messages are sent by one device with a Pakistani SIM, so it cannot reach this number. Send it on WhatsApp instead.",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             Spacer(Modifier.height(12.dp))
             val maxChars = EnqueueSmsUseCase.MAX_USER_MESSAGE_CHARS
             OutlinedTextField(
@@ -177,11 +190,11 @@ private fun SendContent(
             }
 
             Spacer(Modifier.height(24.dp))
-            val canSend = phone.isNotBlank() && message.isNotBlank() &&
-                    phoneError == null && !uiState.isSending && uiState.canSendMore
+            val canSend = message.isNotBlank() && smsReaches &&
+                    !uiState.isSending && uiState.canSendMore
 
             Button(
-                onClick = { onSend(phone, message) },
+                onClick = { onSend(phone, message, country) },
                 enabled = canSend,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
             ) {
@@ -279,7 +292,7 @@ private fun SendReadyPreview() {
     SpotwireTheme {
         SendContent(
             uiState = SendUiState(user = previewUser, effectiveQuota = 10),
-            onSend = { _, _ -> }, onClearMessage = {},
+            onSend = { _, _, _ -> }, onClearMessage = {},
         )
     }
 }
@@ -290,7 +303,7 @@ private fun SendQuotaLowPreview() {
     SpotwireTheme {
         SendContent(
             uiState = SendUiState(user = previewUser.copy(remainingQuota = 1), effectiveQuota = 10),
-            onSend = { _, _ -> }, onClearMessage = {},
+            onSend = { _, _, _ -> }, onClearMessage = {},
         )
     }
 }
@@ -301,7 +314,7 @@ private fun SendUnverifiedPreview() {
     SpotwireTheme {
         SendContent(
             uiState = SendUiState(user = unverifiedUser, effectiveQuota = 0),
-            onSend = { _, _ -> }, onClearMessage = {},
+            onSend = { _, _, _ -> }, onClearMessage = {},
         )
     }
 }

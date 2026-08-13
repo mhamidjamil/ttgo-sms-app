@@ -19,6 +19,7 @@ data class AuthUiState(
     val success: Boolean = false,
     val verificationSent: Boolean = false,
     val navigateToPhoneVerify: Boolean = false,
+    val navigateWithoutPhoneVerify: Boolean = false,
     val resetSending: Boolean = false,
     val resetMessage: String? = null,
 )
@@ -48,7 +49,7 @@ class AuthViewModel(
         }
     }
 
-    fun register(email: String, password: String, name: String, phone: String) {
+    fun register(email: String, password: String, name: String, phone: String, countryIso: String) {
         if (email.isBlank() || password.isBlank() || name.isBlank() || phone.isBlank()) {
             _uiState.value = AuthUiState(error = "All fields are required")
             return
@@ -57,11 +58,15 @@ class AuthViewModel(
             _uiState.value = AuthUiState(error = "Password must be at least 6 characters")
             return
         }
-        val normalizedPhone = phoneNormalizer.normalize(phone)
+        val normalizedPhone = phoneNormalizer.normalize(phone, countryIso)
         if (normalizedPhone == null) {
-            _uiState.value = AuthUiState(error = "Enter a valid Pakistani number (e.g. 03001234567)")
+            _uiState.value = AuthUiState(error = "Enter a valid mobile number for the country selected")
             return
         }
+        // A text code can only reach a Pakistani mobile, because there is one
+        // device sending them and its SIM is Pakistani. Everyone else records
+        // their number and confirms the account by email instead.
+        val canReceiveSmsCode = phoneNormalizer.isPakistaniMobile(normalizedPhone)
         viewModelScope.launch {
             _uiState.value = AuthUiState(isLoading = true)
             signUp(email, password, name)
@@ -69,11 +74,13 @@ class AuthViewModel(
                     // Best-effort sends — failures are surfaced on the verify
                     // screen / Profile banner, not here
                     sendEmailVerification()
-                    sendPhoneOtp(user.uid, normalizedPhone)
+                    if (canReceiveSmsCode) sendPhoneOtp(user.uid, normalizedPhone, countryIso)
+                    else userRepo.savePhoneNumber(user.uid, normalizedPhone, countryIso)
                     _uiState.value = AuthUiState(
                         success = true,
                         verificationSent = true,
-                        navigateToPhoneVerify = true,
+                        navigateToPhoneVerify = canReceiveSmsCode,
+                        navigateWithoutPhoneVerify = !canReceiveSmsCode,
                     )
                 }
                 .onFailure { _uiState.value = AuthUiState(error = it.message ?: "Sign-up failed") }

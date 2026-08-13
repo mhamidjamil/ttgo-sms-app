@@ -16,6 +16,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.spotwire.app.core.theme.SpotwireTheme
+import com.spotwire.app.presentation.components.PhoneNumberField
+import com.spotwire.app.presentation.components.rememberDefaultCountry
 import com.spotwire.app.domain.model.AccountLink
 import com.spotwire.app.domain.model.LinkPermissions
 import com.spotwire.app.domain.model.LinkState
@@ -44,7 +46,7 @@ fun LinkedAccountsScreen(
 @Composable
 private fun LinkedAccountsContent(
     uiState: LinkedAccountsUiState,
-    onInvite: (String, LinkPermissions) -> Unit,
+    onInvite: (String, LinkPermissions, String) -> Unit,
     onRespond: (AccountLink, Boolean) -> Unit,
     onSetPermissions: (AccountLink, LinkPermissions) -> Unit,
     onRemove: (AccountLink) -> Unit,
@@ -67,8 +69,8 @@ private fun LinkedAccountsContent(
     if (showInviteDialog) {
         InviteDialog(
             isInviting = uiState.isInviting,
-            onInvite = { phone, permissions ->
-                onInvite(phone, permissions)
+            onInvite = { phone, permissions, country ->
+                onInvite(phone, permissions, country)
                 showInviteDialog = false
             },
             onDismiss = { showInviteDialog = false },
@@ -313,10 +315,12 @@ private fun StateChip(state: LinkState) {
 @Composable
 private fun InviteDialog(
     isInviting: Boolean,
-    onInvite: (String, LinkPermissions) -> Unit,
+    onInvite: (String, LinkPermissions, String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var phone by remember { mutableStateOf("") }
+    val defaultCountry = rememberDefaultCountry()
+    var country by remember { mutableStateOf(defaultCountry) }
     var autoUpdates by remember { mutableStateOf(true) }
     var requestLocation by remember { mutableStateOf(false) }
 
@@ -331,12 +335,12 @@ private fun InviteDialog(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 )
                 Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = phone,
-                    onValueChange = { phone = it },
-                    label = { Text("Their phone (03001234567)") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                PhoneNumberField(
+                    number = phone,
+                    onNumberChange = { phone = it },
+                    country = country,
+                    onCountryChange = { country = it },
+                    label = "Their phone",
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(12.dp))
@@ -362,7 +366,7 @@ private fun InviteDialog(
         confirmButton = {
             TextButton(
                 onClick = {
-                    onInvite(phone, LinkPermissions(autoUpdates, requestLocation))
+                    onInvite(phone, LinkPermissions(autoUpdates, requestLocation), country)
                 },
                 enabled = phone.isNotBlank() && !isInviting,
             ) { Text("Send Invite") }
@@ -388,7 +392,7 @@ private fun LinkedAccountsPreview() {
     SpotwireTheme {
         LinkedAccountsContent(
             uiState = LinkedAccountsUiState(links = sampleLinks, isLoading = false),
-            onInvite = { _, _ -> }, onRespond = { _, _ -> }, onSetPermissions = { _, _ -> },
+            onInvite = { _, _, _ -> }, onRespond = { _, _ -> }, onSetPermissions = { _, _ -> },
             onRemove = {}, onRequestLocation = {}, onDismissLocationAnswer = {},
             onClearMessages = {}, onBack = {},
         )
@@ -401,7 +405,7 @@ private fun LinkedAccountsEmptyPreview() {
     SpotwireTheme {
         LinkedAccountsContent(
             uiState = LinkedAccountsUiState(isLoading = false),
-            onInvite = { _, _ -> }, onRespond = { _, _ -> }, onSetPermissions = { _, _ -> },
+            onInvite = { _, _, _ -> }, onRespond = { _, _ -> }, onSetPermissions = { _, _ -> },
             onRemove = {}, onRequestLocation = {}, onDismissLocationAnswer = {},
             onClearMessages = {}, onBack = {},
         )

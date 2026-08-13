@@ -31,5 +31,5 @@
     <string name="skip_verify_later">Skip — Verify Later</string>
     <string name="phone_verified">Phone number verified</string>
     <string name="phone_not_verified">Phone not verified</string>
-    <string name="invalid_pakistani_number">Enter a valid Pakistani number (e.g. 03001234567)</string>
+    <string name="invalid_phone_number">Enter a valid mobile number for the country selected</string>
 </resources>

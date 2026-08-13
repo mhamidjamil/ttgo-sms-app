@@ -18,16 +18,22 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.spotwire.app.core.theme.SpotwireTheme
 import com.spotwire.app.core.utils.PhoneNormalizer
+import com.spotwire.app.presentation.components.PhoneNumberField
+import com.spotwire.app.presentation.components.rememberDefaultCountry
 import org.koin.androidx.compose.koinViewModel
 
 @Composable
 fun SignupScreen(
     onSignupSuccess: () -> Unit,
+    onSignupWithoutPhoneVerify: () -> Unit,
     onNavigateToLogin: () -> Unit,
     viewModel: AuthViewModel = koinViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
     LaunchedEffect(uiState.navigateToPhoneVerify) { if (uiState.navigateToPhoneVerify) onSignupSuccess() }
+    LaunchedEffect(uiState.navigateWithoutPhoneVerify) {
+        if (uiState.navigateWithoutPhoneVerify) onSignupWithoutPhoneVerify()
+    }
     SignupContent(
         uiState = uiState,
         onSignup = viewModel::register,
@@ -38,7 +44,7 @@ fun SignupScreen(
 @Composable
 private fun SignupContent(
     uiState: AuthUiState,
-    onSignup: (String, String, String, String) -> Unit,
+    onSignup: (String, String, String, String, String) -> Unit,
     onNavigateToLogin: () -> Unit,
 ) {
     val phoneNormalizer = remember { PhoneNormalizer() }
@@ -50,7 +56,9 @@ private fun SignupContent(
     var confirmVisible by remember { mutableStateOf(false) }
     var confirmError by remember { mutableStateOf<String?>(null) }
     var phone by remember { mutableStateOf("") }
-    val phoneError = phoneNormalizer.validationError(phone)
+    val defaultCountry = rememberDefaultCountry()
+    var country by remember { mutableStateOf(defaultCountry) }
+    val phoneValid = phoneNormalizer.isValid(phone, country)
 
     Column(
         modifier = Modifier
@@ -119,15 +127,13 @@ private fun SignupContent(
             supportingText = confirmError?.let { { Text(it) } },
         )
         Spacer(Modifier.height(12.dp))
-        OutlinedTextField(
-            value = phone,
-            onValueChange = { phone = it },
-            label = { Text("Pakistani Mobile Number (e.g. 03001234567)") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+        PhoneNumberField(
+            number = phone,
+            onNumberChange = { phone = it },
+            country = country,
+            onCountryChange = { country = it },
+            label = "Mobile Number",
             modifier = Modifier.fillMaxWidth(),
-            isError = phoneError != null,
-            supportingText = phoneError?.let { { Text(it) } },
         )
         uiState.error?.let { err ->
             Spacer(Modifier.height(8.dp))
@@ -148,9 +154,9 @@ private fun SignupContent(
         Button(
             onClick = {
                 if (password != confirmPassword) confirmError = "Passwords do not match"
-                else onSignup(email, password, name, phone)
+                else onSignup(email, password, name, phone, country)
             },
-            enabled = !uiState.isLoading && phoneError == null,
+            enabled = !uiState.isLoading && phoneValid,
             modifier = Modifier.fillMaxWidth().height(48.dp),
         ) {
             if (uiState.isLoading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -164,17 +170,17 @@ private fun SignupContent(
 @Preview(showBackground = true, name = "Signup — Default")
 @Composable
 private fun SignupPreview() {
-    SpotwireTheme { SignupContent(AuthUiState(), { _, _, _, _ -> }, {}) }
+    SpotwireTheme { SignupContent(AuthUiState(), { _, _, _, _, _ -> }, {}) }
 }
 
 @Preview(showBackground = true, name = "Signup — Loading")
 @Composable
 private fun SignupLoadingPreview() {
-    SpotwireTheme { SignupContent(AuthUiState(isLoading = true), { _, _, _, _ -> }, {}) }
+    SpotwireTheme { SignupContent(AuthUiState(isLoading = true), { _, _, _, _, _ -> }, {}) }
 }
 
 @Preview(showBackground = true, name = "Signup — Error")
 @Composable
 private fun SignupErrorPreview() {
-    SpotwireTheme { SignupContent(AuthUiState(error = "Email already in use"), { _, _, _, _ -> }, {}) }
+    SpotwireTheme { SignupContent(AuthUiState(error = "Email already in use"), { _, _, _, _, _ -> }, {}) }
 }

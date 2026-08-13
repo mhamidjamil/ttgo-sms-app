@@ -15,6 +15,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.spotwire.app.core.theme.SpotwireTheme
+import com.spotwire.app.presentation.components.PhoneNumberField
+import com.spotwire.app.presentation.components.rememberDefaultCountry
 import org.koin.androidx.compose.koinViewModel
 
 @Composable
@@ -43,17 +45,20 @@ fun PhoneVerifyScreen(
 @Composable
 private fun PhoneVerifyContent(
     uiState: PhoneVerifyUiState,
-    onSendCode: (String) -> Unit,
+    onSendCode: (String, String) -> Unit,
     onVerify: (String) -> Unit,
     onSkip: () -> Unit,
 ) {
     var phone by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
+    val defaultCountry = rememberDefaultCountry()
+    var country by remember { mutableStateOf(defaultCountry) }
     // Prefill the phone field once the stored number loads (don't clobber edits).
     var prefilled by remember { mutableStateOf(false) }
     LaunchedEffect(uiState.phoneNumber) {
         if (!prefilled && uiState.phoneNumber.isNotBlank()) {
             phone = uiState.phoneNumber
+            if (uiState.country.isNotBlank()) country = uiState.country
             prefilled = true
         }
     }
@@ -79,18 +84,17 @@ private fun PhoneVerifyContent(
         )
         Spacer(Modifier.height(24.dp))
 
-        OutlinedTextField(
-            value = phone,
-            onValueChange = { phone = it },
-            label = { Text("Phone Number") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+        PhoneNumberField(
+            number = phone,
+            onNumberChange = { phone = it },
+            country = country,
+            onCountryChange = { country = it },
+            label = "Phone Number",
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("03001234567") },
         )
         Spacer(Modifier.height(12.dp))
         Button(
-            onClick = { onSendCode(phone) },
+            onClick = { onSendCode(phone, country) },
             enabled = phone.isNotBlank() && !uiState.isSending && !uiState.isLoading &&
                 uiState.cooldownSeconds == 0,
             modifier = Modifier.fillMaxWidth().height(48.dp),
@@ -153,7 +157,7 @@ private fun PhoneVerifyPreview() {
     SpotwireTheme {
         PhoneVerifyContent(
             uiState = PhoneVerifyUiState(phoneNumber = "+923001234567"),
-            onSendCode = {}, onVerify = {}, onSkip = {},
+            onSendCode = { _, _ -> }, onVerify = {}, onSkip = {},
         )
     }
 }
@@ -164,7 +168,7 @@ private fun PhoneVerifySentPreview() {
     SpotwireTheme {
         PhoneVerifyContent(
             uiState = PhoneVerifyUiState(phoneNumber = "+923001234567", codeSent = true),
-            onSendCode = {}, onVerify = {}, onSkip = {},
+            onSendCode = { _, _ -> }, onVerify = {}, onSkip = {},
         )
     }
 }
@@ -178,7 +182,7 @@ private fun PhoneVerifyErrorPreview() {
                 phoneNumber = "+923001234567",
                 error = "This code has expired (valid for 1 hour) — request a new one",
             ),
-            onSendCode = {}, onVerify = {}, onSkip = {},
+            onSendCode = { _, _ -> }, onVerify = {}, onSkip = {},
         )
     }
 }

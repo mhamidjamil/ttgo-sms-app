@@ -55,7 +55,8 @@ Top-level collection — one document per Firebase Auth user, keyed by UID.
 | `email_verified` | bool | `false` | Set to `true` after email OTP confirmation (in-app). A legacy Firebase-link verification can also upgrade it to `true`; it is never downgraded |
 | `email_otp` | string | (deleted on verify) | Stored 6-digit email OTP (delivered over SMTP); field removed once verified |
 | `email_otp_created_at` | timestamp | (deleted on verify) | When the email OTP was issued — codes expire after **1 hour** |
-| `phone_number` | string | `""` | Pakistani mobile in E.164 (`+923XXXXXXXXX`) |
+| `phone_number` | string | `""` | Mobile number in E.164, any country (`+923XXXXXXXXX`, `+447700900123`) |
+| `phone_country` | string | `""` | Two-letter country the number was entered for, so it can be shown and re-edited the way it was typed |
 | `phone_verified` | bool | `false` | Set to `true` after OTP confirmation |
 | `phone_otp` | string | (deleted on verify) | Stored 6-digit OTP; field removed once verified |
 | `phone_otp_created_at` | timestamp | (deleted on verify) | When the OTP was issued — codes expire after **1 hour** |

@@ -24,9 +24,17 @@ class EnqueueSmsUseCase(
         rawPhone: String,
         message: String,
         senderPhone: String,
+        countryIso: String,
     ): Result<String> {
-        val normalized = normalizer.normalize(rawPhone)
+        val normalized = normalizer.normalize(rawPhone, countryIso)
             ?: return Result.failure(IllegalArgumentException("Invalid phone number: $rawPhone"))
+        // One device sends these and its SIM is Pakistani, so it physically
+        // cannot text anywhere else. WhatsApp is the route for everyone abroad.
+        if (!normalizer.isPakistaniMobile(normalized)) {
+            return Result.failure(
+                IllegalArgumentException("Text messages only reach Pakistani mobiles. Use WhatsApp for $normalized.")
+            )
+        }
         if (senderPhone.isBlank()) {
             return Result.failure(IllegalStateException("Verify your phone number before sending"))
         }

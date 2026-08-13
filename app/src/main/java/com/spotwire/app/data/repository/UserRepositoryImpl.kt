@@ -124,9 +124,13 @@ class UserRepositoryImpl(
     // Saving a number also clears phone_verified, so it is audited: this is the
     // one legitimate path that can un-verify a phone, and the audit line tells
     // the two cases apart when a user reports "my number un-verified itself".
-    override suspend fun savePhoneNumber(uid: String, phoneNumber: String): Result<Unit> {
+    override suspend fun savePhoneNumber(
+        uid: String,
+        phoneNumber: String,
+        countryIso: String,
+    ): Result<Unit> {
         val previous = firestore.getUser(uid).getOrNull()
-        val result = firestore.savePhoneNumber(uid, phoneNumber)
+        val result = firestore.savePhoneNumber(uid, phoneNumber, countryIso)
         if (result.isSuccess && previous?.phoneNumber != phoneNumber) {
             logChange(uid, "Phone number", previous?.phoneNumber.orEmpty(), phoneNumber)
         }

@@ -7,6 +7,7 @@ data class User(
     val emailVerified: Boolean,
     val phoneNumber: String,
     val phoneVerified: Boolean,
+    val phoneCountry: String = "",
     val assignedQuota: Int,
     val remainingQuota: Int,
     val lastQuotaResetDate: String,

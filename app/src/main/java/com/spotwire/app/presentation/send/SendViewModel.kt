@@ -70,7 +70,7 @@ class SendViewModel(
         }
     }
 
-    fun send(phone: String, message: String) {
+    fun send(phone: String, message: String, countryIso: String) {
         val user = _uiState.value.user ?: return
         if (!_uiState.value.canSendMore) {
             _uiState.value = _uiState.value.copy(error = "Daily quota reached. Resets at midnight.")
@@ -78,7 +78,7 @@ class SendViewModel(
         }
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isSending = true, error = null)
-            enqueueSms(user.uid, phone, message, senderPhone = user.phoneNumber)
+            enqueueSms(user.uid, phone, message, senderPhone = user.phoneNumber, countryIso = countryIso)
                 .onSuccess {
                     decrementQuota(user.uid)
                     val updated = user.copy(remainingQuota = (user.remainingQuota - 1).coerceAtLeast(0))

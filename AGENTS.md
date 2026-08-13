@@ -44,7 +44,7 @@ If `~/.claude/knowledge/` is missing on this machine, clone it:
 
 ### Who owns the gateway, and who the app can reach (product facts, get these right in any user-facing copy)
 - **The TTGO gateway hardware is Hamid's own, and it is shared by every user.** Users do NOT supply a device, there is no screen for adding one, and none is planned. Never write listing copy, help text or documentation implying the user needs or owns hardware.
-- **SMS therefore reaches Pakistani numbers only**, because the SIM in that one gateway is Pakistani. This is why `PhoneNormalizer` accepts only `03…` / `923…` / `+923…`. It is a product constraint, not a validation preference.
+- **SMS therefore reaches Pakistani numbers only**, because the SIM in that one gateway is Pakistani. Any country's number can be registered and stored, but `PhoneNormalizer.isPakistaniMobile` decides whether the SMS route is even offered for a given recipient. It is a product constraint, not a validation preference.
 - **Reaching other countries is the next release, and WhatsApp is how.** WhatsApp delivery is not tied to that SIM, so it can serve any country. The SMS path stays Pakistan-only for the foreseeable future. Do not describe the app as internationally capable over SMS.
 - The Play Store listing text is written and maintained by Hamid in the console. Do not regenerate it or keep a competing copy in the repository.
 - Architecture is Clean Architecture: `presentation/` Compose screens + ViewModels -> `domain/` pure use cases/repository interfaces -> `data/` Firebase/DataStore DTOs and repository implementations.
@@ -74,7 +74,7 @@ If `~/.claude/knowledge/` is missing on this machine, clone it:
 - Domain use cases expose `suspend operator fun invoke(...)` and usually return `Result<T>`; data sources wrap Firebase calls with `runCatching { ... await() }`.
 - ViewModels keep immutable `data class *UiState` in `MutableStateFlow`, expose `StateFlow` via `asStateFlow()`, and launch work in `viewModelScope`.
 - Firestore DTOs live in `data/model` and map to domain with `toDomain()`. Use `@PropertyName` for snake_case Firestore fields, as in `UserDto` and `HistoryEntryDto`.
-- Phone inputs must pass through `PhoneNormalizer`; only Pakistani mobile formats `03...`, `923...`, and `+923...` are accepted and normalized to `+923XXXXXXXXX`.
+- Phone inputs must pass through `PhoneNormalizer`, which takes the number and the two-letter country it was typed for and returns E.164. Every phone field uses the shared `presentation/components/PhoneNumberField`, so the country picker and the validation are the same everywhere. A number already carrying its country code normalizes with no country passed.
 - Navigation is centralized in `core/navigation/AppNavGraph.kt`; bottom tabs are `Send`, `History`, `Arrival`, and `Profile`, while auth and the detail screens (settings history, WhatsApp, incoming alerts, linked accounts, monitoring log) are outside the bottom bar. `History` carries a Manual/Automated filter rather than a separate Auto tab.
 - Arrival monitoring writes a 72-hour on-device activity log through `MonitorLogStore` (JSON lines in app storage), shown on the Monitoring Log page reached from the Arrival tab and exportable through the share sheet from that page. New sweep-level decisions should log there as well as to Logcat, with repeat-per-sweep conditions written once when they appear.
 

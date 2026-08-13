@@ -18,6 +18,10 @@ data class UserDto(
     var phoneNumber: String = "",
     @get:PropertyName("phone_verified") @set:PropertyName("phone_verified")
     var phoneVerified: Boolean = false,
+    // Two-letter country the number was entered for, so a saved number can be
+    // shown and re-edited the way its owner typed it.
+    @get:PropertyName("phone_country") @set:PropertyName("phone_country")
+    var phoneCountry: String = "",
     @get:PropertyName("assigned_quota") @set:PropertyName("assigned_quota")
     var assignedQuota: Int = 0,
     @get:PropertyName("remaining_quota") @set:PropertyName("remaining_quota")
@@ -135,6 +139,7 @@ data class UserDto(
             emailVerified = emailVerified,
             phoneNumber = phoneNumber,
             phoneVerified = phoneVerified,
+            phoneCountry = phoneCountry,
             assignedQuota = assignedQuota,
             remainingQuota = remainingQuota,
             lastQuotaResetDate = lastQuotaResetDate,

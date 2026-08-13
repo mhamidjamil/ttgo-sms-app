@@ -12,9 +12,15 @@ class InviteLinkUseCase(
     private val linkRepo: LinkRepository,
     private val normalizer: PhoneNormalizer,
 ) {
-    suspend operator fun invoke(rawPhone: String, permissions: LinkPermissions): Result<String> {
-        val normalized = normalizer.normalize(rawPhone)
-            ?: return Result.failure(IllegalArgumentException("Enter a valid Pakistani number"))
+    suspend operator fun invoke(
+        rawPhone: String,
+        permissions: LinkPermissions,
+        countryIso: String,
+    ): Result<String> {
+        val normalized = normalizer.normalize(rawPhone, countryIso)
+            ?: return Result.failure(
+                IllegalArgumentException("Enter a valid mobile number for the country selected")
+            )
         val me = userRepo.getCurrentUser()
             ?: return Result.failure(IllegalStateException("Could not load your profile"))
         if (!me.phoneVerified) {

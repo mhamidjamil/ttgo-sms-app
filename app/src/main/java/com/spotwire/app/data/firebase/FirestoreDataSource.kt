@@ -175,9 +175,16 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
 
     // ── Phone verification (V1.5) ─────────────────────────────────────────────
 
-    suspend fun savePhoneNumber(uid: String, phoneNumber: String): Result<Unit> = runCatching {
-        db.collection(Paths.USERS).document(uid)
-            .update("phone_number", phoneNumber, "phone_verified", false).await()
+    suspend fun savePhoneNumber(
+        uid: String,
+        phoneNumber: String,
+        countryIso: String,
+    ): Result<Unit> = runCatching {
+        db.collection(Paths.USERS).document(uid).update(
+            "phone_number", phoneNumber,
+            "phone_country", countryIso,
+            "phone_verified", false,
+        ).await()
     }
 
     suspend fun savePhoneOtp(uid: String, otp: String): Result<Unit> = runCatching {

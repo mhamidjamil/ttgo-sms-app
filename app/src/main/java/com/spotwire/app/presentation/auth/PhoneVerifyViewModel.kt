@@ -21,6 +21,7 @@ data class PhoneVerifyUiState(
     val error: String? = null,
     val success: Boolean = false,
     val phoneNumber: String = "",
+    val country: String = "",
     // True once a code has actually been enqueued in this session — gates the
     // "code was sent" copy in the UI (it used to claim a code was sent when
     // nothing had been enqueued at all).
@@ -53,7 +54,10 @@ class PhoneVerifyViewModel(
     private fun loadPhone() {
         viewModelScope.launch {
             val user = userRepo.getCurrentUser()
-            _uiState.value = _uiState.value.copy(phoneNumber = user?.phoneNumber ?: "")
+            _uiState.value = _uiState.value.copy(
+                phoneNumber = user?.phoneNumber ?: "",
+                country = user?.phoneCountry.orEmpty(),
+            )
         }
     }
 
@@ -73,7 +77,7 @@ class PhoneVerifyViewModel(
     // Explicit send — called from the "Send Code" / "Resend Code" buttons with
     // whatever phone number is currently in the input field. Never a silent
     // no-op: every failure path surfaces an error message.
-    fun sendCode(phone: String) {
+    fun sendCode(phone: String, countryIso: String) {
         val uid = userRepo.currentFirebaseUser()?.uid
         if (uid == null) {
             _uiState.value = _uiState.value.copy(error = "Not signed in — please log in again")
@@ -85,12 +89,13 @@ class PhoneVerifyViewModel(
         }
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isSending = true, error = null)
-            sendPhoneOtp(uid, phone)
+            sendPhoneOtp(uid, phone, countryIso)
                 .onSuccess {
                     _uiState.value = _uiState.value.copy(
                         isSending = false,
                         codeSent = true,
                         phoneNumber = phone,
+                        country = countryIso,
                         toastMessage = "OTP Sent!",
                     )
                     startCooldownTicker()

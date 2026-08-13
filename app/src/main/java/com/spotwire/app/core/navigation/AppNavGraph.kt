@@ -103,6 +103,12 @@ fun AppNavGraph(startDestination: String) {
                             popUpTo(Screen.Login.route) { inclusive = true }
                         }
                     },
+                    // A number the TTGO cannot text has no code step to go to.
+                    onSignupWithoutPhoneVerify = {
+                        navController.navigate(Screen.Send.route) {
+                            popUpTo(Screen.Login.route) { inclusive = true }
+                        }
+                    },
                     onNavigateToLogin = { navController.popBackStack() }
                 )
             }

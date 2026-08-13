@@ -50,6 +50,8 @@ import com.spotwire.app.core.theme.SpotwireTheme
 import com.spotwire.app.core.theme.WarningAmber
 import com.spotwire.app.core.theme.WarningAmberBorder
 import com.spotwire.app.core.utils.PhoneNormalizer
+import com.spotwire.app.presentation.components.PhoneNumberField
+import com.spotwire.app.presentation.components.rememberDefaultCountry
 import com.spotwire.app.core.utils.PresenceReading
 import com.spotwire.app.core.utils.canScanWifi
 import com.spotwire.app.core.utils.freshScan
@@ -348,7 +350,9 @@ private fun SettingsContent(
     onAccountCheck: suspend () -> String = { "" },
 ) {
     val phoneNormalizer = remember { PhoneNormalizer() }
-    val guardianError = phoneNormalizer.validationError(guardianNumber)
+    val defaultCountry = rememberDefaultCountry()
+    var guardianCountry by remember { mutableStateOf(defaultCountry) }
+    val guardianValid = guardianNumber.isBlank() || phoneNormalizer.isValid(guardianNumber, guardianCountry)
 
     Scaffold(
         contentWindowInsets = WindowInsets(0.dp),
@@ -395,15 +399,13 @@ private fun SettingsContent(
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
             Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
-                value = guardianNumber,
-                onValueChange = onGuardianChange,
-                label = { Text("Guardian Phone (Pakistani, e.g. 03001234567)") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+            PhoneNumberField(
+                number = guardianNumber,
+                onNumberChange = onGuardianChange,
+                country = guardianCountry,
+                onCountryChange = { guardianCountry = it },
+                label = "Guardian Phone",
                 modifier = Modifier.fillMaxWidth(),
-                isError = guardianError != null,
-                supportingText = guardianError?.let { { Text(it) } },
             )
 
             Spacer(Modifier.height(20.dp))
@@ -484,10 +486,11 @@ private fun SettingsContent(
             Spacer(Modifier.height(28.dp))
             Button(
                 onClick = {
-                    val normalized = phoneNormalizer.normalize(guardianNumber) ?: guardianNumber
+                    val normalized = phoneNormalizer.normalize(guardianNumber, guardianCountry)
+                        ?: guardianNumber
                     onSave(normalized)
                 },
-                enabled = guardianError == null && !uiState.isSaving,
+                enabled = guardianValid && !uiState.isSaving,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
             ) {
                 if (uiState.isSaving) {
@@ -1017,6 +1020,8 @@ private fun PlaceEditorDialog(
 ) {
     val context = LocalContext.current
     val phoneNormalizer = remember { PhoneNormalizer() }
+    val defaultCountry = rememberDefaultCountry()
+    var contactCountry by remember { mutableStateOf(defaultCountry) }
     var label by remember { mutableStateOf(place.label) }
     var message by remember { mutableStateOf(place.message) }
     var waMessage by remember { mutableStateOf(place.waMessage) }
@@ -1465,22 +1470,21 @@ private fun PlaceEditorDialog(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(6.dp))
-                OutlinedTextField(
-                    value = newNumber,
-                    onValueChange = { newNumber = it; contactError = null },
-                    label = { Text("Phone (03001234567)") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                PhoneNumberField(
+                    number = newNumber,
+                    onNumberChange = { newNumber = it; contactError = null },
+                    country = contactCountry,
+                    onCountryChange = { contactCountry = it },
+                    label = "Phone",
                     modifier = Modifier.fillMaxWidth(),
-                    isError = contactError != null,
-                    supportingText = contactError?.let { { Text(it) } },
+                    supportingText = contactError,
                 )
                 Spacer(Modifier.height(6.dp))
                 OutlinedButton(
                     onClick = {
-                        val normalized = phoneNormalizer.normalize(newNumber)
+                        val normalized = phoneNormalizer.normalize(newNumber, contactCountry)
                         if (normalized == null) {
-                            contactError = "Enter a valid Pakistani number (e.g. 03001234567)"
+                            contactError = "Enter a valid mobile number for the country selected"
                         } else if (contacts.any { it.number == normalized }) {
                             contactError = "That number is already in the list"
                         } else {

@@ -55,6 +55,49 @@ class WhatsAppRepositoryImpl(
     override suspend fun checkGateway(): Result<WhatsAppRepository.GatewayHealth> =
         api.checkHealth().map { WhatsAppRepository.GatewayHealth(it.whatsAppConnected) }
 
+    // ── Proving a phone number ────────────────────────────────────────────────
+
+    // Read once per process. It changes only when the credential is rotated, and
+    // a rotation is followed by whatever is verifying next time the app starts.
+    @Volatile private var verifyCred: WaCredential? = null
+
+    private suspend fun verificationCredential(): WaCredential {
+        verifyCred?.let { return it }
+        val (keyId, secret) = firestore.getVerificationCredential().getOrNull()
+            ?: error("Phone verification is not available right now. Please try again shortly.")
+        return WaCredential.pair(keyId, secret).also { verifyCred = it }
+    }
+
+    // The gateway wants digits with the country code and no plus sign.
+    private fun digitsOf(phoneE164: String) = phoneE164.filter { it.isDigit() }
+
+    override suspend fun verifyTarget(): Result<WhatsAppRepository.VerifyTarget> = runCatching {
+        val target = api.verifyTarget(verificationCredential()).getOrThrow()
+        WhatsAppRepository.VerifyTarget(
+            phoneNumber = target.phoneNumber,
+            phrase = target.phrase,
+            waLink = target.waLink,
+            codeLength = target.codeLength,
+            resendAfterSeconds = target.resendAfterSeconds,
+        )
+    }
+
+    override suspend fun verifyOptIn(phoneE164: String): Result<Boolean> = runCatching {
+        api.verifyOptIn(verificationCredential(), digitsOf(phoneE164)).getOrThrow()
+    }
+
+    override suspend fun verifySendCode(phoneE164: String): Result<Unit> = runCatching {
+        api.verifySendCode(verificationCredential(), digitsOf(phoneE164)).getOrThrow()
+    }
+
+    override suspend fun verifyCheckCode(
+        phoneE164: String,
+        code: String,
+    ): Result<WhatsAppRepository.VerifyResult> = runCatching {
+        val result = api.verifyCheckCode(verificationCredential(), digitsOf(phoneE164), code).getOrThrow()
+        WhatsAppRepository.VerifyResult(result.verified, result.reason, result.attemptsRemaining)
+    }
+
     override suspend fun getLinkInfo(): WhatsAppRepository.Link? {
         val (cred, session) = credential() ?: return null
         return WhatsAppRepository.Link(

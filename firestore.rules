@@ -235,20 +235,23 @@ service cloud.firestore {
                 after.remaining_quota <= after.assigned_quota);
       }
 
-      // phone_verified may only be switched on by the write that consumes the
-      // stored code: markPhoneVerified (FirestoreDataSource.kt:125) sets the
-      // flag and deletes phone_otp in the same update. And a number can never
-      // be swapped while the flag stays on — savePhoneNumber (:107) clears it,
-      // and this makes that mandatory rather than polite.
+      // A number can never be swapped while the flag stays on: savePhoneNumber
+      // clears it, and this makes that mandatory rather than polite.
+      //
+      // The code itself is no longer checked here. It used to have to be
+      // consumed out of this same document, which sounded like proof and was
+      // not: the owner could write any value into phone_otp and immediately
+      // spend it, so the rule only ever enforced the shape of the write. The
+      // real check moved to the WhatsApp gateway, which generates the code,
+      // keeps only a hash of it, counts the wrong guesses and never hands it
+      // back. Closing the remaining gap (a client setting the flag directly)
+      // needs a server that can write on the user's behalf, which this project
+      // does not have yet.
       function phoneVerificationOk() {
         let before = resource.data;
         let after = request.resource.data;
-        let wasVerified = before.get('phone_verified', false);
-        let nowVerified = after.get('phone_verified', false);
         let numberMoved = after.get('phone_number', '') != before.get('phone_number', '');
-        return (!nowVerified || wasVerified ||
-                (('phone_otp' in before) && !('phone_otp' in after) && !numberMoved)) &&
-               (!numberMoved || !nowVerified);
+        return !numberMoved || !after.get('phone_verified', false);
       }
 
       // Same shape for email, plus the one case where the truth comes from

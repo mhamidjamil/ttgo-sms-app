@@ -50,6 +50,26 @@ data class WaSessionStatus(
 /** What /health said. Null means the gateway answered but did not mention it. */
 data class WaHealth(val whatsAppConnected: Boolean?)
 
+/**
+ * Everything the verify screen draws itself from, so the number to message and
+ * the words to send can be reworded on the gateway without an app release.
+ */
+data class WaVerifyTarget(
+    val phoneNumber: String,
+    val phrase: String,
+    val waLink: String,
+    val whatsAppConnected: Boolean?,
+    val codeLength: Int,
+    val resendAfterSeconds: Int,
+)
+
+/** verified false with a reason is an answer the screen explains, not an error. */
+data class WaVerifyResult(
+    val verified: Boolean,
+    val reason: String,
+    val attemptsRemaining: Int?,
+)
+
 data class WaProvisionResult(
     val apiKey: String,
     val sessionId: String,
@@ -279,6 +299,83 @@ class WhatsAppApi(private val configProvider: WaConfigProvider) {
             }
             val (code, body) = request(base, "POST", "/v1/messages/shared/send", cred.headers(), payload.toString())
             if (code !in 200..299) throw mapError(code, body)
+        }
+    }
+
+    // ── Proving a phone number ────────────────────────────────────────────────
+    //
+    // These four run on the verification credential, which can do nothing else.
+    // The gateway will not send a code to a number that has not first messaged
+    // it, so a copy of that credential lifted out of the installed app cannot be
+    // pointed at a stranger.
+
+    /** The number to message, the words to send, and the gateway's own timings. */
+    suspend fun verifyTarget(cred: WaCredential): Result<WaVerifyTarget> = withContext(Dispatchers.IO) {
+        runCatching {
+            val base = configProvider.get().serviceUrl
+            val (code, body) = request(base, "GET", "/v1/verify/target", cred.headers(), null)
+            if (code !in 200..299) throw mapError(code, body)
+            val json = JSONObject(body)
+            WaVerifyTarget(
+                phoneNumber = json.optString("phoneNumber"),
+                phrase = json.optString("phrase"),
+                waLink = json.optString("waLink"),
+                whatsAppConnected = if (json.has("whatsAppConnected")) json.optBoolean("whatsAppConnected") else null,
+                codeLength = json.optInt("codeLength", 6),
+                resendAfterSeconds = json.optInt("resendAfterSeconds", 60),
+            )
+        }
+    }
+
+    /** Has this number sent us the agreed words yet? A yes or no, never the text. */
+    suspend fun verifyOptIn(cred: WaCredential, phoneDigits: String): Result<Boolean> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val base = configProvider.get().serviceUrl
+                val payload = JSONObject().put("phoneNumber", phoneDigits)
+                val (code, body) =
+                    request(base, "POST", "/v1/verify/opt-in", cred.headers(), payload.toString())
+                if (code !in 200..299) throw mapError(code, body)
+                JSONObject(body).optBoolean("optedIn")
+            }
+        }
+
+    /**
+     * Ask for a code. The gateway refuses when the number has not opted in, and
+     * that refusal is a normal outcome the screen explains, not a crash.
+     */
+    suspend fun verifySendCode(cred: WaCredential, phoneDigits: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val base = configProvider.get().serviceUrl
+                val payload = JSONObject().put("phoneNumber", phoneDigits).put("appName", "Spotwire")
+                val (code, body) =
+                    request(base, "POST", "/v1/verify/send-code", cred.headers(), payload.toString())
+                if (code == 409) {
+                    error("We have not received your WhatsApp message yet. Send it and try again.")
+                }
+                if (code !in 200..299) throw mapError(code, body)
+            }
+        }
+
+    /** Check a typed code. False with a reason is an answer, not a failure. */
+    suspend fun verifyCheckCode(
+        cred: WaCredential,
+        phoneDigits: String,
+        code: String,
+    ): Result<WaVerifyResult> = withContext(Dispatchers.IO) {
+        runCatching {
+            val base = configProvider.get().serviceUrl
+            val payload = JSONObject().put("phoneNumber", phoneDigits).put("code", code)
+            val (status, body) =
+                request(base, "POST", "/v1/verify/check-code", cred.headers(), payload.toString())
+            if (status !in 200..299) throw mapError(status, body)
+            val json = JSONObject(body)
+            WaVerifyResult(
+                verified = json.optBoolean("verified"),
+                reason = json.optString("reason"),
+                attemptsRemaining = if (json.has("attemptsRemaining")) json.optInt("attemptsRemaining") else null,
+            )
         }
     }
 

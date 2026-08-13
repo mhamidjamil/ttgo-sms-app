@@ -20,7 +20,7 @@ val viewModelModule = module {
     viewModel { SendViewModel(get(), get(), get(), get(), get(), get(), get()) }
     viewModel { HistoryViewModel(get(), get(), get(), get()) }
     viewModel { ProfileViewModel(get(), get(), get(), get(), get(), get(), get(), get()) }
-    viewModel { PhoneVerifyViewModel(get(), get(), get(), get(), get()) }
+    viewModel { PhoneVerifyViewModel(get(), get(), get(), get(), get(), get()) }
     // V2
     viewModel { AutoViewModel(get(), get(), get(), get()) }
     viewModel { SettingsViewModel(get(), get(), get(), get(), get(), get(), get()) }

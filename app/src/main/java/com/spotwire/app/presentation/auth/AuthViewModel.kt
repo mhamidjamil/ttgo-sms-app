@@ -66,21 +66,24 @@ class AuthViewModel(
         // A text code can only reach a Pakistani mobile, because there is one
         // device sending them and its SIM is Pakistani. Everyone else records
         // their number and confirms the account by email instead.
-        val canReceiveSmsCode = phoneNormalizer.isPakistaniMobile(normalizedPhone)
+        val verifiesByPhone = phoneNormalizer.isPakistaniMobile(normalizedPhone)
         viewModelScope.launch {
             _uiState.value = AuthUiState(isLoading = true)
             signUp(email, password, name)
                 .onSuccess { user ->
-                    // Best-effort sends — failures are surfaced on the verify
-                    // screen / Profile banner, not here
+                    // The number is recorded straight away, verified or not, so
+                    // nothing is lost if they close the app on the next screen.
+                    userRepo.savePhoneNumber(user.uid, normalizedPhone, countryIso)
+                    // Best-effort — failures surface on the verify screen or the
+                    // Profile banner, not here. No code is sent from here any
+                    // more: the verify screen asks the gateway for one only once
+                    // the person has given WhatsApp permission to reply to them.
                     sendEmailVerification()
-                    if (canReceiveSmsCode) sendPhoneOtp(user.uid, normalizedPhone, countryIso)
-                    else userRepo.savePhoneNumber(user.uid, normalizedPhone, countryIso)
                     _uiState.value = AuthUiState(
                         success = true,
                         verificationSent = true,
-                        navigateToPhoneVerify = canReceiveSmsCode,
-                        navigateWithoutPhoneVerify = !canReceiveSmsCode,
+                        navigateToPhoneVerify = verifiesByPhone,
+                        navigateWithoutPhoneVerify = !verifiesByPhone,
                     )
                 }
                 .onFailure { _uiState.value = AuthUiState(error = it.message ?: "Sign-up failed") }

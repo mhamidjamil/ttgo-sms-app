@@ -47,6 +47,9 @@ data class WaSessionStatus(
     val phoneNumber: String?,
 )
 
+/** What /health said. Null means the gateway answered but did not mention it. */
+data class WaHealth(val whatsAppConnected: Boolean?)
+
 data class WaProvisionResult(
     val apiKey: String,
     val sessionId: String,
@@ -74,16 +77,29 @@ class WhatsAppApi(private val configProvider: WaConfigProvider) {
      * Availability gate: GET /health must answer 2xx. Unreachable host, timeout,
      * or any 5xx all resolve to the friendly maintenance message — callers must
      * stop their flow on failure.
+     *
+     * The one call that needs no credential, which is what makes it usable before
+     * a brand new account has anything to authenticate with. A gateway that also
+     * reports its WhatsApp link state fills in [WaHealth.whatsAppConnected]; an
+     * older one leaves it null, which reads as "up, and it did not say".
      */
-    suspend fun checkHealth(): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun checkHealth(): Result<WaHealth> = withContext(Dispatchers.IO) {
         val base = configProvider.get().serviceUrl
         try {
-            val (code, _) = request(base, "GET", "/health", emptyMap(), null)
-            if (code in 200..299) Result.success(Unit)
-            else {
+            val (code, body) = request(base, "GET", "/health", emptyMap(), null)
+            if (code !in 200..299) {
                 Log.w(TAG, "health check failed: HTTP $code at $base")
-                Result.failure(IllegalStateException(MAINTENANCE_MESSAGE))
+                return@withContext Result.failure(IllegalStateException(MAINTENANCE_MESSAGE))
             }
+            val whatsApp = runCatching {
+                val json = JSONObject(body)
+                when {
+                    json.has("whatsapp") -> json.optString("whatsapp") == "connected"
+                    json.has("whatsappConnected") -> json.optBoolean("whatsappConnected")
+                    else -> null
+                }
+            }.getOrNull()
+            Result.success(WaHealth(whatsAppConnected = whatsApp))
         } catch (e: Exception) {
             Log.w(TAG, "health check unreachable at $base: ${e.javaClass.simpleName}")
             Result.failure(IllegalStateException(MAINTENANCE_MESSAGE))

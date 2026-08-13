@@ -74,6 +74,25 @@ service cloud.firestore {
              get(path).data.get('phone_number', '') == phone;
     }
 
+    // ── app_config: settings the app reads, nobody signs for ─────────────────
+
+    // The verification-only WhatsApp credential, and nothing else. It sits here
+    // rather than in the build because a build constant can be read straight out
+    // of the installed file and can only be changed by shipping a release, while
+    // this can be rotated from the console and takes effect immediately.
+    //
+    // A read grant is per document and never per field, so EVERY signed-in user
+    // can read what is in here. That is acceptable only because the gateway
+    // scopes this credential to checking an opt-in and sending or checking a
+    // verification code, with the message text fixed on its side and a code only
+    // ever sent to a number that has already messaged the gateway asking for it.
+    // Nothing with any wider power may be added to this document: put it behind
+    // an endpoint that authenticates the user instead.
+    match /app_config/{doc} {
+      allow read: if isAppUser();
+      allow write: if false;
+    }
+
     // ── sim_module: the gateway's namespace ──────────────────────────────────
 
     // Config + health + block lists + lifetime counters.

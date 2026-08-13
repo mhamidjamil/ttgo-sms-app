@@ -3,6 +3,7 @@ package com.spotwire.app.presentation.whatsapp
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.spotwire.app.core.utils.DateUtils
 import com.spotwire.app.domain.repository.UserRepository
 import com.spotwire.app.domain.repository.WhatsAppRepository
 import com.spotwire.app.domain.repository.WhatsAppRepository.Companion.MODE_OWN
@@ -45,6 +46,14 @@ data class WhatsAppUiState(
     val keySecret: String = "",
     val keyError: String? = null,
     val isSavingKey: Boolean = false,
+
+    // ── Gateway health ────────────────────────────────────────────────────────
+    // Answered by the one endpoint that needs no credential, so "is the service
+    // even up" is separable from "is my key any good".
+    val isCheckingGateway: Boolean = false,
+    val gatewayUp: Boolean? = null,             // null = never checked in this session
+    val gatewayWhatsAppConnected: Boolean? = null,
+    val gatewayCheckedLabel: String? = null,
 )
 
 class WhatsAppViewModel(
@@ -132,6 +141,37 @@ class WhatsAppViewModel(
                 sharedConnected = shared,
                 ownStatus = own,
             )
+        }
+    }
+
+    /**
+     * "Is the gateway down, or is it me?" A message that will not send has two
+     * very different causes and until now the app could not tell them apart, so
+     * every failure looked like a broken key.
+     */
+    fun checkGateway() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isCheckingGateway = true)
+            val stamp = DateUtils.currentTime12h()
+            waRepo.checkGateway()
+                .onSuccess { health ->
+                    Log.i(TAG, "gateway health ok, whatsapp=${health.whatsAppConnected}")
+                    _uiState.value = _uiState.value.copy(
+                        isCheckingGateway = false,
+                        gatewayUp = true,
+                        gatewayWhatsAppConnected = health.whatsAppConnected,
+                        gatewayCheckedLabel = "Checked at $stamp",
+                    )
+                }
+                .onFailure {
+                    Log.w(TAG, "gateway health failed: ${it.message}")
+                    _uiState.value = _uiState.value.copy(
+                        isCheckingGateway = false,
+                        gatewayUp = false,
+                        gatewayWhatsAppConnected = null,
+                        gatewayCheckedLabel = "Checked at $stamp",
+                    )
+                }
         }
     }
 

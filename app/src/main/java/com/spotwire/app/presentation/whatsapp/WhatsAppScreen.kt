@@ -5,6 +5,8 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Base64
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -17,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -42,6 +45,7 @@ fun WhatsAppScreen(
         onSelectOwn = viewModel::selectOwn,
         onStartLinking = viewModel::startLinking,
         onRefresh = viewModel::refreshStatuses,
+        onCheckGateway = viewModel::checkGateway,
         onSendTest = viewModel::sendTest,
         onRetrySetup = viewModel::setup,
         onKeyIdChange = viewModel::setKeyId,
@@ -66,6 +70,7 @@ private fun WhatsAppContent(
     onSelectOwn: () -> Unit,
     onStartLinking: () -> Unit,
     onRefresh: () -> Unit,
+    onCheckGateway: () -> Unit,
     onSendTest: () -> Unit,
     onRetrySetup: () -> Unit,
     onKeyIdChange: (String) -> Unit,
@@ -104,6 +109,9 @@ private fun WhatsAppContent(
                 .padding(horizontal = 20.dp, vertical = 8.dp)
                 .verticalScroll(rememberScrollState()),
         ) {
+            GatewayHealthCard(uiState, onCheckGateway)
+            Spacer(Modifier.height(16.dp))
+
             when {
                 // The gateway turned the automatic setup down. Its own words are
                 // kept, because they say which of several things went wrong.
@@ -226,6 +234,55 @@ private fun WhatsAppContent(
 }
 
 /** What the user sees once their own portal key is connected. */
+/**
+ * Whether the service itself is answering, asked without any credential. Kept at
+ * the top because it is the first question worth asking when nothing sends: a
+ * key problem and an outage look identical from inside a failed message.
+ */
+@Composable
+private fun GatewayHealthCard(uiState: WhatsAppUiState, onCheck: () -> Unit) {
+    val (dot, headline) = when {
+        uiState.gatewayUp == null -> MaterialTheme.colorScheme.outline to "Gateway not checked yet"
+        !uiState.gatewayUp -> MaterialTheme.colorScheme.error to "Gateway is not answering"
+        uiState.gatewayWhatsAppConnected == false ->
+            MaterialTheme.colorScheme.error to "Gateway is up, but no WhatsApp number is linked to it"
+        else -> MaterialTheme.colorScheme.primary to "Gateway is up"
+    }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(10.dp).clip(CircleShape).background(dot))
+                Spacer(Modifier.width(8.dp))
+                Text(headline, style = MaterialTheme.typography.titleSmall)
+            }
+            uiState.gatewayCheckedLabel?.let {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+            }
+            if (uiState.gatewayUp == false) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Messages cannot be delivered on WhatsApp until it is back. Nothing is lost: " +
+                        "send them by hand for now and try again shortly.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            OutlinedButton(onClick = onCheck, enabled = !uiState.isCheckingGateway) {
+                if (uiState.isCheckingGateway) {
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                } else {
+                    Text("Check gateway")
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun OwnGatewayCard(uiState: WhatsAppUiState, onDisconnect: () -> Unit) {
     Card(Modifier.fillMaxWidth()) {
@@ -439,7 +496,7 @@ private fun WhatsAppSsoOffPreview() {
                 showKeyForm = true,
             ),
             onSelectShared = {}, onSelectOwn = {}, onStartLinking = {}, onRefresh = {},
-            onSendTest = {}, onRetrySetup = {}, onKeyIdChange = {}, onKeySecretChange = {},
+            onCheckGateway = {}, onSendTest = {}, onRetrySetup = {}, onKeyIdChange = {}, onKeySecretChange = {},
             onToggleKeyForm = {}, onSaveKey = {}, onDisconnectKey = {}, onOpenPortal = {}, onBack = {},
         )
     }
@@ -456,7 +513,7 @@ private fun WhatsAppOwnKeyPreview() {
                 portalUrl = "https://w2.innovorix.com",
             ),
             onSelectShared = {}, onSelectOwn = {}, onStartLinking = {}, onRefresh = {},
-            onSendTest = {}, onRetrySetup = {}, onKeyIdChange = {}, onKeySecretChange = {},
+            onCheckGateway = {}, onSendTest = {}, onRetrySetup = {}, onKeyIdChange = {}, onKeySecretChange = {},
             onToggleKeyForm = {}, onSaveKey = {}, onDisconnectKey = {}, onOpenPortal = {}, onBack = {},
         )
     }
@@ -472,7 +529,7 @@ private fun WhatsAppSharedPreview() {
                 ownStatus = "disconnected", portalUrl = "https://w2.innovorix.com",
             ),
             onSelectShared = {}, onSelectOwn = {}, onStartLinking = {}, onRefresh = {},
-            onSendTest = {}, onRetrySetup = {}, onKeyIdChange = {}, onKeySecretChange = {},
+            onCheckGateway = {}, onSendTest = {}, onRetrySetup = {}, onKeyIdChange = {}, onKeySecretChange = {},
             onToggleKeyForm = {}, onSaveKey = {}, onDisconnectKey = {}, onOpenPortal = {}, onBack = {},
         )
     }

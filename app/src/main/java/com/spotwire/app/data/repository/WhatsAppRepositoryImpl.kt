@@ -52,6 +52,9 @@ class WhatsAppRepositoryImpl(
 
     override suspend fun isLinked(): Boolean = credential() != null
 
+    override suspend fun checkGateway(): Result<WhatsAppRepository.GatewayHealth> =
+        api.checkHealth().map { WhatsAppRepository.GatewayHealth(it.whatsAppConnected) }
+
     override suspend fun getLinkInfo(): WhatsAppRepository.Link? {
         val (cred, session) = credential() ?: return null
         return WhatsAppRepository.Link(

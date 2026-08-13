@@ -9,6 +9,22 @@ The TTGO firmware uses `sim_module/` in Firestore. The app adds its own top-leve
 
 ## Firestore
 
+### `app_config/whatsapp` (app reads only, console writes)
+
+The verification-only gateway credential, read at run time so it can be rotated
+from the console without shipping a release.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `verify_key_id` | string | Gateway key id (`wak_...`) for the verification scope |
+| `verify_key_secret` | string | Its secret (`was_...`) |
+
+A Firestore read grant is per document and never per field, so every signed-in
+user can read this. It is safe only because the gateway limits this credential to
+checking an opt-in and sending or checking a verification code, with the message
+text fixed server-side and a code only ever sent to a number that has already
+messaged the gateway. Nothing with wider power belongs in this document.
+
 ### `sim_module/device` (existing — app reads only)
 
 | Field | Type | Written by | Description |

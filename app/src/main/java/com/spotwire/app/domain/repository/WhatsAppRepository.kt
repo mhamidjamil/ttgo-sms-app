@@ -7,6 +7,12 @@ interface WhatsAppRepository {
         const val MODE_OWN = "own"       // user-linked WhatsApp (QR scan)
     }
 
+    /**
+     * The gateway answered. [whatsAppConnected] is null when it did not say
+     * whether a WhatsApp number is linked, which older gateway builds do not.
+     */
+    data class GatewayHealth(val whatsAppConnected: Boolean?)
+
     // What the WhatsApp screen needs to know about the gateway link, resolved
     // once so the screen never has to ask three separate questions.
     data class Link(
@@ -21,6 +27,14 @@ interface WhatsAppRepository {
 
     // True when the user has a usable gateway credential of either kind.
     suspend fun isLinked(): Boolean
+
+    /**
+     * Is the gateway answering at all, and does it have a WhatsApp number linked?
+     * Needs no credential, so it can be asked before an account has one, and it
+     * is what stops a new user being walked into a verification step that cannot
+     * possibly finish.
+     */
+    suspend fun checkGateway(): Result<GatewayHealth>
 
     /**
      * SSO auto-provisioning, for gateways that have it enabled. No-op success

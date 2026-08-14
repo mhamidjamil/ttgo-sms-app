@@ -41,6 +41,12 @@ If `~/.claude/knowledge/` is missing on this machine, clone it:
 
 ## Project Overview
 - Spotwire is a single-module Android app (`:app`) written in Kotlin + Jetpack Compose. It queues SMS jobs in Firestore for a TTGO T-Call device; the app does not send GSM SMS directly.
+
+### Who owns the gateway, and who the app can reach (product facts, get these right in any user-facing copy)
+- **The TTGO gateway hardware is Hamid's own, and it is shared by every user.** Users do NOT supply a device, there is no screen for adding one, and none is planned. Never write listing copy, help text or documentation implying the user needs or owns hardware.
+- **SMS therefore reaches Pakistani numbers only**, because the SIM in that one gateway is Pakistani. This is why `PhoneNormalizer` accepts only `03…` / `923…` / `+923…`. It is a product constraint, not a validation preference.
+- **Reaching other countries is the next release, and WhatsApp is how.** WhatsApp delivery is not tied to that SIM, so it can serve any country. The SMS path stays Pakistan-only for the foreseeable future. Do not describe the app as internationally capable over SMS.
+- The Play Store listing text is written and maintained by Hamid in the console. Do not regenerate it or keep a competing copy in the repository.
 - Architecture is Clean Architecture: `presentation/` Compose screens + ViewModels -> `domain/` pure use cases/repository interfaces -> `data/` Firebase/DataStore DTOs and repository implementations.
 - Koin is the DI container. Modules live in `core/di/*Module.kt` and are loaded from `App.kt`; add new dependencies there rather than constructing them in screens.
 

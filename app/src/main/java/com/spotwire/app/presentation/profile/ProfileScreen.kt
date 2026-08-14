@@ -448,8 +448,8 @@ private fun ProfileContent(
     }
 }
 
-// Email verification banner — request a 6-digit code (sent over SMTP) and
-// enter it inline, mirroring the phone-verify flow.
+// Email verification banner. Firebase emails the link and holds its own
+// credentials, so this app carries no mailbox password of any kind.
 @Composable
 private fun EmailVerifyBanner(
     uiState: ProfileUiState,

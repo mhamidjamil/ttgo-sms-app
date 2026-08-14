@@ -4,6 +4,7 @@ sealed class Screen(val route: String) {
     data object Login : Screen("login")
     data object Signup : Screen("signup")
     data object PhoneVerify : Screen("phone_verify")
+    data object EmailVerify : Screen("email_verify")
     data object Send : Screen("send")
     // Manual and automated messages share one History destination.
     data object History : Screen("history")

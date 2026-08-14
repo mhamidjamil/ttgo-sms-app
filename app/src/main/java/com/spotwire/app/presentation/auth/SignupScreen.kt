@@ -142,7 +142,7 @@ private fun SignupContent(
         if (uiState.verificationSent) {
             Spacer(Modifier.height(8.dp))
             Text(
-                "A 6-digit code was emailed to you — verify from Profile → Verify Email.",
+                "We emailed you a link to confirm your address. Check the spam folder too.",
                 color = MaterialTheme.colorScheme.secondary,
                 style = MaterialTheme.typography.bodySmall,
             )

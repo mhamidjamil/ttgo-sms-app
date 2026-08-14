@@ -24,6 +24,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.spotwire.app.presentation.alerts.AlertSourcesScreen
 import com.spotwire.app.presentation.auth.LoginScreen
+import com.spotwire.app.presentation.auth.EmailVerifyScreen
 import com.spotwire.app.presentation.auth.PhoneVerifyScreen
 import com.spotwire.app.presentation.auth.SignupScreen
 import com.spotwire.app.presentation.history.HistoryScreen
@@ -103,13 +104,29 @@ fun AppNavGraph(startDestination: String) {
                             popUpTo(Screen.Login.route) { inclusive = true }
                         }
                     },
-                    // A number the TTGO cannot text has no code step to go to.
+                    // A number the TTGO cannot text confirms the account by
+                    // email instead; the number itself is proven later, when
+                    // they connect their own WhatsApp gateway.
                     onSignupWithoutPhoneVerify = {
-                        navController.navigate(Screen.Send.route) {
+                        navController.navigate(Screen.EmailVerify.route) {
                             popUpTo(Screen.Login.route) { inclusive = true }
                         }
                     },
                     onNavigateToLogin = { navController.popBackStack() }
+                )
+            }
+            composable(Screen.EmailVerify.route) {
+                EmailVerifyScreen(
+                    onVerified = {
+                        navController.navigate(Screen.Send.route) {
+                            popUpTo(Screen.EmailVerify.route) { inclusive = true }
+                        }
+                    },
+                    onSkip = {
+                        navController.navigate(Screen.Send.route) {
+                            popUpTo(Screen.EmailVerify.route) { inclusive = true }
+                        }
+                    }
                 )
             }
             composable(Screen.PhoneVerify.route) {

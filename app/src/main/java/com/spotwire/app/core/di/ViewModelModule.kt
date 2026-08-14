@@ -2,6 +2,7 @@ package com.spotwire.app.core.di
 
 import com.spotwire.app.presentation.alerts.AlertSourcesViewModel
 import com.spotwire.app.presentation.auth.AuthViewModel
+import com.spotwire.app.presentation.auth.EmailVerifyViewModel
 import com.spotwire.app.presentation.auth.PhoneVerifyViewModel
 import com.spotwire.app.presentation.auto.AutoViewModel
 import com.spotwire.app.presentation.history.HistoryViewModel
@@ -21,6 +22,7 @@ val viewModelModule = module {
     viewModel { HistoryViewModel(get(), get(), get(), get()) }
     viewModel { ProfileViewModel(get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { PhoneVerifyViewModel(get(), get(), get(), get(), get(), get()) }
+    viewModel { EmailVerifyViewModel(get(), get(), get(), get()) }
     // V2
     viewModel { AutoViewModel(get(), get(), get(), get()) }
     viewModel { SettingsViewModel(get(), get(), get(), get(), get(), get(), get()) }

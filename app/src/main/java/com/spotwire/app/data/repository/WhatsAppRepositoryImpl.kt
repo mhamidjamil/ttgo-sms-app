@@ -150,6 +150,7 @@ class WhatsAppRepositoryImpl(
             // sender is not an option for it.
             setMode(MODE_OWN)
             Log.i(TAG, "gateway key accepted for session ${session.sessionId} (status ${session.status})")
+            proveNumberIfItMatches(uid, session.phoneNumber)
 
             WhatsAppRepository.Link(
                 linked = true,
@@ -158,6 +159,30 @@ class WhatsAppRepositoryImpl(
                 phoneNumber = session.phoneNumber,
             )
         }
+
+    /**
+     * Connecting a gateway key proves the number for free. Linking one means
+     * scanning a QR code with the WhatsApp on that phone, so the number the
+     * gateway reports back is a number this person demonstrably holds. Anyone
+     * outside Pakistan gets their number confirmed here rather than by a code,
+     * because the one device that sends codes cannot reach them.
+     */
+    private suspend fun proveNumberIfItMatches(uid: String, sessionPhone: String?) {
+        val linked = sessionPhone?.filter { it.isDigit() }.orEmpty()
+        if (linked.isBlank()) return
+        val dto = firestore.getUser(uid).getOrNull() ?: return
+        if (dto.phoneVerified) return
+        if (dto.phoneNumber.filter { it.isDigit() } != linked) {
+            Log.i(TAG, "linked WhatsApp number is not the account's number, leaving it unverified")
+            return
+        }
+        firestore.markPhoneVerified(uid)
+            .onSuccess {
+                Log.i(TAG, "account number proven by the WhatsApp number its gateway key is linked to")
+                firestore.publishPhoneDirectoryEntry(dto.phoneNumber, uid, dto.name)
+            }
+            .onFailure { Log.w(TAG, "could not record the proven number: ${it.message}") }
+    }
 
     override suspend fun clearLink() {
         prefs.clearWaLink()

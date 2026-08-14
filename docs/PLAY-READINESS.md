@@ -116,9 +116,10 @@ queue the firmware reads.
 4. **Create the app in Play Console under `com.spotwire.app`** and upload one
    bundle by hand. The Play API cannot create a package's first release, so no
    automation can run until this is done once.
-5. **Closed testing:** a personal developer account needs 12 testers opted in
-   for 14 continuous days before production unlocks, then up to 7 days review.
-   Budget three weeks.
+5. **Closed testing does NOT apply.** The Play developer account is an
+   ORGANIZATION account, which is exempt from the 12-testers-for-14-days rule
+   that personal accounts created after 13 November 2023 must serve. Releases
+   go straight to production, subject only to normal review.
 6. **Service account for the automation** (see below), created fresh for this
    app. PakSehat's key belongs to a different Cloud project and cannot upload
    this package.

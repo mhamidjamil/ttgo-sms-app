@@ -389,6 +389,33 @@ private fun SettingsContent(
                 .padding(horizontal = 20.dp, vertical = 8.dp)
                 .verticalScroll(rememberScrollState()),
         ) {
+            if (uiState.noDeliveryRoute) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(WarningAmber)
+                        .border(1.dp, WarningAmberBorder)
+                        .padding(12.dp),
+                ) {
+                    CompositionLocalProvider(LocalContentColor provides OnWarningAmber) {
+                        Column {
+                            Text(
+                                "⚠ Arrivals cannot be delivered",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                "Monitoring will still detect you arriving, but there is nothing to " +
+                                    "send with: connect your WhatsApp gateway in Profile, or verify " +
+                                    "your number to send text messages.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+
             CurrentPlaceCheck(uiState.places, onSendLocation)
             Spacer(Modifier.height(20.dp))
 

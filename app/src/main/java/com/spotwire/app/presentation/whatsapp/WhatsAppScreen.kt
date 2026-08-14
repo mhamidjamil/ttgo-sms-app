@@ -14,6 +14,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,6 +26,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -318,6 +322,9 @@ private fun OwnGatewaySetup(
         modifier = Modifier.fillMaxWidth(),
     )
     Spacer(Modifier.height(8.dp))
+    // Masked: the portal shows this once and never again, so it is usually being
+    // typed or pasted somewhere other people can see the screen.
+    var secretVisible by remember { mutableStateOf(false) }
     OutlinedTextField(
         value = uiState.keySecret,
         onValueChange = onKeySecretChange,
@@ -326,6 +333,16 @@ private fun OwnGatewaySetup(
         singleLine = true,
         enabled = !uiState.isSavingKey,
         isError = uiState.keyError != null,
+        visualTransformation =
+            if (secretVisible) VisualTransformation.None else PasswordVisualTransformation(),
+        trailingIcon = {
+            IconButton(onClick = { secretVisible = !secretVisible }) {
+                Icon(
+                    imageVector = if (secretVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                    contentDescription = if (secretVisible) "Hide secret" else "Show secret",
+                )
+            }
+        },
         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
         modifier = Modifier.fillMaxWidth(),
     )

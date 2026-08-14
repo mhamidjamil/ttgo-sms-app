@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
     <exclude domain="sharedpref" path="." />
+    <!-- Holds the gateway key and secret. A backup is a copy of a credential
+         somewhere nobody is watching, and this one can send messages. -->
+    <exclude domain="file" path="datastore/" />
 </full-backup-content>

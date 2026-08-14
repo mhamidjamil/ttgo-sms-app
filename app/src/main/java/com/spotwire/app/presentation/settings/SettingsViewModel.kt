@@ -35,6 +35,10 @@ data class SettingsUiState(
     val saveSuccess: Boolean = false,
     // WhatsApp gateway set up → the place editor offers a WhatsApp message field.
     val waConfigured: Boolean = false,
+    // No WhatsApp gateway AND no text allowance means an arrival is detected and
+    // then reaches nobody. Armed but mute is the worst state this app can be in,
+    // so it is said on the screen rather than discovered by not being alerted.
+    val noDeliveryRoute: Boolean = false,
 
     // "Send my location now" prompt — non-null place id means it is open.
     val locationPlaceId: String? = null,
@@ -86,6 +90,7 @@ class SettingsViewModel(
     private fun loadUser() {
         viewModelScope.launch {
             val user = userRepo.getCurrentUser()
+            val linked = waRepo.isLinked()
             if (user != null) {
                 // Copied onto whatever is already there, never a fresh state: the
                 // health read runs alongside this one and whichever finishes last
@@ -97,7 +102,8 @@ class SettingsViewModel(
                     // toDomain() migrates legacy home/office fields into the
                     // places list, so old accounts land here with both seeded.
                     places = user.places.ifEmpty { Place.defaults() },
-                    waConfigured = waRepo.isLinked(),
+                    waConfigured = linked,
+                    noDeliveryRoute = !linked && !user.phoneVerified,
                 )
             } else {
                 _uiState.value = _uiState.value.copy(isLoading = false, error = "Could not load settings")

@@ -6,8 +6,6 @@ import androidx.lifecycle.viewModelScope
 import com.spotwire.app.core.utils.DateUtils
 import com.spotwire.app.domain.repository.UserRepository
 import com.spotwire.app.domain.repository.WhatsAppRepository
-import com.spotwire.app.domain.repository.WhatsAppRepository.Companion.MODE_OWN
-import com.spotwire.app.domain.repository.WhatsAppRepository.Companion.MODE_SHARED
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,14 +17,8 @@ private const val TAG = "WhatsAppVM"
 
 data class WhatsAppUiState(
     val isLoading: Boolean = true,
-    // Both phone + email verified — SSO eligibility.
-    val eligible: Boolean = true,
-    // Gateway account exists (auto-provisioned, or a key the user pasted).
+    // A gateway key of their own is connected.
     val provisioned: Boolean = false,
-    // Provisioning/availability failure (e.g. the maintenance message).
-    val setupError: String? = null,
-    val mode: String = MODE_SHARED,
-    val sharedConnected: Boolean? = null,   // null = unknown yet
     val ownStatus: String? = null,          // connecting | qr_ready | connected | disconnected
     val qrBase64: String? = null,           // data-URL PNG while linking
     val isLinking: Boolean = false,
@@ -35,9 +27,6 @@ data class WhatsAppUiState(
     val info: String? = null,
 
     // ── Own gateway key (portal) ──────────────────────────────────────────────
-    // The link came from a key the user created on the gateway portal. Such a
-    // key sends only from their own number, so the mode choice does not apply.
-    val ownKey: Boolean = false,
     val ownKeyPhone: String? = null,
     val portalUrl: String = "",
     // The paste form is open. Opens by default when there is nothing set up.
@@ -68,79 +57,30 @@ class WhatsAppViewModel(
 
     init { setup() }
 
-    /** Full setup pass: eligibility → existing link or SSO → mode + statuses. */
+    /** What is connected, and is the service that would carry it even up? */
     fun setup() {
         viewModelScope.launch {
             _uiState.value = WhatsAppUiState(isLoading = true)
             val portal = waRepo.portalUrl()
-            val user = userRepo.getCurrentUser()
-            val eligible = user != null && user.phoneVerified && user.emailVerified
-
-            // A key the user pasted stands on its own: it does not need the SSO
-            // path, and it does not need email verification either.
             val existing = waRepo.getLinkInfo()
-            if (existing != null) {
-                _uiState.value = WhatsAppUiState(
-                    isLoading = false,
-                    eligible = eligible,
-                    provisioned = true,
-                    mode = waRepo.getMode(),
-                    ownKey = existing.ownKey,
-                    ownKeyPhone = existing.phoneNumber,
-                    portalUrl = portal,
-                )
-                refreshStatuses()
-                return@launch
-            }
-
-            if (!eligible) {
-                _uiState.value = WhatsAppUiState(
-                    isLoading = false, eligible = false, portalUrl = portal, showKeyForm = true,
-                )
-                return@launch
-            }
-
-            waRepo.ensureProvisioned()
-                .onSuccess { provisioned ->
-                    _uiState.value = WhatsAppUiState(
-                        isLoading = false,
-                        eligible = true,
-                        provisioned = provisioned,
-                        mode = waRepo.getMode(),
-                        portalUrl = portal,
-                        showKeyForm = !provisioned,
-                    )
-                    if (provisioned) refreshStatuses()
-                }
-                .onFailure {
-                    // The gateway declined — most often because it has SSO
-                    // switched off. Its own words are kept, and the manual
-                    // portal key is offered underneath as the way through.
-                    Log.i(TAG, "gateway setup unavailable: ${it.message}")
-                    _uiState.value = WhatsAppUiState(
-                        isLoading = false,
-                        eligible = true,
-                        provisioned = false,
-                        setupError = it.message ?: "WhatsApp setup failed — try again later",
-                        portalUrl = portal,
-                        showKeyForm = true,
-                    )
-                }
+            _uiState.value = WhatsAppUiState(
+                isLoading = false,
+                provisioned = existing != null,
+                ownKeyPhone = existing?.phoneNumber,
+                portalUrl = portal,
+                // Nothing is connected, so the one thing to do is connect it.
+                showKeyForm = existing == null,
+            )
+            if (existing != null) refreshStatuses()
+            checkGateway()
         }
     }
 
     fun refreshStatuses() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isBusy = true)
-            // A portal key cannot send through the shared number, so asking
-            // about it would only show a status the user can never act on.
-            val shared = if (_uiState.value.ownKey) null else waRepo.getSharedConnected().getOrNull()
             val own = waRepo.getStatus().getOrNull()
-            _uiState.value = _uiState.value.copy(
-                isBusy = false,
-                sharedConnected = shared,
-                ownStatus = own,
-            )
+            _uiState.value = _uiState.value.copy(isBusy = false, ownStatus = own)
         }
     }
 
@@ -201,13 +141,10 @@ class WhatsAppViewModel(
                     _uiState.value = _uiState.value.copy(
                         isSavingKey = false,
                         provisioned = true,
-                        setupError = null,
                         showKeyForm = false,
                         keyId = "",
                         keySecret = "",
-                        ownKey = true,
                         ownKeyPhone = link.phoneNumber,
-                        mode = MODE_OWN,
                         info = link.phoneNumber
                             ?.let { "Connected. Messages will come from $it." }
                             ?: "Connected to your own WhatsApp gateway.",
@@ -230,32 +167,6 @@ class WhatsAppViewModel(
             _uiState.value = _uiState.value.copy(isBusy = true)
             waRepo.clearLink()
             setup()
-        }
-    }
-
-    fun selectShared() {
-        viewModelScope.launch {
-            stopLinking()
-            waRepo.setMode(MODE_SHARED)
-                .onSuccess {
-                    _uiState.value = _uiState.value.copy(
-                        mode = MODE_SHARED, qrBase64 = null,
-                        info = "Messages will be sent from the shared Spotwire number",
-                    )
-                }
-                .onFailure { _uiState.value = _uiState.value.copy(error = it.message) }
-        }
-    }
-
-    fun selectOwn() {
-        viewModelScope.launch {
-            waRepo.setMode(MODE_OWN)
-                .onSuccess {
-                    _uiState.value = _uiState.value.copy(mode = MODE_OWN)
-                    // Not linked yet → start the QR flow right away.
-                    if (_uiState.value.ownStatus != "connected") startLinking()
-                }
-                .onFailure { _uiState.value = _uiState.value.copy(error = it.message) }
         }
     }
 

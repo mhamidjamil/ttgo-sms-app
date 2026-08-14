@@ -13,7 +13,6 @@ import com.spotwire.app.domain.model.User
 import com.spotwire.app.domain.repository.OtpChannel
 import com.spotwire.app.domain.repository.ThrottleRepository
 import com.spotwire.app.domain.repository.UserRepository
-import com.spotwire.app.domain.repository.WhatsAppRepository
 import com.spotwire.app.domain.usecase.auth.SendEmailVerificationUseCase
 import com.spotwire.app.domain.usecase.auth.ConfirmEmailVerifiedUseCase
 import com.spotwire.app.domain.usecase.quota.GetEffectiveQuotaUseCase
@@ -57,7 +56,6 @@ class ProfileViewModel(
     private val sendEmailVerification: SendEmailVerificationUseCase,
     private val confirmEmailVerified: ConfirmEmailVerifiedUseCase,
     private val throttle: ThrottleRepository,
-    private val waRepo: WhatsAppRepository,
     private val prefs: PreferencesDataSource,
     private val monitorLog: MonitorLogStore,
 ) : ViewModel() {
@@ -168,8 +166,6 @@ class ProfileViewModel(
             _uiState.value = _uiState.value.copy(isVerifyingEmail = true, emailVerifyError = null)
             confirmEmailVerified()
                 .onSuccess {
-                    // Best-effort SSO provisioning (no-ops until phone is verified too).
-                    launch { waRepo.ensureProvisioned() }
                     _uiState.value = _uiState.value.copy(
                         isVerifyingEmail = false,
                         emailCodeSent = false,

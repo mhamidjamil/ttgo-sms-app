@@ -28,8 +28,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.spotwire.app.core.theme.SpotwireTheme
-import com.spotwire.app.domain.repository.WhatsAppRepository.Companion.MODE_OWN
-import com.spotwire.app.domain.repository.WhatsAppRepository.Companion.MODE_SHARED
 import org.koin.androidx.compose.koinViewModel
 
 @Composable
@@ -41,13 +39,10 @@ fun WhatsAppScreen(
     val context = LocalContext.current
     WhatsAppContent(
         uiState = uiState,
-        onSelectShared = viewModel::selectShared,
-        onSelectOwn = viewModel::selectOwn,
         onStartLinking = viewModel::startLinking,
         onRefresh = viewModel::refreshStatuses,
         onCheckGateway = viewModel::checkGateway,
         onSendTest = viewModel::sendTest,
-        onRetrySetup = viewModel::setup,
         onKeyIdChange = viewModel::setKeyId,
         onKeySecretChange = viewModel::setKeySecret,
         onToggleKeyForm = viewModel::toggleKeyForm,
@@ -66,13 +61,10 @@ fun WhatsAppScreen(
 @Composable
 private fun WhatsAppContent(
     uiState: WhatsAppUiState,
-    onSelectShared: () -> Unit,
-    onSelectOwn: () -> Unit,
     onStartLinking: () -> Unit,
     onRefresh: () -> Unit,
     onCheckGateway: () -> Unit,
     onSendTest: () -> Unit,
-    onRetrySetup: () -> Unit,
     onKeyIdChange: (String) -> Unit,
     onKeySecretChange: (String) -> Unit,
     onToggleKeyForm: () -> Unit,
@@ -112,70 +104,18 @@ private fun WhatsAppContent(
             GatewayHealthCard(uiState, onCheckGateway)
             Spacer(Modifier.height(16.dp))
 
-            when {
-                // The gateway turned the automatic setup down. Its own words are
-                // kept, because they say which of several things went wrong.
-                uiState.setupError != null -> {
-                    Text(
-                        uiState.setupError,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    OutlinedButton(onClick = onRetrySetup) { Text("Try Again") }
-                }
-
-                !uiState.eligible -> {
-                    Text("Automatic setup needs your phone and email verified", style = MaterialTheme.typography.titleSmall)
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "Verify both in Profile and WhatsApp sets itself up. You can also connect " +
-                            "your own gateway below without verifying anything.",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-
-                uiState.ownKey -> OwnGatewayCard(uiState, onDisconnectKey)
-
-                else -> {
-                    Text(
-                        "Your WhatsApp account was set up automatically. Choose how arrival " +
-                            "messages are sent:",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
+            if (uiState.provisioned) {
+                OwnGatewayCard(uiState, onDisconnectKey)
+                if (uiState.ownStatus != "connected") {
                     Spacer(Modifier.height(16.dp))
-                    ModeCard(
-                        selected = uiState.mode == MODE_SHARED,
-                        title = "Spotwire shared number (default)",
-                        subtitle = when (uiState.sharedConnected) {
-                            true -> "Ready — no setup needed"
-                            false -> "Temporarily offline — the admin needs to re-link it"
-                            null -> "Checking availability…"
-                        },
-                        onClick = onSelectShared,
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    ModeCard(
-                        selected = uiState.mode == MODE_OWN,
-                        title = "Use My WhatsApp",
-                        subtitle = when {
-                            uiState.ownStatus == "connected" -> "Linked — messages come from your own number"
-                            uiState.isLinking -> "Scan the QR below with WhatsApp → Linked Devices"
-                            else -> "Requires a one-time QR scan with your phone"
-                        },
-                        onClick = onSelectOwn,
-                    )
-                    if (uiState.mode == MODE_OWN && uiState.ownStatus != "connected") {
-                        Spacer(Modifier.height(16.dp))
-                        QrPanel(uiState, onStartLinking)
-                    }
+                    QrPanel(uiState, onStartLinking)
                 }
             }
 
             // ── Your own gateway ──────────────────────────────────────────────
-            // Offered whenever nothing is connected yet, whatever the reason:
-            // it is the one path that works without the gateway's cooperation.
-            if (!uiState.ownKey) {
+            // The only way to send: every message leaves from a WhatsApp number
+            // its own owner linked, never from a number shared with strangers.
+            if (!uiState.provisioned) {
                 Spacer(Modifier.height(24.dp))
                 HorizontalDivider()
                 Spacer(Modifier.height(16.dp))
@@ -196,11 +136,7 @@ private fun WhatsAppContent(
                     Spacer(Modifier.width(8.dp))
                     OutlinedButton(
                         onClick = onSendTest,
-                        enabled = !uiState.isBusy && (
-                            uiState.ownKey ||
-                                uiState.mode == MODE_SHARED && uiState.sharedConnected == true ||
-                                uiState.mode == MODE_OWN && uiState.ownStatus == "connected"
-                            ),
+                        enabled = !uiState.isBusy,
                     ) { Text("Send Test") }
                     if (uiState.isBusy) {
                         Spacer(Modifier.width(8.dp))
@@ -223,8 +159,8 @@ private fun WhatsAppContent(
 
             Spacer(Modifier.height(16.dp))
             Text(
-                "Arrival notifications go out via WhatsApp using the setup above and fall " +
-                    "back to SMS automatically when WhatsApp is unavailable.",
+                "Arrival notifications go out over WhatsApp from your own number. A Pakistani " +
+                    "recipient also falls back to a text message when WhatsApp cannot deliver.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -456,80 +392,58 @@ private fun QrPanel(uiState: WhatsAppUiState, onStartLinking: () -> Unit) {
     }
 }
 
+@Preview(showBackground = true, name = "WhatsApp - nothing connected yet")
 @Composable
-private fun ModeCard(
-    selected: Boolean,
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit,
-) {
-    val colors = if (selected) {
-        CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-    } else {
-        CardDefaults.cardColors()
-    }
-    Card(modifier = Modifier.fillMaxWidth(), colors = colors, onClick = onClick) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            RadioButton(selected = selected, onClick = onClick)
-            Spacer(Modifier.width(8.dp))
-            Column {
-                Text(title, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall)
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-@Preview(showBackground = true, name = "WhatsApp — SSO off, own gateway offered")
-@Composable
-private fun WhatsAppSsoOffPreview() {
+private fun WhatsAppNotConnectedPreview() {
     SpotwireTheme {
         WhatsAppContent(
             uiState = WhatsAppUiState(
                 isLoading = false,
-                setupError = "SSO provisioning is not configured on this server",
                 portalUrl = "https://w2.innovorix.com",
                 showKeyForm = true,
+                gatewayUp = true,
+                gatewayCheckedLabel = "Checked at 4:12 PM",
             ),
-            onSelectShared = {}, onSelectOwn = {}, onStartLinking = {}, onRefresh = {},
-            onCheckGateway = {}, onSendTest = {}, onRetrySetup = {}, onKeyIdChange = {}, onKeySecretChange = {},
+            onStartLinking = {}, onRefresh = {},
+            onCheckGateway = {}, onSendTest = {}, onKeyIdChange = {}, onKeySecretChange = {},
             onToggleKeyForm = {}, onSaveKey = {}, onDisconnectKey = {}, onOpenPortal = {}, onBack = {},
         )
     }
 }
 
-@Preview(showBackground = true, name = "WhatsApp — own gateway connected")
+@Preview(showBackground = true, name = "WhatsApp - own gateway connected")
 @Composable
 private fun WhatsAppOwnKeyPreview() {
     SpotwireTheme {
         WhatsAppContent(
             uiState = WhatsAppUiState(
-                isLoading = false, provisioned = true, ownKey = true,
+                isLoading = false, provisioned = true,
                 ownKeyPhone = "923001234567", ownStatus = "connected",
                 portalUrl = "https://w2.innovorix.com",
+                gatewayUp = true,
+                gatewayCheckedLabel = "Checked at 4:12 PM",
             ),
-            onSelectShared = {}, onSelectOwn = {}, onStartLinking = {}, onRefresh = {},
-            onCheckGateway = {}, onSendTest = {}, onRetrySetup = {}, onKeyIdChange = {}, onKeySecretChange = {},
+            onStartLinking = {}, onRefresh = {},
+            onCheckGateway = {}, onSendTest = {}, onKeyIdChange = {}, onKeySecretChange = {},
             onToggleKeyForm = {}, onSaveKey = {}, onDisconnectKey = {}, onOpenPortal = {}, onBack = {},
         )
     }
 }
 
-@Preview(showBackground = true, name = "WhatsApp — shared ready")
+@Preview(showBackground = true, name = "WhatsApp - gateway down")
 @Composable
-private fun WhatsAppSharedPreview() {
+private fun WhatsAppGatewayDownPreview() {
     SpotwireTheme {
         WhatsAppContent(
             uiState = WhatsAppUiState(
-                isLoading = false, provisioned = true, sharedConnected = true,
-                ownStatus = "disconnected", portalUrl = "https://w2.innovorix.com",
+                isLoading = false, provisioned = true,
+                ownKeyPhone = "923001234567", ownStatus = "connected",
+                portalUrl = "https://w2.innovorix.com",
+                gatewayUp = false,
+                gatewayCheckedLabel = "Checked at 4:12 PM",
             ),
-            onSelectShared = {}, onSelectOwn = {}, onStartLinking = {}, onRefresh = {},
-            onCheckGateway = {}, onSendTest = {}, onRetrySetup = {}, onKeyIdChange = {}, onKeySecretChange = {},
+            onStartLinking = {}, onRefresh = {},
+            onCheckGateway = {}, onSendTest = {}, onKeyIdChange = {}, onKeySecretChange = {},
             onToggleKeyForm = {}, onSaveKey = {}, onDisconnectKey = {}, onOpenPortal = {}, onBack = {},
         )
     }

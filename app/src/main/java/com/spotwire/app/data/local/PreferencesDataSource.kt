@@ -21,9 +21,7 @@ class PreferencesDataSource(private val context: Context) {
         // WhatsApp gateway link — local cache of the per-user key/session. The
         // source of truth is the Firestore user doc (owner-only via rules), so
         // the link survives reinstall/sign-out and other devices.
-        private val KEY_WA_API_KEY = stringPreferencesKey("wa_api_key")
         private val KEY_WA_SESSION_ID = stringPreferencesKey("wa_session_id")
-        private val KEY_WA_MODE = stringPreferencesKey("wa_mode")
         // Key id + secret the user minted on the gateway portal, plus the number
         // it turned out to send from, shown back to them so they can tell which
         // WhatsApp account is linked.
@@ -135,25 +133,8 @@ class PreferencesDataSource(private val context: Context) {
         context.dataStore.edit { it[KEY_CACHED_UID] = uid }
     }
 
-    suspend fun getWaApiKey(): String? =
-        context.dataStore.data.first()[KEY_WA_API_KEY]
-
     suspend fun getWaSessionId(): String? =
         context.dataStore.data.first()[KEY_WA_SESSION_ID]
-
-    suspend fun setWaLink(apiKey: String, sessionId: String) {
-        context.dataStore.edit {
-            it[KEY_WA_API_KEY] = apiKey
-            it[KEY_WA_SESSION_ID] = sessionId
-        }
-    }
-
-    suspend fun getWaMode(): String? =
-        context.dataStore.data.first()[KEY_WA_MODE]
-
-    suspend fun setWaMode(mode: String) {
-        context.dataStore.edit { it[KEY_WA_MODE] = mode }
-    }
 
     suspend fun getWaKeyId(): String? =
         context.dataStore.data.first()[KEY_WA_KEY_ID]
@@ -178,7 +159,10 @@ class PreferencesDataSource(private val context: Context) {
 
     suspend fun clearWaLink() {
         context.dataStore.edit {
-            it.remove(KEY_WA_API_KEY)
+            // The retired single-key scheme, cleared out of any install that
+            // still carries one from before the shared sender was removed.
+            it.remove(stringPreferencesKey("wa_api_key"))
+            it.remove(stringPreferencesKey("wa_mode"))
             it.remove(KEY_WA_SESSION_ID)
             it.remove(KEY_WA_KEY_ID)
             it.remove(KEY_WA_KEY_SECRET)

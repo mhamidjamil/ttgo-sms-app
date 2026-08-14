@@ -376,11 +376,8 @@ private fun ProfileContent(
                         Text("WhatsApp", style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            if (user.emailVerified && user.phoneVerified) {
-                                "Set up automatically — choose whether messages come from the shared Spotwire number or your own WhatsApp."
-                            } else {
-                                "Verify your phone and email for automatic setup, or connect your own WhatsApp gateway now."
-                            },
+                            "Connect your own WhatsApp gateway to send alerts anywhere in the " +
+                                "world. Messages leave from your own number.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                         )

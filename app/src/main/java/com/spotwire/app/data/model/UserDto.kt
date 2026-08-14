@@ -53,16 +53,10 @@ data class UserDto(
     @get:PropertyName("last_office_arrival_date") @set:PropertyName("last_office_arrival_date")
     var lastOfficeArrivalDate: String = "",
 
-    // WhatsApp gateway link (SSO)
-    @get:PropertyName("wa_api_key") @set:PropertyName("wa_api_key")
-    var waApiKey: String = "",
+    // The gateway key this user created on the portal, and the WhatsApp number
+    // it is bound to. Every message this account sends leaves from that number.
     @get:PropertyName("wa_session_id") @set:PropertyName("wa_session_id")
     var waSessionId: String = "",
-    @get:PropertyName("wa_mode") @set:PropertyName("wa_mode")
-    var waMode: String = "shared",
-    // Gateway key the user created on the portal themselves. Takes precedence
-    // over wa_api_key, and is the only path that works while the gateway has
-    // SSO provisioning switched off.
     @get:PropertyName("wa_key_id") @set:PropertyName("wa_key_id")
     var waKeyId: String = "",
     @get:PropertyName("wa_key_secret") @set:PropertyName("wa_key_secret")
@@ -143,9 +137,7 @@ data class UserDto(
             assignedQuota = assignedQuota,
             remainingQuota = remainingQuota,
             lastQuotaResetDate = lastQuotaResetDate,
-            waApiKey = waApiKey,
             waSessionId = waSessionId,
-            waMode = waMode.ifBlank { "shared" },
             guardianNumber = guardianNumber,
             places = placeList,
             arrivalTimesByPlace = timesByPlace,

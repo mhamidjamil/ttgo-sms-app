@@ -8,31 +8,18 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * How this app proves who it is to the gateway. Two schemes exist and the
- * gateway consults only one: when a key id is present the legacy single key is
- * never looked at, so exactly one is ever sent.
+ * How this app proves who it is to the gateway: a key id and a secret created on
+ * the gateway portal, bound to one WhatsApp number when it is made, so a send
+ * never has to name a session.
  *
- *  - [pair]   `wak_…` / `was_…` created by the user on the gateway portal. Bound
- *             to one WhatsApp number at creation, so sends need no session id.
- *  - [legacy] `wa_…` single value handed out by SSO provisioning. Unbound, so
- *             every send must name a session. Sunset by the gateway in 2027.
+ * The older single-value scheme is gone with the shared sender it belonged to.
+ * Everything now sends from a number its own owner linked.
  */
-data class WaCredential(
-    val keyId: String = "",
-    val keySecret: String = "",
-    val apiKey: String = "",
-) {
-    val isPair: Boolean get() = keyId.isNotBlank() && keySecret.isNotBlank()
-    val isPresent: Boolean get() = isPair || apiKey.isNotBlank()
-
-    fun headers(): Map<String, String> = when {
-        isPair -> mapOf("x-key-id" to keyId, "x-key-secret" to keySecret)
-        else -> mapOf("x-api-key" to apiKey)
-    }
+data class WaCredential(val keyId: String, val keySecret: String) {
+    fun headers(): Map<String, String> = mapOf("x-key-id" to keyId, "x-key-secret" to keySecret)
 
     companion object {
-        fun pair(keyId: String, keySecret: String) = WaCredential(keyId = keyId, keySecret = keySecret)
-        fun legacy(apiKey: String) = WaCredential(apiKey = apiKey)
+        fun pair(keyId: String, keySecret: String) = WaCredential(keyId, keySecret)
     }
 }
 
@@ -68,12 +55,6 @@ data class WaVerifyResult(
     val verified: Boolean,
     val reason: String,
     val attemptsRemaining: Int?,
-)
-
-data class WaProvisionResult(
-    val apiKey: String,
-    val sessionId: String,
-    val sharedSessionId: String,
 )
 
 /**
@@ -123,40 +104,6 @@ class WhatsAppApi(private val configProvider: WaConfigProvider) {
         } catch (e: Exception) {
             Log.w(TAG, "health check unreachable at $base: ${e.javaClass.simpleName}")
             Result.failure(IllegalStateException(MAINTENANCE_MESSAGE))
-        }
-    }
-
-    /**
-     * SSO provisioning, for gateways that have it switched on. The server checks
-     * its own configuration before it looks at any header, so this deliberately
-     * carries no service secret: a secret shipped inside a public app is a
-     * public secret, and sending one would not change the answer. When the
-     * gateway has SSO disabled it replies 503 and the user is offered the manual
-     * portal key instead.
-     */
-    suspend fun provision(
-        email: String,
-        phoneNumber: String,
-        displayName: String?,
-    ): Result<WaProvisionResult> = withContext(Dispatchers.IO) {
-        runCatching {
-            val base = configProvider.get().serviceUrl
-            val payload = JSONObject().apply {
-                put("email", email)
-                put("phoneNumber", phoneNumber)
-                displayName?.takeIf { it.isNotBlank() }?.let { put("displayName", it) }
-            }
-            val (code, body) = request(base, "POST", "/sso/provision", emptyMap(), payload.toString())
-            if (code !in 200..299) {
-                Log.i(TAG, "sso provision unavailable: HTTP $code ${errorOf(body)}")
-                throw mapError(code, body)
-            }
-            val json = JSONObject(body)
-            WaProvisionResult(
-                apiKey = json.getString("apiKey"),
-                sessionId = json.getString("sessionId"),
-                sharedSessionId = json.optString("sharedSessionId").ifBlank { "shared" },
-            )
         }
     }
 
@@ -230,17 +177,15 @@ class WhatsAppApi(private val configProvider: WaConfigProvider) {
                 put("priority", "high")
             }.toString()
 
-            if (cred.isPair) {
-                val (code, body) = request(base, "POST", "/v1/messages/send", cred.headers(), payload)
-                if (code in 200..299) return@runCatching
-                // 400 means this key names no number — fall through and say which.
-                if (code != 400 || sessionId.isBlank()) throw mapError(code, body)
-                Log.i(TAG, "unbound key, retrying send against session $sessionId")
-            }
-            val (code, body) = request(
+            val (code, body) = request(base, "POST", "/v1/messages/send", cred.headers(), payload)
+            if (code in 200..299) return@runCatching
+            // 400 means this key names no number — fall through and say which.
+            if (code != 400 || sessionId.isBlank()) throw mapError(code, body)
+            Log.i(TAG, "unbound key, retrying send against session $sessionId")
+            val (retryCode, retryBody) = request(
                 base, "POST", "/v1/messages/$sessionId/send", cred.headers(), payload,
             )
-            if (code !in 200..299) throw mapError(code, body)
+            if (retryCode !in 200..299) throw mapError(retryCode, retryBody)
         }
     }
 
@@ -270,37 +215,6 @@ class WhatsAppApi(private val configProvider: WaConfigProvider) {
                 }
             }
         }
-
-    /** Whether the admin-linked shared sender is connected and able to send. */
-    suspend fun getSharedStatus(cred: WaCredential): Result<Boolean> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val base = configProvider.get().serviceUrl
-                val (code, body) = request(base, "GET", "/v1/messages/shared/status", cred.headers(), null)
-                if (code !in 200..299) throw mapError(code, body)
-                JSONObject(body).optBoolean("connected", false)
-            }
-        }
-
-    /** Send through the shared (app-owned) WhatsApp number. */
-    suspend fun sendShared(
-        cred: WaCredential,
-        phoneDigits: String,
-        message: String,
-        recipientName: String? = null,
-    ): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
-            val base = configProvider.get().serviceUrl
-            val payload = JSONObject().apply {
-                put("phoneNumber", phoneDigits)
-                put("message", message)
-                recipientName?.let { put("recipientName", it) }
-                put("priority", "high")
-            }
-            val (code, body) = request(base, "POST", "/v1/messages/shared/send", cred.headers(), payload.toString())
-            if (code !in 200..299) throw mapError(code, body)
-        }
-    }
 
     // ── Proving a phone number ────────────────────────────────────────────────
     //

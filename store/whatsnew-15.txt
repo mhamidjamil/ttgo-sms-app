@@ -1,0 +1,7 @@
+Spotwire now works outside Pakistan.
+
+Sign up with a number from any country. Your number is confirmed over WhatsApp, and if you are outside Pakistan you confirm your account by email instead and your number is confirmed the moment you connect your WhatsApp.
+
+People you are linked with can now get your arrival alerts as a notification in the app, with no message needed at all. You choose whether alerts go in the app, as messages, or both.
+
+The message list now tells you what really happened to each one, and lets you try a failed one again. If WhatsApp cannot be reached, the app says so instead of failing quietly.

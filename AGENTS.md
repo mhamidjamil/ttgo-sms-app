@@ -45,7 +45,7 @@ If `~/.claude/knowledge/` is missing on this machine, clone it:
 ### Who owns the gateway, and who the app can reach (product facts, get these right in any user-facing copy)
 - **The TTGO gateway hardware is Hamid's own, and it is shared by every user.** Users do NOT supply a device, there is no screen for adding one, and none is planned. Never write listing copy, help text or documentation implying the user needs or owns hardware.
 - **SMS therefore reaches Pakistani numbers only**, because the SIM in that one gateway is Pakistani. Any country's number can be registered and stored, but `PhoneNormalizer.isPakistaniMobile` decides whether the SMS route is even offered for a given recipient. It is a product constraint, not a validation preference.
-- **Reaching other countries is the next release, and WhatsApp is how.** WhatsApp delivery is not tied to that SIM, so it can serve any country. The SMS path stays Pakistan-only for the foreseeable future. Do not describe the app as internationally capable over SMS.
+- **Other countries are served as of 1.8.0, over WhatsApp and in-app alerts.** Neither is tied to that SIM. The SMS path stays Pakistan-only for the foreseeable future, so never describe the app as internationally capable over SMS: it is the other two routes that travel.
 - The Play Store listing text is written and maintained by Hamid in the console. Do not regenerate it or keep a competing copy in the repository.
 - Architecture is Clean Architecture: `presentation/` Compose screens + ViewModels -> `domain/` pure use cases/repository interfaces -> `data/` Firebase/DataStore DTOs and repository implementations.
 - Koin is the DI container. Modules live in `core/di/*Module.kt` and are loaded from `App.kt`; add new dependencies there rather than constructing them in screens.
@@ -81,7 +81,7 @@ If `~/.claude/knowledge/` is missing on this machine, clone it:
 ## Versioning
 - App version is in `app/build.gradle.kts`: `versionCode` (integer, bumped for each release) and `versionName` (semver string, e.g. `1.0.1`).
 - **Whenever you make any solid changes or bug fixes, always bump `versionCode` by 1 and update `versionName` appropriately** (patch bump for fixes, minor for features). The version is displayed at the bottom of the Send screen via `BuildConfig.VERSION_NAME`.
-- Current version: `1.7.1` (versionCode=14).
+- Current version: `1.8.0` (versionCode=15).
 
 ## Developer Workflow
 - Toolchain is AGP 8.9.1 / Gradle 8.11.1 / JDK 17, compiling against SDK 36. `targetSdk` must stay at 36 or above: Play refuses a lower target for new apps and updates from 31 August 2026.

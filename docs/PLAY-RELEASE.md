@@ -35,6 +35,14 @@ serves to users):
 | In-app account deletion | Profile, with a real erase of the stored data |
 | Privacy policy | `policy/public/index.html`, published by Cloudflare from the `policy` folder, linked from Profile |
 
+## Release notes
+
+Written by hand, one file per build, at `store/whatsnew-<versionCode>.txt`. Play
+allows 500 characters per language; paste it into the console's "What's new"
+panel. It is product copy read by somebody standing next to the install button,
+so it never mentions version numbers, internal vocabulary, or anything that was
+just fixed for security reasons.
+
 ## What you have to do in the console
 
 1. **Verify the developer account identity.** One-time, account level. Required

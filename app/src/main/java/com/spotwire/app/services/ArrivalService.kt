@@ -40,6 +40,7 @@ import com.spotwire.app.core.utils.resolvePresence
 import com.spotwire.app.core.utils.scanBlocker
 import com.spotwire.app.core.utils.visibleAccessPoints
 import com.spotwire.app.core.utils.visibleBssids
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.spotwire.app.data.local.MonitorLogStore
 import com.spotwire.app.data.local.PreferencesDataSource
 import com.spotwire.app.domain.model.Place
@@ -899,6 +900,18 @@ class ArrivalService : Service() {
     // like one the gateway had already taken.
     private fun noteArrivalOutcome(place: Place, outcome: ArrivalOutcome) {
         val reached = outcome.whatsAppSent + outcome.inApp + outcome.enqueued
+        // Breadcrumbs, so a crash report from a stranger's phone arrives with the
+        // last thing detection actually decided attached to it. The place id and
+        // the counts are the identifiers worth having; no message text and no
+        // recipient number goes anywhere near this.
+        runCatching {
+            FirebaseCrashlytics.getInstance().apply {
+                setCustomKey("last_arrival_place", place.id)
+                setCustomKey("last_arrival_reached", reached)
+                setCustomKey("last_arrival_failed", outcome.failed)
+                log("arrival ${place.id}: $reached reached, ${outcome.failed} failed")
+            }
+        }
         Log.i(TAG, "${place.id}: arrival recorded, $reached sent (${outcome.inApp} in the app), " +
             "${outcome.queuedOnDevice} queued on this phone, ${outcome.failed} failed")
         if (reached > 0) {

@@ -105,5 +105,7 @@ Say yes to encryption in transit, and yes to a way for users to request deletion
 - **The old `wa_sso_secret` field on `sim_module/device`** should be deleted from
   the console, and the secret rotated on the gateway. It was readable by every
   signed-in user for as long as it sat there.
-- **No crash reporting.** A first Play release with no Crashlytics means day-one
-  crashes surface as one-star reviews rather than stack traces.
+- **Crashlytics is in the build** as of the international release. It reports on
+  its own from the first crash; the console needs nothing switched on in advance.
+  Arrival decisions leave breadcrumbs (place id and delivery counts, never a
+  message or a recipient number), so a report arrives with context attached.

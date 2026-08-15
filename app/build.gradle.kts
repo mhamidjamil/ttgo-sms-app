@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.google.services)
+    alias(libs.plugins.crashlytics)
 }
 
 val localProps = Properties().apply {
@@ -151,6 +152,9 @@ dependencies {
     implementation(firebaseBom)
     implementation(libs.firebase.auth.ktx)
     implementation(libs.firebase.firestore.ktx)
+    // A crash on a stranger's phone reaches us as a stack trace rather than as a
+    // one-star review saying "keeps closing".
+    implementation(libs.firebase.crashlytics)
 
     implementation(libs.koin.android)
     implementation(libs.koin.androidx.compose)

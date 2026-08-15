@@ -6,7 +6,9 @@ import com.spotwire.app.domain.model.HistoryEntry
 import com.spotwire.app.domain.model.SmsStatus
 import com.spotwire.app.domain.repository.UserRepository
 import com.spotwire.app.domain.usecase.sms.GetHistoryUseCase
+import com.spotwire.app.domain.usecase.sms.EnqueueSmsUseCase
 import com.spotwire.app.domain.usecase.sms.RefreshJobStatusUseCase
+import com.spotwire.app.domain.usecase.sms.SendWhatsAppUseCase
 import com.spotwire.app.core.utils.Quota
 import com.spotwire.app.data.local.PreferencesDataSource
 import kotlinx.coroutines.Job
@@ -23,6 +25,7 @@ data class HistoryUiState(
     val isLoading: Boolean = true,
     val error: String? = null,
     val refreshingIds: Set<String> = emptySet(),
+    val retryingIds: Set<String> = emptySet(),
     // Which half of the page opens first, from the user's own preference.
     val defaultTab: String = PreferencesDataSource.HISTORY_TAB_AUTOMATED,
 )
@@ -31,6 +34,8 @@ class HistoryViewModel(
     private val userRepo: UserRepository,
     private val getHistory: GetHistoryUseCase,
     private val refreshStatus: RefreshJobStatusUseCase,
+    private val enqueueSms: EnqueueSmsUseCase,
+    private val sendWhatsApp: SendWhatsAppUseCase,
     private val prefs: PreferencesDataSource,
 ) : ViewModel() {
 
@@ -87,8 +92,36 @@ class HistoryViewModel(
         val pending = _uiState.value.entries.filter {
             it.status == SmsStatus.PENDING || it.status == SmsStatus.IN_PROGRESS
         }
+        if (pending.isEmpty()) return
         viewModelScope.launch {
-            pending.forEach { entry -> refreshStatus(uid, entry) }
+            val (whatsApp, sms) = pending.partition { it.isWhatsApp }
+            // The gateway answers about all of them at once, so a screenful of
+            // waiting messages is one request rather than one request each.
+            if (whatsApp.isNotEmpty()) refreshStatus.refreshWhatsApp(uid, whatsApp)
+            sms.forEach { entry -> refreshStatus(uid, entry) }
+        }
+    }
+
+    /**
+     * Sends a failed message again. Nothing is edited in place: the retry is its
+     * own row, so the record of the attempt that failed survives.
+     */
+    fun retry(entry: HistoryEntry) {
+        val uid = userRepo.currentFirebaseUser()?.uid ?: return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(retryingIds = _uiState.value.retryingIds + entry.id)
+            val user = userRepo.getCurrentUser()
+            val outcome = if (entry.isWhatsApp) {
+                sendWhatsApp(uid, entry.phoneNumber, entry.message.substringBefore("\n- Sent by"),
+                    user?.phoneNumber.orEmpty(), "")
+            } else {
+                enqueueSms(uid, entry.phoneNumber, entry.message.substringBefore("\n- Sent by"),
+                    user?.phoneNumber.orEmpty(), "")
+            }
+            _uiState.value = _uiState.value.copy(
+                retryingIds = _uiState.value.retryingIds - entry.id,
+                error = outcome.exceptionOrNull()?.message,
+            )
         }
     }
 }

@@ -72,13 +72,18 @@ private fun ManualHistorySection(viewModel: HistoryViewModel) {
         viewModel.startPolling()
         onDispose { viewModel.stopPolling() }
     }
-    ManualHistoryContent(uiState = uiState, onRefresh = viewModel::refreshEntry)
+    ManualHistoryContent(
+        uiState = uiState,
+        onRefresh = viewModel::refreshEntry,
+        onRetry = viewModel::retry,
+    )
 }
 
 @Composable
 private fun ManualHistoryContent(
     uiState: HistoryUiState,
     onRefresh: (HistoryEntry) -> Unit,
+    onRetry: (HistoryEntry) -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
         Text(
@@ -100,7 +105,9 @@ private fun ManualHistoryContent(
                     HistoryCard(
                         entry = entry,
                         isRefreshing = entry.id in uiState.refreshingIds,
+                        isRetrying = entry.id in uiState.retryingIds,
                         onRefresh = { onRefresh(entry) },
+                        onRetry = { onRetry(entry) },
                     )
                 }
             }
@@ -112,7 +119,9 @@ private fun ManualHistoryContent(
 private fun HistoryCard(
     entry: HistoryEntry,
     isRefreshing: Boolean,
+    isRetrying: Boolean,
     onRefresh: () -> Unit,
+    onRetry: () -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -130,11 +139,35 @@ private fun HistoryCard(
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     StatusChip(entry.status)
+                    // Which road it took. Two routes now carry these, and "it
+                    // failed" means very different things on each.
+                    Text(
+                        if (entry.isWhatsApp) "WhatsApp" else "Text",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                    )
                     Text(
                         DateUtils.formatTimestamp(entry.enqueuedAt?.toDate()),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                     )
+                }
+                // The reason, in the words of whatever refused it. A failure with
+                // no reason attached is a support conversation waiting to happen.
+                if (entry.error.isNotBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        entry.error,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                if (entry.status == SmsStatus.FAILED) {
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedButton(onClick = onRetry, enabled = !isRetrying) {
+                        if (isRetrying) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        else Text("Try again")
+                    }
                 }
             }
             IconButton(onClick = onRefresh, enabled = !isRefreshing) {
@@ -175,7 +208,7 @@ private val sampleEntries = listOf(
 @Composable
 private fun HistoryWithEntriesPreview() {
     SpotwireTheme {
-        ManualHistoryContent(uiState = HistoryUiState(entries = sampleEntries, isLoading = false), onRefresh = {})
+        ManualHistoryContent(uiState = HistoryUiState(entries = sampleEntries, isLoading = false), onRefresh = {}, onRetry = {})
     }
 }
 
@@ -183,7 +216,7 @@ private fun HistoryWithEntriesPreview() {
 @Composable
 private fun HistoryEmptyPreview() {
     SpotwireTheme {
-        ManualHistoryContent(uiState = HistoryUiState(entries = emptyList(), isLoading = false), onRefresh = {})
+        ManualHistoryContent(uiState = HistoryUiState(entries = emptyList(), isLoading = false), onRefresh = {}, onRetry = {})
     }
 }
 
@@ -191,6 +224,6 @@ private fun HistoryEmptyPreview() {
 @Composable
 private fun HistoryLoadingPreview() {
     SpotwireTheme {
-        ManualHistoryContent(uiState = HistoryUiState(isLoading = true), onRefresh = {})
+        ManualHistoryContent(uiState = HistoryUiState(isLoading = true), onRefresh = {}, onRetry = {})
     }
 }

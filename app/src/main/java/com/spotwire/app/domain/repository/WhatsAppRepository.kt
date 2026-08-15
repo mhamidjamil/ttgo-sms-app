@@ -81,7 +81,15 @@ interface WhatsAppRepository {
     /** Public address of the gateway portal, where a user signs up and mints a key. */
     suspend fun portalUrl(): String
 
+    /** The gateway's own verdict on a message it took: what it did with it. */
+    data class Delivery(val status: String, val error: String?)
+
     // Sends through the number this account's own key is linked to. toPhone may
     // be E.164 — it is converted to the digits-only form the gateway expects.
-    suspend fun sendMessage(toPhone: String, message: String, recipientName: String? = null): Result<Unit>
+    // Returns the gateway's id for the message, which is what makes it possible
+    // to come back later and ask whether it actually went.
+    suspend fun sendMessage(toPhone: String, message: String, recipientName: String? = null): Result<String>
+
+    /** Where those messages got to, by gateway id. Ids it does not know are absent. */
+    suspend fun deliveryStatuses(ids: List<String>): Result<Map<String, Delivery>>
 }

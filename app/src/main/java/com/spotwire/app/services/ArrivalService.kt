@@ -911,6 +911,14 @@ class ArrivalService : Service() {
         if (outcome.failed > 0) {
             notePlace(place, MonitorLogStore.Kind.PROBLEM,
                 "arrival alert failed for ${outcome.failed} of ${outcome.total}, ${outcome.firstFailure}")
+            // Nobody is looking at the phone when this happens, so the log alone
+            // means finding out by not being alerted.
+            DeliveryNotifier.notifyArrivalUndelivered(
+                context = this,
+                placeLabel = place.label.ifBlank { place.id },
+                failedCount = outcome.failed,
+                reason = outcome.firstFailure,
+            )
         }
     }
 

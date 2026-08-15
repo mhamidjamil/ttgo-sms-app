@@ -14,6 +14,25 @@ interface SmsRepository {
     // Enqueues an OTP verification SMS without touching user quota or history
     suspend fun enqueueOtpSms(uid: String, phoneNumber: String, message: String): Result<Unit>
 
+    // A manual message that took the WhatsApp route. There is no device job
+    // behind it, so the row keeps the gateway's message id and its status is
+    // refreshed from the gateway rather than from sms_jobs.
+    suspend fun logWhatsAppSend(
+        uid: String,
+        phoneNumber: String,
+        message: String,
+        waMessageId: String,
+        status: String,
+        error: String,
+    ): Result<String>
+    suspend fun updateWhatsAppHistory(
+        uid: String,
+        entryId: String,
+        status: String,
+        error: String,
+        waMessageId: String? = null,
+    ): Result<Unit>
+
     // Arrival monitoring (V2). detectedAt is when the visit began, which the
     // history row keeps separately because sent_at is minutes later.
     //

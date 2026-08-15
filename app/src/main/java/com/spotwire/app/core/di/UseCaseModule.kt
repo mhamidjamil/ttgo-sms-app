@@ -21,6 +21,7 @@ import com.spotwire.app.domain.usecase.quota.DecrementQuotaUseCase
 import com.spotwire.app.domain.usecase.quota.GetEffectiveQuotaUseCase
 import com.spotwire.app.domain.usecase.quota.RequestMoreSmsUseCase
 import com.spotwire.app.domain.usecase.sms.EnqueueSmsUseCase
+import com.spotwire.app.domain.usecase.sms.SendWhatsAppUseCase
 import com.spotwire.app.domain.usecase.sms.GetHistoryUseCase
 import com.spotwire.app.domain.usecase.sms.RefreshJobStatusUseCase
 import org.koin.dsl.module
@@ -35,8 +36,9 @@ val useCaseModule = module {
     factory { DecrementQuotaUseCase(get()) }
     factory { RequestMoreSmsUseCase(get(), get()) }
     factory { EnqueueSmsUseCase(get(), get()) }
+    factory { SendWhatsAppUseCase(get(), get(), get()) }
     factory { GetHistoryUseCase(get()) }
-    factory { RefreshJobStatusUseCase(get()) }
+    factory { RefreshJobStatusUseCase(get(), get()) }
     factory { SendPhoneOtpUseCase(get(), get(), get(), get()) }
     factory { VerifyPhoneOtpUseCase(get(), get()) }
     // V2

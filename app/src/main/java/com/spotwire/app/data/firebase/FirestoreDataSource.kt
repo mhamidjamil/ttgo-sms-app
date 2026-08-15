@@ -618,14 +618,67 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
             "job_phone_key" to phoneNumber,
             "job_id" to jobRef.id,
             "enque_by" to enqueBy,
+            "channel" to "sms",
         )
         val batch = db.batch()
         val historyRef = db.collection(Paths.USERS).document(uid)
             .collection(Paths.HISTORY_SUB).document()
         batch.set(jobRef, jobDto)
         batch.set(historyRef, historyDto)
-        batch.commit().await()
+        // Bounded like the arrival path already is. Without this an offline send
+        // waits on a commit that only completes when the network returns, so the
+        // button spins with nothing to say for it.
+        withTimeoutOrNull(COMMIT_TIMEOUT_MILLIS) { batch.commit().await() }
         historyRef.id
+    }
+
+    /**
+     * A manual message that went out over WhatsApp. There is no device job to
+     * poll, so the row carries the gateway's own message id and its status is
+     * refreshed from the gateway instead.
+     */
+    suspend fun logWhatsAppSend(
+        uid: String,
+        phoneNumber: String,
+        message: String,
+        waMessageId: String,
+        status: String,
+        error: String,
+    ): Result<String> = runCatching {
+        val historyRef = db.collection(Paths.USERS).document(uid)
+            .collection(Paths.HISTORY_SUB).document()
+        val row = mapOf(
+            "phone_number" to phoneNumber,
+            "message" to message,
+            "status" to status,
+            "enqueued_at" to Timestamp.now(),
+            "job_phone_key" to phoneNumber,
+            "job_id" to "",
+            "enque_by" to "app:$uid",
+            "channel" to "whatsapp",
+            "wa_message_id" to waMessageId,
+            "error" to error,
+        )
+        withTimeoutOrNull(COMMIT_TIMEOUT_MILLIS) { historyRef.set(row).await() }
+        historyRef.id
+    }
+
+    /** Moves a WhatsApp row on once the gateway has said what became of it. */
+    suspend fun updateWhatsAppHistory(
+        uid: String,
+        entryId: String,
+        status: String,
+        error: String,
+        waMessageId: String? = null,
+    ): Result<Unit> = runCatching {
+        val fields = buildMap<String, Any> {
+            put("status", status)
+            put("error", error)
+            waMessageId?.let { put("wa_message_id", it) }
+        }
+        db.collection(Paths.USERS).document(uid)
+            .collection(Paths.HISTORY_SUB).document(entryId)
+            .update(fields).await()
     }
 
     fun getHistory(uid: String): Flow<List<HistoryEntryDto>> =

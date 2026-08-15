@@ -50,6 +50,9 @@ data class WaVerifyTarget(
     val resendAfterSeconds: Int,
 )
 
+/** One row of the gateway's own trail: queued, sending, sent, failed, cancelled. */
+data class WaMessageStatus(val id: String, val status: String, val error: String?)
+
 /** verified false with a reason is an answer the screen explains, not an error. */
 data class WaVerifyResult(
     val verified: Boolean,
@@ -161,7 +164,7 @@ class WhatsAppApi(private val configProvider: WaConfigProvider) {
         phoneDigits: String,
         message: String,
         recipientName: String? = null,
-    ): Result<Unit> = withContext(Dispatchers.IO) {
+    ): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
             val base = configProvider.get().serviceUrl
             val payload = JSONObject().apply {
@@ -178,7 +181,7 @@ class WhatsAppApi(private val configProvider: WaConfigProvider) {
             }.toString()
 
             val (code, body) = request(base, "POST", "/v1/messages/send", cred.headers(), payload)
-            if (code in 200..299) return@runCatching
+            if (code in 200..299) return@runCatching messageIdOf(body)
             // 400 means this key names no number — fall through and say which.
             if (code != 400 || sessionId.isBlank()) throw mapError(code, body)
             Log.i(TAG, "unbound key, retrying send against session $sessionId")
@@ -186,6 +189,7 @@ class WhatsAppApi(private val configProvider: WaConfigProvider) {
                 base, "POST", "/v1/messages/$sessionId/send", cred.headers(), payload,
             )
             if (retryCode !in 200..299) throw mapError(retryCode, retryBody)
+            messageIdOf(retryBody)
         }
     }
 
@@ -325,6 +329,45 @@ class WhatsAppApi(private val configProvider: WaConfigProvider) {
             connection.disconnect()
         }
     }
+
+    /**
+     * The gateway's own id for the message it just accepted. Keeping it is what
+     * turns "handed over" into a question the app can answer later: 202 means
+     * queued, not delivered, and until now the app treated the two as the same.
+     */
+    private fun messageIdOf(body: String): String = runCatching {
+        JSONObject(body).optJSONArray("messageIds")?.optString(0).orEmpty()
+    }.getOrDefault("")
+
+    /**
+     * The recent trail with each row's current status, which is how a queued
+     * message is followed to sent or failed. A purpose-built lookup by id would
+     * be cheaper, and the gateway is being asked for one; until then this is the
+     * endpoint that exists and one call covers every pending row at once.
+     */
+    suspend fun recentMessages(cred: WaCredential, limit: Int = 50): Result<List<WaMessageStatus>> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val base = configProvider.get().serviceUrl
+                val (code, body) =
+                    request(base, "GET", "/v1/messages/recent?limit=$limit", cred.headers(), null)
+                if (code !in 200..299) throw mapError(code, body)
+                val json = JSONObject(body)
+                val rows = json.optJSONArray("messages") ?: json.optJSONArray("rows")
+                buildList {
+                    for (i in 0 until (rows?.length() ?: 0)) {
+                        val row = rows!!.getJSONObject(i)
+                        add(
+                            WaMessageStatus(
+                                id = row.optString("id"),
+                                status = row.optString("status"),
+                                error = row.optString("error").takeIf { it.isNotBlank() },
+                            )
+                        )
+                    }
+                }
+            }
+        }
 
     private fun errorOf(body: String) =
         runCatching { JSONObject(body).optString("error") }.getOrNull().orEmpty()

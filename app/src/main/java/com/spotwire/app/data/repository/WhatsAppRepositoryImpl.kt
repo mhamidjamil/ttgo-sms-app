@@ -176,9 +176,20 @@ class WhatsAppRepositoryImpl(
         }
     }
 
+    override suspend fun deliveryStatuses(
+        ids: List<String>,
+    ): Result<Map<String, WhatsAppRepository.Delivery>> = runCatching {
+        if (ids.isEmpty()) return@runCatching emptyMap()
+        val (cred, _) = credential() ?: error("WhatsApp is not set up yet")
+        val wanted = ids.toSet()
+        api.recentMessages(cred).getOrThrow()
+            .filter { it.id in wanted }
+            .associate { it.id to WhatsAppRepository.Delivery(it.status, it.error) }
+    }
+
     override suspend fun portalUrl(): String = config.get().portalUrl
 
-    override suspend fun sendMessage(toPhone: String, message: String, recipientName: String?): Result<Unit> {
+    override suspend fun sendMessage(toPhone: String, message: String, recipientName: String?): Result<String> {
         val (cred, session) = credential()
             ?: return Result.failure(IllegalStateException("WhatsApp is not set up yet"))
         // Gateway wants digits only including country code (no '+').

@@ -26,6 +26,24 @@ class SmsRepositoryImpl(private val firestore: FirestoreDataSource) : SmsReposit
     override suspend fun enqueueOtpSms(uid: String, phoneNumber: String, message: String): Result<Unit> =
         firestore.enqueueOtpSms(phoneNumber, message, enqueBy = "app:$uid:otp")
 
+    override suspend fun logWhatsAppSend(
+        uid: String,
+        phoneNumber: String,
+        message: String,
+        waMessageId: String,
+        status: String,
+        error: String,
+    ): Result<String> =
+        firestore.logWhatsAppSend(uid, phoneNumber, message, waMessageId, status, error)
+
+    override suspend fun updateWhatsAppHistory(
+        uid: String,
+        entryId: String,
+        status: String,
+        error: String,
+        waMessageId: String?,
+    ): Result<Unit> = firestore.updateWhatsAppHistory(uid, entryId, status, error, waMessageId)
+
     // ── Arrival monitoring (V2) ───────────────────────────────────────────────
 
     override suspend fun enqueueAutoArrivalSms(

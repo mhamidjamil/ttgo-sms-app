@@ -121,6 +121,9 @@ Per-user history of sent messages. Doc ID is Firestore auto-ID.
 | `enqueued_at` | timestamp | When the job was enqueued |
 | `job_phone_key` | string | = `phone_number`; used to look up the job in `sms_jobs` |
 | `enque_by` | string | `"app:{uid}"` — cross-checked during polling to detect job overwrites |
+| `channel` | string | `"sms"` (through the TTGO device) or `"whatsapp"` (through the user's own gateway). Absent on rows written before manual WhatsApp sending existed, and those were all SMS |
+| `wa_message_id` | string | The gateway's own id for a WhatsApp message, used to ask it what became of the message |
+| `error` | string | Why it failed, in the words of whatever refused it |
 
 **Job-collision handling:** If another user sends to the same number, `sms_jobs/{phone}` is overwritten. When the app polls and finds `enque_by != "app:{uid}"`, it marks the history entry as `failed`. History is never overwritten — it is always the user's own record.
 

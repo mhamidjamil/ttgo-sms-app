@@ -20,6 +20,15 @@ data class HistoryEntryDto(
     var jobId: String = "",
     @get:PropertyName("enque_by") @set:PropertyName("enque_by")
     var enqueBy: String = "",
+    // "sms" or "whatsapp". Absent on every row written before manual sending
+    // could take the WhatsApp route, and those were all text messages.
+    val channel: String = "sms",
+    // The gateway's own id for a WhatsApp message, which is how its status is
+    // looked up afterwards instead of assumed.
+    @get:PropertyName("wa_message_id") @set:PropertyName("wa_message_id")
+    var waMessageId: String = "",
+    // Why it failed, in the words of whatever refused it.
+    val error: String = "",
 ) {
     fun toDomain() = HistoryEntry(
         id = id,
@@ -30,5 +39,8 @@ data class HistoryEntryDto(
         jobPhoneKey = jobPhoneKey,
         jobId = jobId,
         enqueBy = enqueBy,
+        channel = channel.ifBlank { "sms" },
+        waMessageId = waMessageId,
+        error = error,
     )
 }

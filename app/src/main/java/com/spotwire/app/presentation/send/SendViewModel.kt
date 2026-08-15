@@ -9,7 +9,9 @@ import com.spotwire.app.domain.usecase.quota.DecrementQuotaUseCase
 import com.spotwire.app.domain.usecase.quota.GetEffectiveQuotaUseCase
 import com.spotwire.app.domain.repository.ThrottleRepository
 import com.spotwire.app.domain.usecase.quota.RequestMoreSmsUseCase
+import com.spotwire.app.domain.repository.WhatsAppRepository
 import com.spotwire.app.domain.usecase.sms.EnqueueSmsUseCase
+import com.spotwire.app.domain.usecase.sms.SendWhatsAppUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,6 +28,9 @@ data class SendUiState(
     val requestMoreResult: String? = null,
     // False once today's single quota-increase request has been sent.
     val canRequestMoreToday: Boolean = true,
+    // A gateway key of the user's own is connected, so WhatsApp is a route this
+    // person actually has. Without one the choice is not offered at all.
+    val whatsAppAvailable: Boolean = false,
 ) {
     // How many SMS were sent today = assigned minus what's left.
     // Comparing sentToday against effectiveQuota correctly caps unverified users:
@@ -42,8 +47,10 @@ class SendViewModel(
     private val getEffectiveQuota: GetEffectiveQuotaUseCase,
     private val decrementQuota: DecrementQuotaUseCase,
     private val enqueueSms: EnqueueSmsUseCase,
+    private val sendWhatsApp: SendWhatsAppUseCase,
     private val requestMoreSms: RequestMoreSmsUseCase,
     private val throttle: ThrottleRepository,
+    private val waRepo: WhatsAppRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SendUiState())
@@ -63,6 +70,7 @@ class SendViewModel(
                     user = refreshed,
                     effectiveQuota = quota,
                     canRequestMoreToday = canRequest,
+                    whatsAppAvailable = waRepo.isLinked(),
                 )
             } else {
                 _uiState.value = SendUiState(error = "Could not load user data")
@@ -70,28 +78,40 @@ class SendViewModel(
         }
     }
 
-    fun send(phone: String, message: String, countryIso: String) {
+    fun send(phone: String, message: String, countryIso: String, overWhatsApp: Boolean) {
         val user = _uiState.value.user ?: return
-        if (!_uiState.value.canSendMore) {
+        // The daily allowance is about the shared device, so it only applies to
+        // the route that uses it. A message on the user's own gateway is theirs.
+        if (!overWhatsApp && !_uiState.value.canSendMore) {
             _uiState.value = _uiState.value.copy(error = "Daily quota reached. Resets at midnight.")
             return
         }
+        val state = _uiState.value
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isSending = true, error = null)
-            enqueueSms(user.uid, phone, message, senderPhone = user.phoneNumber, countryIso = countryIso)
+            _uiState.value = state.copy(isSending = true, error = null)
+            val outcome = if (overWhatsApp) {
+                sendWhatsApp(user.uid, phone, message, user.phoneNumber, countryIso)
+            } else {
+                enqueueSms(user.uid, phone, message, senderPhone = user.phoneNumber, countryIso = countryIso)
+            }
+            outcome
                 .onSuccess {
-                    decrementQuota(user.uid)
-                    val updated = user.copy(remainingQuota = (user.remainingQuota - 1).coerceAtLeast(0))
-                    _uiState.value = SendUiState(
+                    if (!overWhatsApp) decrementQuota(user.uid)
+                    val updated =
+                        if (overWhatsApp) user
+                        else user.copy(remainingQuota = (user.remainingQuota - 1).coerceAtLeast(0))
+                    _uiState.value = state.copy(
                         user = updated,
-                        effectiveQuota = _uiState.value.effectiveQuota,
-                        sentMessage = "Message queued successfully.",
+                        isSending = false,
+                        sentMessage =
+                            if (overWhatsApp) "Handed to WhatsApp. The History tab shows what became of it."
+                            else "Message queued successfully.",
                     )
                 }
                 .onFailure {
                     _uiState.value = _uiState.value.copy(
                         isSending = false,
-                        error = it.message ?: "Failed to queue SMS",
+                        error = it.message ?: "Could not send the message",
                     )
                 }
         }

@@ -40,10 +40,11 @@ fun SendScreen(viewModel: SendViewModel = koinViewModel()) {
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SendContent(
     uiState: SendUiState,
-    onSend: (String, String, String) -> Unit,
+    onSend: (String, String, String, Boolean) -> Unit,
     onClearMessage: () -> Unit,
     onRequestMore: (String) -> Unit = {},
     onClearRequestMoreResult: () -> Unit = {},
@@ -162,11 +163,39 @@ private fun SendContent(
                 label = "Phone Number",
                 modifier = Modifier.fillMaxWidth(),
             )
-            if (normalizedPhone != null && !smsReaches) {
+            // Which routes this message could actually take. Offering one that
+            // cannot work is how a message gets "sent" and never arrives.
+            val canUseWhatsApp = uiState.whatsAppAvailable && normalizedPhone != null
+            var overWhatsApp by remember(canUseWhatsApp, smsReaches) {
+                mutableStateOf(canUseWhatsApp && !smsReaches)
+            }
+            if (canUseWhatsApp && smsReaches) {
+                Spacer(Modifier.height(8.dp))
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    SegmentedButton(
+                        selected = !overWhatsApp,
+                        onClick = { overWhatsApp = false },
+                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                    ) { Text("Text message") }
+                    SegmentedButton(
+                        selected = overWhatsApp,
+                        onClick = { overWhatsApp = true },
+                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                    ) { Text("WhatsApp") }
+                }
+            } else if (normalizedPhone != null && !smsReaches) {
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Text messages are sent by one device with a Pakistani SIM, so it cannot reach this number. Send it on WhatsApp instead.",
-                    color = MaterialTheme.colorScheme.error,
+                    if (canUseWhatsApp) {
+                        "Text messages go through one device with a Pakistani SIM, so this number " +
+                            "will be reached on WhatsApp instead."
+                    } else {
+                        "Text messages go through one device with a Pakistani SIM, so this number " +
+                            "cannot be reached. Connect your WhatsApp gateway in Profile to message it."
+                    },
+                    color =
+                        if (canUseWhatsApp) MaterialTheme.colorScheme.onSurfaceVariant
+                        else MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -190,11 +219,11 @@ private fun SendContent(
             }
 
             Spacer(Modifier.height(24.dp))
-            val canSend = message.isNotBlank() && smsReaches &&
-                    !uiState.isSending && uiState.canSendMore
+            val canSend = message.isNotBlank() && !uiState.isSending &&
+                    if (overWhatsApp) canUseWhatsApp else smsReaches && uiState.canSendMore
 
             Button(
-                onClick = { onSend(phone, message, country) },
+                onClick = { onSend(phone, message, country, overWhatsApp) },
                 enabled = canSend,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
             ) {
@@ -202,7 +231,10 @@ private fun SendContent(
                     CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp,
                         color = MaterialTheme.colorScheme.onPrimary)
                 } else {
-                    Text("Send SMS", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        if (overWhatsApp) "Send on WhatsApp" else "Send SMS",
+                        style = MaterialTheme.typography.titleLarge,
+                    )
                 }
             }
 
@@ -292,7 +324,7 @@ private fun SendReadyPreview() {
     SpotwireTheme {
         SendContent(
             uiState = SendUiState(user = previewUser, effectiveQuota = 10),
-            onSend = { _, _, _ -> }, onClearMessage = {},
+            onSend = { _, _, _, _ -> }, onClearMessage = {},
         )
     }
 }
@@ -303,7 +335,7 @@ private fun SendQuotaLowPreview() {
     SpotwireTheme {
         SendContent(
             uiState = SendUiState(user = previewUser.copy(remainingQuota = 1), effectiveQuota = 10),
-            onSend = { _, _, _ -> }, onClearMessage = {},
+            onSend = { _, _, _, _ -> }, onClearMessage = {},
         )
     }
 }
@@ -314,7 +346,7 @@ private fun SendUnverifiedPreview() {
     SpotwireTheme {
         SendContent(
             uiState = SendUiState(user = unverifiedUser, effectiveQuota = 0),
-            onSend = { _, _, _ -> }, onClearMessage = {},
+            onSend = { _, _, _, _ -> }, onClearMessage = {},
         )
     }
 }

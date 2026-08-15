@@ -137,6 +137,9 @@ class UserRepositoryImpl(
         return result
     }
 
+    override suspend fun saveAlertRoutes(uid: String, routes: String) =
+        firestore.saveAlertRoutes(uid, routes)
+
     override suspend fun savePhoneOtp(uid: String, otp: String) =
         firestore.savePhoneOtp(uid, otp)
 

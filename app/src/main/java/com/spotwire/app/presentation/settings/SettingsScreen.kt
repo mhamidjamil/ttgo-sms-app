@@ -58,6 +58,7 @@ import com.spotwire.app.core.utils.freshScan
 import com.spotwire.app.core.utils.requestWifiScan
 import com.spotwire.app.core.utils.resolvePresence
 import com.spotwire.app.core.utils.scanBlocker
+import com.spotwire.app.domain.model.AlertRoutes
 import com.spotwire.app.domain.model.Place
 import com.spotwire.app.domain.model.Closeness
 import com.spotwire.app.domain.model.PlaceContact
@@ -282,6 +283,7 @@ fun SettingsScreen(
         guardianNumber = guardianNumber,
         onGuardianChange = { guardianNumber = it },
         onInviteRecipient = viewModel::inviteRecipient,
+        onAlertRoutesChange = viewModel::setAlertRoutes,
         onEditPlace = { editingPlaceId = it },
         onAddPlace = viewModel::addPlace,
         onRemovePlace = viewModel::removePlace,
@@ -349,6 +351,7 @@ private fun SettingsContent(
     onViewChangeHistory: () -> Unit = {},
     onViewMonitorLog: () -> Unit = {},
     onInviteRecipient: (String) -> Unit = {},
+    onAlertRoutesChange: (String) -> Unit = {},
     onAccountCheck: suspend () -> String = { "" },
 ) {
     val context = LocalContext.current
@@ -422,6 +425,26 @@ private fun SettingsContent(
             CurrentPlaceCheck(uiState.places, onSendLocation)
             Spacer(Modifier.height(20.dp))
 
+            SectionTitle("How alerts are sent")
+            Text(
+                "In the app costs nothing and reaches any country, but only people who " +
+                    "have Spotwire and have linked with you. Messages reach anyone.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            )
+            Spacer(Modifier.height(8.dp))
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                listOf(AlertRoutes.BOTH, AlertRoutes.IN_APP, AlertRoutes.MESSAGE)
+                    .forEachIndexed { index, route ->
+                        SegmentedButton(
+                            selected = uiState.alertRoutes == route,
+                            onClick = { onAlertRoutesChange(route) },
+                            shape = SegmentedButtonDefaults.itemShape(index, 3),
+                        ) { Text(AlertRoutes.label(route)) }
+                    }
+            }
+
+            Spacer(Modifier.height(20.dp))
             SectionTitle("Default Guardian")
             Text(
                 "Always notified, on top of any contacts a place has of its own",

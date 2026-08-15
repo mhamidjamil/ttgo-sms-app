@@ -898,8 +898,8 @@ class ArrivalService : Service() {
     // whatever happened, so an alert still sitting on the phone read exactly
     // like one the gateway had already taken.
     private fun noteArrivalOutcome(place: Place, outcome: ArrivalOutcome) {
-        val reached = outcome.whatsAppSent + outcome.enqueued
-        Log.i(TAG, "${place.id}: arrival recorded, $reached sent, " +
+        val reached = outcome.whatsAppSent + outcome.inApp + outcome.enqueued
+        Log.i(TAG, "${place.id}: arrival recorded, $reached sent (${outcome.inApp} in the app), " +
             "${outcome.queuedOnDevice} queued on this phone, ${outcome.failed} failed")
         if (reached > 0) {
             notePlace(place, MonitorLogStore.Kind.ALERT, "arrival alert sent to $reached recipient(s)")

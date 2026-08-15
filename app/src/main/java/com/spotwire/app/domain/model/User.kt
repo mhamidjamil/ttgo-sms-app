@@ -17,6 +17,10 @@ data class User(
 
     // V2: arrival monitoring
     val guardianNumber: String = "",
+    // Which routes an arrival alert may take. Somebody whose people all have the
+    // app does not want a text message as well, and somebody whose people do not
+    // have it must not have alerts quietly parked in an app nobody installed.
+    val alertRoutes: String = AlertRoutes.BOTH,
     // Dynamic place list (home/office seeded; users add more). Legacy fixed
     // home/office fields below are kept only so old documents migrate cleanly.
     val places: List<Place> = emptyList(),

@@ -200,6 +200,10 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         ).await()
     }
 
+    suspend fun saveAlertRoutes(uid: String, routes: String): Result<Unit> = runCatching {
+        db.collection(Paths.USERS).document(uid).update("alert_routes", routes).await()
+    }
+
     suspend fun savePhoneOtp(uid: String, otp: String): Result<Unit> = runCatching {
         db.collection(Paths.USERS).document(uid)
             .update("phone_otp", otp, "phone_otp_created_at", Timestamp.now()).await()

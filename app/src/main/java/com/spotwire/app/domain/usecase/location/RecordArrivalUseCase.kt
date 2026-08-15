@@ -2,6 +2,7 @@ package com.spotwire.app.domain.usecase.location
 
 import android.util.Log
 import com.spotwire.app.core.utils.DateUtils
+import com.spotwire.app.domain.model.AlertRoutes
 import com.spotwire.app.domain.model.EnqueueResult
 import com.spotwire.app.domain.model.PlaceContact
 import com.spotwire.app.domain.model.User
@@ -27,7 +28,7 @@ data class ArrivalOutcome(
     val firstFailure: String = "",
     val routineHistorySaved: Boolean = true,
 ) {
-    val total: Int get() = whatsAppSent + enqueued + queuedOnDevice + failed
+    val total: Int get() = whatsAppSent + inApp + enqueued + queuedOnDevice + failed
 }
 
 class RecordArrivalUseCase(
@@ -148,7 +149,7 @@ class RecordArrivalUseCase(
             // gateway of their own, and it is the only route that works for a
             // linked person abroad.
             val recipientUid = uidByNumber[contact.number]
-            if (recipientUid != null) {
+            if (recipientUid != null && AlertRoutes.allowsInApp(user.alertRoutes)) {
                 val delivered = linkRepo.deliverInAppAlert(
                     recipientUid = recipientUid,
                     senderUid = uid,
@@ -159,6 +160,18 @@ class RecordArrivalUseCase(
                 ).isSuccess
                 if (delivered) inApp += 1
                 else Log.w(TAG, "$placeId: in-app alert for ${contact.number} did not land")
+            }
+            // Somebody already reached in the app is not messaged as well when
+            // that is what they asked for. The alert still counts as delivered,
+            // and they still get their own control over being alerted at all.
+            if (recipientUid != null && !AlertRoutes.allowsMessage(user.alertRoutes)) {
+                alertRepo.recordSubscription(
+                    recipientPhone = contact.number,
+                    senderUid = uid,
+                    senderName = user.name,
+                    senderPhone = user.phoneNumber,
+                )
+                return@forEach
             }
             // recipientName personalizes for the RECEIVER (gateway anti-ban).
             val sentViaWhatsApp = waLinked &&

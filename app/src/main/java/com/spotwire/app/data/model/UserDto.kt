@@ -3,6 +3,7 @@ package com.spotwire.app.data.model
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentId
 import com.google.firebase.firestore.PropertyName
+import com.spotwire.app.domain.model.AlertRoutes
 import com.spotwire.app.domain.model.Closeness
 import com.spotwire.app.domain.model.Place
 import com.spotwire.app.domain.model.PlaceContact
@@ -34,6 +35,9 @@ data class UserDto(
     // V2: arrival monitoring
     @get:PropertyName("guardian_number") @set:PropertyName("guardian_number")
     var guardianNumber: String = "",
+    // How arrival alerts go out: "both" (default), "in_app" or "message".
+    @get:PropertyName("alert_routes") @set:PropertyName("alert_routes")
+    var alertRoutes: String = "both",
     @get:PropertyName("home_bssid") @set:PropertyName("home_bssid")
     var homeBssid: String = "",
     @get:PropertyName("home_label") @set:PropertyName("home_label")
@@ -139,6 +143,7 @@ data class UserDto(
             lastQuotaResetDate = lastQuotaResetDate,
             waSessionId = waSessionId,
             guardianNumber = guardianNumber,
+            alertRoutes = alertRoutes.ifBlank { AlertRoutes.BOTH },
             places = placeList,
             arrivalTimesByPlace = timesByPlace,
             lastArrivalDateByPlace = lastDatesByPlace,

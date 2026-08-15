@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.spotwire.app.data.local.MonitorLogStore
 import com.spotwire.app.data.local.PreferencesDataSource
 import com.spotwire.app.domain.model.Place
+import com.spotwire.app.domain.model.AlertRoutes
 import com.spotwire.app.domain.model.LinkPermissions
 import com.spotwire.app.domain.model.PlaceContact
 import com.spotwire.app.domain.model.PresenceState
@@ -56,6 +57,7 @@ data class SettingsUiState(
     val placeStates: Map<String, PresenceState> = emptyMap(),
     // Reaching a recipient inside the app needs a link, and a link needs them to
     // have an account. Both answers, and the invite when they do not.
+    val alertRoutes: String = AlertRoutes.BOTH,
     val inviteMessage: String? = null,
     val inviteNumberToShare: String? = null,
     val shareUrl: String = "",
@@ -114,6 +116,7 @@ class SettingsViewModel(
                     places = user.places.ifEmpty { Place.defaults() },
                     waConfigured = linked,
                     shareUrl = waRepo.shareUrl(),
+                    alertRoutes = user.alertRoutes,
                     noDeliveryRoute = !linked && !user.phoneVerified,
                 )
             } else {
@@ -153,6 +156,12 @@ class SettingsViewModel(
                     )
                 }
         }
+    }
+
+    fun setAlertRoutes(routes: String) {
+        val uid = userRepo.currentFirebaseUser()?.uid ?: return
+        _uiState.value = _uiState.value.copy(alertRoutes = routes)
+        viewModelScope.launch { userRepo.saveAlertRoutes(uid, routes) }
     }
 
     fun clearInvite() {

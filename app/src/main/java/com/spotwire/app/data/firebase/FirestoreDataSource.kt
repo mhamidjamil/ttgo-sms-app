@@ -19,6 +19,7 @@ import com.spotwire.app.data.model.AccountLinkDto
 import com.spotwire.app.data.model.AlertSubscriptionDto
 import com.spotwire.app.data.model.AutoHistoryEntryDto
 import com.spotwire.app.data.model.HistoryEntryDto
+import com.spotwire.app.data.model.IncomingAlertDto
 import com.spotwire.app.data.model.LocationRequestDto
 import com.spotwire.app.data.model.SettingsChangeDto
 import com.spotwire.app.data.model.SmsJobDto
@@ -112,7 +113,7 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         }.getOrDefault(emptyList())
         listOf(
             Paths.HISTORY_SUB, Paths.AUTO_HISTORY_SUB, Paths.SETTINGS_HISTORY_SUB,
-            Paths.LINKS_SUB, Paths.LOCATION_REQUESTS_SUB,
+            Paths.LINKS_SUB, Paths.LOCATION_REQUESTS_SUB, Paths.INCOMING_ALERTS_SUB,
         ).forEach { sub ->
             // Batches cap at 500 writes, so a long history is cleared in pages.
             while (true) {
@@ -598,6 +599,65 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
                         ?.copy(id = doc.id, pendingWrite = doc.metadata.hasPendingWrites())
                 }
             }
+
+    // ── Alerts delivered inside the app ───────────────────────────────────────
+    //
+    // Written by the sender onto the recipient's own account, which is what lets
+    // an alert reach somebody with no SIM the device can text and no WhatsApp
+    // gateway of their own. The rules only allow it between two accounts that
+    // have already linked, so this is not a way to message a stranger.
+
+    suspend fun deliverInAppAlert(
+        recipientUid: String,
+        senderUid: String,
+        senderName: String,
+        senderPhone: String,
+        message: String,
+        placeLabel: String,
+    ): Result<Unit> = runCatching {
+        val row = mapOf(
+            "sender_uid" to senderUid,
+            "sender_name" to senderName,
+            "sender_phone" to senderPhone,
+            "message" to message,
+            "place_label" to placeLabel,
+            "sent_at" to Timestamp.now(),
+        )
+        val ref = db.collection(Paths.USERS).document(recipientUid)
+            .collection(Paths.INCOMING_ALERTS_SUB).document()
+        withTimeoutOrNull(COMMIT_TIMEOUT_MILLIS) { ref.set(row).await() }
+            ?: error("Timed out delivering the in-app alert")
+    }
+
+    fun getIncomingAlerts(uid: String): Flow<List<IncomingAlertDto>> =
+        db.collection(Paths.USERS).document(uid)
+            .collection(Paths.INCOMING_ALERTS_SUB)
+            .orderBy("sent_at", Query.Direction.DESCENDING)
+            .limit(100)
+            .snapshots()
+            .map { snap ->
+                snap.documents.mapNotNull { doc ->
+                    doc.toObject(IncomingAlertDto::class.java)?.copy(id = doc.id)
+                }
+            }
+
+    /** The ones nobody has looked at yet, for the background catch-up. */
+    suspend fun unseenIncomingAlerts(uid: String): Result<List<IncomingAlertDto>> = runCatching {
+        db.collection(Paths.USERS).document(uid)
+            .collection(Paths.INCOMING_ALERTS_SUB)
+            .whereEqualTo("seen_at", null)
+            .limit(20)
+            .get().await()
+            .documents.mapNotNull { doc ->
+                doc.toObject(IncomingAlertDto::class.java)?.copy(id = doc.id)
+            }
+    }
+
+    suspend fun markIncomingAlertSeen(uid: String, alertId: String): Result<Unit> = runCatching {
+        db.collection(Paths.USERS).document(uid)
+            .collection(Paths.INCOMING_ALERTS_SUB).document(alertId)
+            .update("seen_at", Timestamp.now()).await()
+    }
 
     // ── SMS Jobs + History ────────────────────────────────────────────────────
 

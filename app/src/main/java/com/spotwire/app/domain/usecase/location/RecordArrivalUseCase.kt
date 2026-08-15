@@ -19,6 +19,8 @@ import com.spotwire.app.domain.usecase.sms.EnqueueSmsUseCase
  */
 data class ArrivalOutcome(
     val whatsAppSent: Int = 0,
+    // Delivered onto another Spotwire account, on top of whatever else went out.
+    val inApp: Int = 0,
     val enqueued: Int = 0,
     val queuedOnDevice: Int = 0,
     val failed: Int = 0,
@@ -84,9 +86,12 @@ class RecordArrivalUseCase(
         // for this place, plus any linked account granted automatic updates. One
         // SMS job per recipient, because the TTGO module sends one at a time.
         // Named entries come first so a number that appears twice keeps its name.
-        val linked = linkRepo.activeLinks(uid)
+        val linkedAccounts = linkRepo.activeLinks(uid)
             .filter { it.permissions.autoLocationUpdates }
-            .map { PlaceContact(name = it.otherName, number = it.otherPhone) }
+        // Their number, so they are only ever notified once no matter how many
+        // lists they appear on.
+        val uidByNumber = linkedAccounts.associate { it.otherPhone to it.otherUid }
+        val linked = linkedAccounts.map { PlaceContact(name = it.otherName, number = it.otherPhone) }
         val candidates = (place.contacts + linked + PlaceContact(name = "", number = user.guardianNumber))
             .filter { it.number.isNotBlank() }
             .distinctBy { it.number }
@@ -136,7 +141,25 @@ class RecordArrivalUseCase(
         var queuedOnDevice = 0
         var failed = 0
         var firstFailure = ""
+        var inApp = 0
         recipients.forEach { contact ->
+            // Somebody with a Spotwire account of their own is reached inside the
+            // app first: it costs nothing, needs no SIM the device can text and no
+            // gateway of their own, and it is the only route that works for a
+            // linked person abroad.
+            val recipientUid = uidByNumber[contact.number]
+            if (recipientUid != null) {
+                val delivered = linkRepo.deliverInAppAlert(
+                    recipientUid = recipientUid,
+                    senderUid = uid,
+                    senderName = user.name,
+                    senderPhone = user.phoneNumber,
+                    message = message,
+                    placeLabel = label,
+                ).isSuccess
+                if (delivered) inApp += 1
+                else Log.w(TAG, "$placeId: in-app alert for ${contact.number} did not land")
+            }
             // recipientName personalizes for the RECEIVER (gateway anti-ban).
             val sentViaWhatsApp = waLinked &&
                 waRepo.sendMessage(contact.number, waText, contact.name.ifBlank { null }).isSuccess
@@ -221,6 +244,7 @@ class RecordArrivalUseCase(
             .isSuccess
         ArrivalOutcome(
             whatsAppSent = whatsAppSent,
+            inApp = inApp,
             enqueued = enqueued,
             queuedOnDevice = queuedOnDevice,
             failed = failed,

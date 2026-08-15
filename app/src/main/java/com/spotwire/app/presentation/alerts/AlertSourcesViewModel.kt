@@ -3,7 +3,9 @@ package com.spotwire.app.presentation.alerts
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.spotwire.app.domain.model.AlertSubscription
+import com.spotwire.app.domain.model.IncomingAlert
 import com.spotwire.app.domain.repository.AlertRepository
+import com.spotwire.app.domain.repository.LinkRepository
 import com.spotwire.app.domain.repository.UserRepository
 import com.spotwire.app.domain.usecase.alerts.UnsubscribeFromSenderUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,6 +17,9 @@ import kotlinx.coroutines.launch
 
 data class AlertSourcesUiState(
     val subscriptions: List<AlertSubscription> = emptyList(),
+    // The alerts actually delivered to this person inside the app. Only what was
+    // sent to them: never the sender's own history, which is theirs alone.
+    val alerts: List<IncomingAlert> = emptyList(),
     val isLoading: Boolean = true,
     // Blank when the phone is not verified yet — nothing can be matched without it.
     val myPhone: String = "",
@@ -26,6 +31,7 @@ class AlertSourcesViewModel(
     private val userRepo: UserRepository,
     private val alertRepo: AlertRepository,
     private val unsubscribe: UnsubscribeFromSenderUseCase,
+    private val linkRepo: LinkRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AlertSourcesUiState())
@@ -52,6 +58,9 @@ class AlertSourcesViewModel(
             myName = user.name
             myUid = user.uid
             _uiState.value = _uiState.value.copy(myPhone = user.phoneNumber)
+            linkRepo.incomingAlerts(user.uid)
+                .onEach { alerts -> _uiState.value = _uiState.value.copy(alerts = alerts) }
+                .launchIn(this)
             alertRepo.getSubscriptions(user.phoneNumber)
                 .onEach { subs ->
                     _uiState.value = _uiState.value.copy(
@@ -78,6 +87,14 @@ class AlertSourcesViewModel(
             }
             markBusy(subscription.senderUid, false)
         }
+    }
+
+    /** Opening the list is reading it, so nothing stays unread behind their back. */
+    fun markAlertsSeen() {
+        val uid = myUid.ifBlank { return }
+        val unseen = _uiState.value.alerts.filter { !it.seen }
+        if (unseen.isEmpty()) return
+        viewModelScope.launch { unseen.forEach { linkRepo.markAlertSeen(uid, it.id) } }
     }
 
     fun clearError() { _uiState.value = _uiState.value.copy(error = null) }

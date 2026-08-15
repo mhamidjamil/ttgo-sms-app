@@ -215,6 +215,28 @@ rather than ignored, so the asker's screen stops waiting.
 
 ---
 
+### `ttgo_users/{uid}/incoming_alerts/{autoId}`
+
+Alerts delivered inside the app. The **sender** writes onto the **recipient's**
+account, which is the only route that reaches somebody with no number the device
+can text and no WhatsApp gateway of their own.
+
+| Field | Type | Written by | Description |
+|-------|------|-----------|-------------|
+| `sender_uid` | string | sender | Must equal the caller's own uid |
+| `sender_name` | string | sender | Shown as the notification title |
+| `sender_phone` | string | sender | Fallback title when the name is blank |
+| `message` | string | sender | Exactly what was sent, capped at 2000 characters |
+| `place_label` | string | sender | Which place they reached |
+| `sent_at` | timestamp | sender | |
+| `seen_at` | timestamp | recipient | Set when the recipient opens the list |
+
+The rules only accept a write between two accounts that have already linked, the
+text is frozen once written, and the recipient may only ever add `seen_at`. The
+recipient sees what was sent to them and nothing else of the sender's.
+
+---
+
 ### `alert_subscriptions/{recipient_phone}/senders/{senderUid}` (top-level)
 
 Recipient-owned control over automated location alerts. Keyed by the recipient's

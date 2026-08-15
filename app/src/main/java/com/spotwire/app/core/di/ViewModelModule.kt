@@ -30,6 +30,6 @@ val viewModelModule = module {
     viewModel { MonitorLogViewModel(get(), get(), get()) }
     viewModel { WhatsAppViewModel(get(), get()) }
     // Sharing: who may see my location, and who is alerting me
-    viewModel { AlertSourcesViewModel(get(), get(), get()) }
+    viewModel { AlertSourcesViewModel(get(), get(), get(), get()) }
     viewModel { LinkedAccountsViewModel(get(), get(), get()) }
 }

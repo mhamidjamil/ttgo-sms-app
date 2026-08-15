@@ -349,6 +349,31 @@ service cloud.firestore {
       allow delete: if isOwner(uid);
     }
 
+    // Alerts delivered inside the app. The SENDER writes onto the RECIPIENT's
+    // account, which is the only way to reach somebody who has no number the
+    // device can text and no WhatsApp gateway of their own.
+    //
+    // Same shape as a location request, and for the same reason: a write is only
+    // accepted from an account this person has already linked with, so this is
+    // not a way to push a message at a stranger. The text is frozen once written
+    // (no update by the sender), and the recipient may only ever mark it seen, so
+    // neither side can quietly rewrite what was said.
+    match /ttgo_users/{uid}/incoming_alerts/{alertId} {
+      allow read: if isOwner(uid);
+      allow create: if isAppUser() &&
+                       request.resource.data.sender_uid == request.auth.uid &&
+                       request.resource.data.keys().hasOnly([
+                         'sender_uid', 'sender_name', 'sender_phone', 'message',
+                         'place_label', 'sent_at'
+                       ]) &&
+                       request.resource.data.message is string &&
+                       request.resource.data.message.size() <= 2000 &&
+                       exists(/databases/$(database)/documents/ttgo_users/$(uid)/links/$(request.auth.uid));
+      allow update: if isOwner(uid) &&
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seen_at']);
+      allow delete: if isOwner(uid);
+    }
+
     // ── phone_directory: number → account, for link invites ──────────────────
     //
     // A link invite has to resolve a typed number to an account

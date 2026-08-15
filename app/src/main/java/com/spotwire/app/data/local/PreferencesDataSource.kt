@@ -17,6 +17,10 @@ class PreferencesDataSource(private val context: Context) {
 
     companion object {
         private val KEY_CACHED_UID = stringPreferencesKey("cached_uid")
+        // The newest in-app alert this phone has already announced. Anything
+        // later than this gets a notification exactly once, however many times
+        // the catch-up runs.
+        private val KEY_LAST_ALERT_NOTIFIED_AT = longPreferencesKey("last_alert_notified_at")
         private val KEY_MONITORING_ENABLED = booleanPreferencesKey("monitoring_enabled")
         // WhatsApp gateway link — local cache of the per-user key/session. The
         // source of truth is the Firestore user doc (owner-only via rules), so
@@ -128,6 +132,13 @@ class PreferencesDataSource(private val context: Context) {
 
     suspend fun getCachedUid(): String? =
         context.dataStore.data.first()[KEY_CACHED_UID]
+
+    suspend fun getLastAlertNotifiedAt(): Long =
+        context.dataStore.data.first()[KEY_LAST_ALERT_NOTIFIED_AT] ?: 0L
+
+    suspend fun setLastAlertNotifiedAt(millis: Long) {
+        context.dataStore.edit { it[KEY_LAST_ALERT_NOTIFIED_AT] = millis }
+    }
 
     suspend fun setCachedUid(uid: String) {
         context.dataStore.edit { it[KEY_CACHED_UID] = uid }

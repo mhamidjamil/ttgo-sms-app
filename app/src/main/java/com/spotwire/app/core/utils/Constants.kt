@@ -11,6 +11,9 @@ object Paths {
     const val SETTINGS_HISTORY_SUB: String = "settings_history"
     const val LINKS_SUB: String = "links"
     const val LOCATION_REQUESTS_SUB: String = "location_requests"
+    // Alerts delivered inside the app, written by a linked sender onto the
+    // recipient's own account. Only what was sent to them, never the sender's log.
+    const val INCOMING_ALERTS_SUB: String = "incoming_alerts"
     const val FREE_SMS_QUOTA_FIELD: String = "free_sms_quota"
     // Recipient-owned alert subscriptions, keyed by the recipient's E.164 number
     // so a link can be found months before that person installs the app.

@@ -15,6 +15,7 @@ import com.spotwire.app.domain.repository.LinkRepository
 import com.spotwire.app.domain.repository.UserRepository
 import com.spotwire.app.domain.usecase.links.AnswerLocationRequestsUseCase
 import com.spotwire.app.services.ArrivalService
+import com.spotwire.app.services.IncomingAlertCatchUp
 import com.spotwire.app.services.ArrivalWatchdogReceiver
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
@@ -34,6 +35,13 @@ class MainActivity : ComponentActivity() {
         // Restore arrival monitoring if user had it enabled before process death
         // or system kill. This ensures the foreground service survives reboots,
         // battery optimization kills, and Android's foreground service restrictions.
+        // Anything that arrived while the app was closed, announced now. This is
+        // the backstop: without a push server, opening the app is the one moment
+        // an alert is guaranteed to be noticed.
+        lifecycleScope.launch {
+            runCatching { IncomingAlertCatchUp.run(applicationContext) }
+        }
+
         lifecycleScope.launch {
             if (!prefs.getMonitoringEnabled() || ArrivalService.isRunning) return@launch
             // With every alerting place watched by a fence there is nothing for

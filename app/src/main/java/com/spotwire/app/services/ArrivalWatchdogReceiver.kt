@@ -54,6 +54,12 @@ class ArrivalWatchdogReceiver : BroadcastReceiver(), KoinComponent {
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                // Checked before the monitoring guard: a person can be receiving
+                // somebody else's alerts without watching any places themselves,
+                // and this tick is the only chance they get to hear about one
+                // while the app is closed.
+                runCatching { IncomingAlertCatchUp.run(appContext) }
+                    .onFailure { Log.w(TAG, "incoming alert catch-up failed", it) }
                 if (!prefs.getMonitoringEnabled()) return@launch
                 scheduleNextCheck(appContext)
                 // Null means the settings could not be read at all, which is not

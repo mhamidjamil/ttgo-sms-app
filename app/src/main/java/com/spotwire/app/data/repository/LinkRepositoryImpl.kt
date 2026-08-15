@@ -1,6 +1,7 @@
 package com.spotwire.app.data.repository
 
 import com.spotwire.app.data.firebase.FirestoreDataSource
+import com.spotwire.app.domain.model.IncomingAlert
 import com.spotwire.app.domain.model.AccountLink
 import com.spotwire.app.domain.model.LinkPermissions
 import com.spotwire.app.domain.model.LinkState
@@ -13,6 +14,26 @@ class LinkRepositoryImpl(private val firestore: FirestoreDataSource) : LinkRepos
 
     override suspend fun publishDirectoryEntry(phoneNumber: String, uid: String, name: String) =
         firestore.publishPhoneDirectoryEntry(phoneNumber, uid, name)
+
+    override suspend fun deliverInAppAlert(
+        recipientUid: String,
+        senderUid: String,
+        senderName: String,
+        senderPhone: String,
+        message: String,
+        placeLabel: String,
+    ) = firestore.deliverInAppAlert(
+        recipientUid, senderUid, senderName, senderPhone, message, placeLabel,
+    )
+
+    override fun incomingAlerts(uid: String): Flow<List<IncomingAlert>> =
+        firestore.getIncomingAlerts(uid).map { list -> list.map { it.toDomain() } }
+
+    override suspend fun unseenIncomingAlerts(uid: String): Result<List<IncomingAlert>> =
+        firestore.unseenIncomingAlerts(uid).map { list -> list.map { it.toDomain() } }
+
+    override suspend fun markAlertSeen(uid: String, alertId: String) =
+        firestore.markIncomingAlertSeen(uid, alertId)
 
     override suspend fun lookupByPhone(phoneNumber: String) =
         firestore.lookupPhoneDirectory(phoneNumber)

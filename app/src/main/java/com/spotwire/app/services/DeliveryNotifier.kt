@@ -27,6 +27,8 @@ object DeliveryNotifier {
     // 1001 is the ongoing monitoring notification. These sit above it, one per
     // place, so two places failing do not overwrite each other.
     private const val BASE_ID = 2000
+    private const val ALERTS_CHANNEL_ID = "incoming_alerts"
+    private const val ALERT_BASE_ID = 3000
 
     fun notifyArrivalUndelivered(
         context: Context,
@@ -66,6 +68,44 @@ object DeliveryNotifier {
 
         runCatching { manager.notify(BASE_ID + placeLabel.hashCode().and(0xFF), notification) }
             .onFailure { Log.w(TAG, "could not post the delivery warning: ${it.message}") }
+    }
+
+    /**
+     * An alert somebody sent this person inside the app. Its own channel, so it
+     * can be silenced separately from a delivery problem: one is about somebody
+     * else arriving somewhere, the other is about this phone failing at its job.
+     */
+    fun notifyIncomingAlert(context: Context, senderName: String, message: String, id: Int) {
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            ?: return
+        if (manager.getNotificationChannel(ALERTS_CHANNEL_ID) == null) {
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    ALERTS_CHANNEL_ID,
+                    "Alerts from people you follow",
+                    NotificationManager.IMPORTANCE_HIGH,
+                ).apply { description = "When somebody you are linked with reaches a place" }
+            )
+        }
+        val open = PendingIntent.getActivity(
+            context,
+            id,
+            Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = NotificationCompat.Builder(context, ALERTS_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(senderName.ifBlank { "Spotwire alert" })
+            .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+        runCatching { manager.notify(ALERT_BASE_ID + id, notification) }
+            .onFailure { Log.w(TAG, "could not post the incoming alert: ${it.message}") }
     }
 
     private fun ensureChannel(manager: NotificationManager) {

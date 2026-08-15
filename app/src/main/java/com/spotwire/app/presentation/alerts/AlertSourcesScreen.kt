@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import com.spotwire.app.core.theme.SpotwireTheme
 import com.spotwire.app.core.utils.DateUtils
 import com.spotwire.app.domain.model.AlertSubscription
+import com.spotwire.app.domain.model.IncomingAlert
 import org.koin.androidx.compose.koinViewModel
 import java.util.Date
 
@@ -24,11 +25,34 @@ fun AlertSourcesScreen(
     viewModel: AlertSourcesViewModel = koinViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    // Being on this screen is reading them.
+    LaunchedEffect(uiState.alerts.size) { viewModel.markAlertsSeen() }
     AlertSourcesContent(
         uiState = uiState,
         onSetSubscribed = viewModel::setSubscribed,
         onBack = onBack,
     )
+}
+
+/** One alert somebody sent this person, exactly as it was sent. */
+@Composable
+private fun IncomingAlertCard(alert: IncomingAlert) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp)) {
+            Text(
+                alert.senderName.ifBlank { alert.senderPhone },
+                style = MaterialTheme.typography.titleSmall,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(alert.message, style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                DateUtils.formatTimestamp(alert.sentAt?.toDate()),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+            )
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -105,6 +129,24 @@ private fun AlertSourcesContent(
                     )
                 }
                 else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (uiState.alerts.isNotEmpty()) {
+                        item {
+                            Text(
+                                "Alerts sent to you",
+                                style = MaterialTheme.typography.titleSmall,
+                            )
+                        }
+                        items(uiState.alerts, key = { "alert-" + it.id }) { alert ->
+                            IncomingAlertCard(alert)
+                        }
+                        item {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "Who may alert you",
+                                style = MaterialTheme.typography.titleSmall,
+                            )
+                        }
+                    }
                     items(uiState.subscriptions, key = { it.senderUid }) { subscription ->
                         SubscriptionCard(
                             subscription = subscription,

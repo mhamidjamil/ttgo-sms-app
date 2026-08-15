@@ -1,6 +1,7 @@
 package com.spotwire.app.domain.repository
 
 import com.spotwire.app.domain.model.AccountLink
+import com.spotwire.app.domain.model.IncomingAlert
 import com.spotwire.app.domain.model.LinkPermissions
 import com.spotwire.app.domain.model.LinkState
 import com.spotwire.app.domain.model.LocationRequest
@@ -36,6 +37,22 @@ interface LinkRepository {
     // One-shot read of my approved links, for callers with no screen to keep a
     // flow alive (the arrival service, the location-request answerer).
     suspend fun activeLinks(uid: String): List<AccountLink>
+
+    // ── Alerts delivered inside the app ───────────────────────────────────────
+
+    /** Puts one alert on a linked person's own account. */
+    suspend fun deliverInAppAlert(
+        recipientUid: String,
+        senderUid: String,
+        senderName: String,
+        senderPhone: String,
+        message: String,
+        placeLabel: String,
+    ): Result<Unit>
+
+    fun incomingAlerts(uid: String): Flow<List<IncomingAlert>>
+    suspend fun unseenIncomingAlerts(uid: String): Result<List<IncomingAlert>>
+    suspend fun markAlertSeen(uid: String, alertId: String): Result<Unit>
 
     // On-demand location: the asker creates a request in the target's own
     // subcollection and watches that one document for the answer.

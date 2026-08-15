@@ -281,6 +281,7 @@ fun SettingsScreen(
         snackbarHostState = snackbarHostState,
         guardianNumber = guardianNumber,
         onGuardianChange = { guardianNumber = it },
+        onInviteRecipient = viewModel::inviteRecipient,
         onEditPlace = { editingPlaceId = it },
         onAddPlace = viewModel::addPlace,
         onRemovePlace = viewModel::removePlace,
@@ -347,8 +348,10 @@ private fun SettingsContent(
     onBack: (() -> Unit)? = null,
     onViewChangeHistory: () -> Unit = {},
     onViewMonitorLog: () -> Unit = {},
+    onInviteRecipient: (String) -> Unit = {},
     onAccountCheck: suspend () -> String = { "" },
 ) {
+    val context = LocalContext.current
     val phoneNormalizer = remember { PhoneNormalizer() }
     val defaultCountry = rememberDefaultCountry()
     var guardianCountry by remember { mutableStateOf(defaultCountry) }
@@ -434,6 +437,34 @@ private fun SettingsContent(
                 label = "Guardian Phone",
                 modifier = Modifier.fillMaxWidth(),
             )
+            // Reaching them inside the app costs nothing and works in any
+            // country, but it needs them to have an account and to have agreed.
+            val guardianE164 = phoneNormalizer.normalize(guardianNumber, guardianCountry)
+            if (guardianE164 != null) {
+                Spacer(Modifier.height(6.dp))
+                TextButton(
+                    onClick = { onInviteRecipient(guardianE164) },
+                    enabled = !uiState.isInviting,
+                ) { Text("Alert them inside the app instead") }
+            }
+            uiState.inviteMessage?.let { note ->
+                Spacer(Modifier.height(4.dp))
+                Text(note, style = MaterialTheme.typography.bodySmall)
+                uiState.inviteNumberToShare?.let {
+                    Spacer(Modifier.height(4.dp))
+                    OutlinedButton(onClick = {
+                        val share = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(
+                                Intent.EXTRA_TEXT,
+                                "I use Spotwire to let you know when I get somewhere safely. " +
+                                    "Install it and we can link up: ${uiState.shareUrl}",
+                            )
+                        }
+                        runCatching { context.startActivity(Intent.createChooser(share, "Invite them")) }
+                    }) { Text("Send them the app") }
+                }
+            }
 
             Spacer(Modifier.height(20.dp))
             SectionTitle("Places")

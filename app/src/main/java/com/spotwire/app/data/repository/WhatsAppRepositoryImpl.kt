@@ -189,6 +189,8 @@ class WhatsAppRepositoryImpl(
 
     override suspend fun portalUrl(): String = config.get().portalUrl
 
+    override suspend fun shareUrl(): String = config.get().shareUrl
+
     override suspend fun sendMessage(toPhone: String, message: String, recipientName: String?): Result<String> {
         val (cred, session) = credential()
             ?: return Result.failure(IllegalStateException("WhatsApp is not set up yet"))

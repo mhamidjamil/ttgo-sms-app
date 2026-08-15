@@ -66,6 +66,11 @@ android {
             "\"${localProps.getProperty("WHATSAPP_SERVICE_URL", "https://w2.innovorix.com").removeSurrounding("\"")}\"")
         buildConfigField("String", "WHATSAPP_PORTAL_URL",
             "\"${localProps.getProperty("WHATSAPP_PORTAL_URL", "https://w2.innovorix.com").removeSurrounding("\"")}\"")
+        // Where an invite sends somebody. Remote-first the same way, through
+        // app_share_url on the device doc, so the address can change the day the
+        // listing goes live without waiting for a release.
+        buildConfigField("String", "APP_SHARE_URL",
+            "\"${localProps.getProperty("APP_SHARE_URL", "https://play.google.com/store/apps/details?id=com.spotwire.app").removeSurrounding("\"")}\"")
     }
 
     signingConfigs {

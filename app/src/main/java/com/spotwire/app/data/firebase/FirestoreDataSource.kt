@@ -169,7 +169,7 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
     // and the portal address change with a console edit, not an app rebuild.
     suspend fun getWaGatewayOverrides(): Result<Map<String, String>> = runCatching {
         val snap = db.document(Paths.DEVICE_DOC).get().await()
-        listOf("wa_service_url", "wa_portal_url")
+        listOf("wa_service_url", "wa_portal_url", "app_share_url")
             .mapNotNull { field -> snap.getString(field)?.takeIf { it.isNotBlank() }?.let { field to it } }
             .toMap()
     }

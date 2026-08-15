@@ -81,6 +81,9 @@ interface WhatsAppRepository {
     /** Public address of the gateway portal, where a user signs up and mints a key. */
     suspend fun portalUrl(): String
 
+    /** Where an invite points somebody who has no Spotwire account yet. */
+    suspend fun shareUrl(): String
+
     /** The gateway's own verdict on a message it took: what it did with it. */
     data class Delivery(val status: String, val error: String?)
 

@@ -6,12 +6,14 @@ import androidx.lifecycle.viewModelScope
 import com.spotwire.app.data.local.MonitorLogStore
 import com.spotwire.app.data.local.PreferencesDataSource
 import com.spotwire.app.domain.model.Place
+import com.spotwire.app.domain.model.LinkPermissions
 import com.spotwire.app.domain.model.PlaceContact
 import com.spotwire.app.domain.model.PresenceState
 import com.spotwire.app.core.utils.WifiConfig
 import com.spotwire.app.domain.model.SettingsChange
 import com.spotwire.app.domain.repository.UserRepository
 import com.spotwire.app.domain.repository.WhatsAppRepository
+import com.spotwire.app.domain.usecase.links.InviteLinkUseCase
 import com.spotwire.app.domain.usecase.location.GetPlaceRecipientsUseCase
 import com.spotwire.app.domain.usecase.location.SavePlacesUseCase
 import com.spotwire.app.domain.usecase.location.SendLocationNowUseCase
@@ -52,6 +54,13 @@ data class SettingsUiState(
     // invisible. These are what it actually knows.
     val lastObservedAt: Long = 0L,
     val placeStates: Map<String, PresenceState> = emptyMap(),
+    // Reaching a recipient inside the app needs a link, and a link needs them to
+    // have an account. Both answers, and the invite when they do not.
+    val inviteMessage: String? = null,
+    val inviteNumberToShare: String? = null,
+    val shareUrl: String = "",
+    val isInviting: Boolean = false,
+
     // Whether the service is alive at this moment, re-read with the health data.
     // The screen used to sample it once, so a service the system had killed
     // hours ago still read as running.
@@ -66,6 +75,7 @@ class SettingsViewModel(
     private val getPlaceRecipients: GetPlaceRecipientsUseCase,
     private val sendLocationNow: SendLocationNowUseCase,
     private val monitorLog: MonitorLogStore,
+    private val inviteLink: InviteLinkUseCase,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -103,12 +113,50 @@ class SettingsViewModel(
                     // places list, so old accounts land here with both seeded.
                     places = user.places.ifEmpty { Place.defaults() },
                     waConfigured = linked,
+                    shareUrl = waRepo.shareUrl(),
                     noDeliveryRoute = !linked && !user.phoneVerified,
                 )
             } else {
                 _uiState.value = _uiState.value.copy(isLoading = false, error = "Could not load settings")
             }
         }
+    }
+
+    /**
+     * Offers to reach this recipient inside the app instead of by message.
+     *
+     * If they already have an account, this sends them a link invite and their
+     * alerts arrive as a notification, which costs nothing and works in any
+     * country. If they do not, there is nothing to link to yet, so the answer is
+     * an invitation to install it rather than an error.
+     */
+    fun inviteRecipient(number: String) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isInviting = true, inviteMessage = null, inviteNumberToShare = null,
+            )
+            inviteLink(number, LinkPermissions(autoLocationUpdates = true), countryIso = "")
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(
+                        isInviting = false,
+                        inviteMessage = "Invite sent to $it. Once they accept, their alerts arrive in the app.",
+                    )
+                }
+                .onFailure { failure ->
+                    val noAccount = failure.message.orEmpty().contains("No Spotwire account")
+                    _uiState.value = _uiState.value.copy(
+                        isInviting = false,
+                        inviteMessage =
+                            if (noAccount) "They do not have Spotwire yet. Send them the app."
+                            else failure.message ?: "Could not send the invite",
+                        inviteNumberToShare = if (noAccount) number else null,
+                    )
+                }
+        }
+    }
+
+    fun clearInvite() {
+        _uiState.value = _uiState.value.copy(inviteMessage = null, inviteNumberToShare = null)
     }
 
     // Whole-place update — the place editor dialog applies its draft through

@@ -31,6 +31,8 @@ messaged the gateway. Nothing with wider power belongs in this document.
 |-------|------|-----------|-------------|
 | `free_sms_quota` | int | TTGO dashboard | Default assigned quota for new users |
 | `wa_service_url` | string | admin | Optional override of the WhatsApp gateway base URL (rotation without app rebuild) |
+| `wa_portal_url` | string | admin | Optional override of the gateway portal address |
+| `app_share_url` | string | admin | Where an invite points somebody with no account. Falls back to the Play listing compiled in |
 | `active` | bool | TTGO dashboard | Master send switch |
 | `blocked*` | array | TTGO dashboard | Block lists |
 

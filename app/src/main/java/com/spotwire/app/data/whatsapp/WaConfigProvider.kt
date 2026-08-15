@@ -6,6 +6,9 @@ import com.spotwire.app.data.firebase.FirestoreDataSource
 data class WaGatewayConfig(
     val serviceUrl: String,
     val portalUrl: String,
+    // Where an invite points. Not a gateway address, but it resolves the same
+    // way and through the same document, so it shares the one cached read.
+    val shareUrl: String,
 )
 
 /**
@@ -35,6 +38,8 @@ class WaConfigProvider(private val firestore: FirestoreDataSource) {
             portalUrl = overrides["wa_portal_url"].orEmpty()
                 .ifBlank { BuildConfig.WHATSAPP_PORTAL_URL }
                 .trimEnd('/'),
+            shareUrl = overrides["app_share_url"].orEmpty()
+                .ifBlank { BuildConfig.APP_SHARE_URL },
         )
         cached = config
         cachedAtMs = now

@@ -15,15 +15,21 @@ val localProps = Properties().apply {
 fun localProp(key: String, default: String) =
     localProps.getProperty(key, default).also { require(it.isNotBlank()) { "local.properties missing: $key" } }
 
-// Upload key for Google Play. The keystore itself lives outside the repository
-// and this file is gitignored, so a clone carries no signing material. When it
-// is absent the release variant simply builds unsigned, which keeps a plain
-// `git clone && assembleDebug` working for anyone else.
+// Upload key for Google Play. Both this file and the keystore are gitignored, so
+// a clone carries no signing material and the two are restored together. storeFile
+// is resolved from the repository root, so a bare file name works on any machine
+// (an absolute path is still honoured). When the keystore is absent the release
+// variant builds unsigned, which keeps a plain `git clone && assembleDebug`
+// working for anyone else, so say so out loud rather than letting it pass.
 val keystoreProps = Properties().apply {
     val f = rootProject.file("keystore.properties")
     if (f.exists()) load(f.inputStream())
 }
-val hasReleaseKeystore = keystoreProps.getProperty("storeFile")?.let { file(it).exists() } == true
+val releaseKeystore = keystoreProps.getProperty("storeFile")?.let { rootProject.file(it) }
+val hasReleaseKeystore = releaseKeystore?.exists() == true
+if (!hasReleaseKeystore) {
+    logger.warn("No upload keystore found (keystore.properties -> storeFile); release builds will be UNSIGNED.")
+}
 
 android {
     namespace = "com.spotwire.app"
@@ -77,7 +83,7 @@ android {
     signingConfigs {
         if (hasReleaseKeystore) {
             create("release") {
-                storeFile = file(keystoreProps.getProperty("storeFile"))
+                storeFile = releaseKeystore
                 storePassword = keystoreProps.getProperty("storePassword")
                 keyAlias = keystoreProps.getProperty("keyAlias")
                 keyPassword = keystoreProps.getProperty("keyPassword")

@@ -401,28 +401,34 @@ private fun ProfileContent(
                 Spacer(Modifier.height(24.dp))
                 HorizontalDivider()
                 Spacer(Modifier.height(12.dp))
-                TextButton(
-                    onClick = { uriHandler.openUri(PRIVACY_POLICY_URL) },
+                // One row: the everyday link on the left, the destructive one at
+                // the far right. Stacked full-width buttons wasted the row and
+                // put the dangerous action directly under the harmless one.
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("Privacy policy") }
-
-                // Google Play requires an in-app way to delete the account for
-                // any app that lets people create one, and it must really erase
-                // the data rather than just disable the login.
-                TextButton(
-                    onClick = { showDeleteDialog = true },
-                    enabled = !uiState.isDeletingAccount,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error,
-                    ),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (uiState.isDeletingAccount) {
-                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Deleting your account…")
-                    } else {
-                        Text("Delete my account and data")
+                    TextButton(onClick = { uriHandler.openUri(PRIVACY_POLICY_URL) }) {
+                        Text("Privacy policy")
+                    }
+                    Spacer(Modifier.weight(1f))
+                    // Google Play requires an in-app way to delete the account for
+                    // any app that lets people create one, and it must really erase
+                    // the data rather than just disable the login.
+                    TextButton(
+                        onClick = { showDeleteDialog = true },
+                        enabled = !uiState.isDeletingAccount,
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error,
+                        ),
+                    ) {
+                        if (uiState.isDeletingAccount) {
+                            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Deleting")
+                        } else {
+                            Text("Delete my data")
+                        }
                     }
                 }
                 uiState.deleteError?.let {

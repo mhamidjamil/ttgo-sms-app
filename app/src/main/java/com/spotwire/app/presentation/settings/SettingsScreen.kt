@@ -356,8 +356,7 @@ private fun SettingsContent(
 ) {
     val context = LocalContext.current
     val phoneNormalizer = remember { PhoneNormalizer() }
-    val defaultCountry = rememberDefaultCountry()
-    var guardianCountry by remember { mutableStateOf(defaultCountry) }
+    val guardianCountry = rememberDefaultCountry()
     val guardianValid = guardianNumber.isBlank() || phoneNormalizer.isValid(guardianNumber, guardianCountry)
 
     Scaffold(
@@ -455,8 +454,6 @@ private fun SettingsContent(
             PhoneNumberField(
                 number = guardianNumber,
                 onNumberChange = onGuardianChange,
-                country = guardianCountry,
-                onCountryChange = { guardianCountry = it },
                 label = "Guardian Phone",
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -1101,8 +1098,7 @@ private fun PlaceEditorDialog(
 ) {
     val context = LocalContext.current
     val phoneNormalizer = remember { PhoneNormalizer() }
-    val defaultCountry = rememberDefaultCountry()
-    var contactCountry by remember { mutableStateOf(defaultCountry) }
+    val contactCountry = rememberDefaultCountry()
     var label by remember { mutableStateOf(place.label) }
     var message by remember { mutableStateOf(place.message) }
     var waMessage by remember { mutableStateOf(place.waMessage) }
@@ -1554,8 +1550,6 @@ private fun PlaceEditorDialog(
                 PhoneNumberField(
                     number = newNumber,
                     onNumberChange = { newNumber = it; contactError = null },
-                    country = contactCountry,
-                    onCountryChange = { contactCountry = it },
                     label = "Phone",
                     modifier = Modifier.fillMaxWidth(),
                     supportingText = contactError,

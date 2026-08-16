@@ -51,14 +51,12 @@ private fun PhoneVerifyContent(
 ) {
     var phone by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
-    val defaultCountry = rememberDefaultCountry()
-    var country by remember { mutableStateOf(defaultCountry) }
+    val country = rememberDefaultCountry()
     // Prefill the phone field once the stored number loads (don't clobber edits).
     var prefilled by remember { mutableStateOf(false) }
     LaunchedEffect(uiState.phoneNumber) {
         if (!prefilled && uiState.phoneNumber.isNotBlank()) {
             phone = uiState.phoneNumber
-            if (uiState.country.isNotBlank()) country = uiState.country
             prefilled = true
         }
     }
@@ -88,8 +86,6 @@ private fun PhoneVerifyContent(
         PhoneNumberField(
             number = phone,
             onNumberChange = { phone = it },
-            country = country,
-            onCountryChange = { country = it },
             label = "Phone Number",
             modifier = Modifier.fillMaxWidth(),
         )

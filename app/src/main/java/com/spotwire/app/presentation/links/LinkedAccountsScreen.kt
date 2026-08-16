@@ -319,8 +319,7 @@ private fun InviteDialog(
     onDismiss: () -> Unit,
 ) {
     var phone by remember { mutableStateOf("") }
-    val defaultCountry = rememberDefaultCountry()
-    var country by remember { mutableStateOf(defaultCountry) }
+    val country = rememberDefaultCountry()
     var autoUpdates by remember { mutableStateOf(true) }
     var requestLocation by remember { mutableStateOf(false) }
 
@@ -338,8 +337,6 @@ private fun InviteDialog(
                 PhoneNumberField(
                     number = phone,
                     onNumberChange = { phone = it },
-                    country = country,
-                    onCountryChange = { country = it },
                     label = "Their phone",
                     modifier = Modifier.fillMaxWidth(),
                 )

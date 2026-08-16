@@ -56,8 +56,7 @@ private fun SignupContent(
     var confirmVisible by remember { mutableStateOf(false) }
     var confirmError by remember { mutableStateOf<String?>(null) }
     var phone by remember { mutableStateOf("") }
-    val defaultCountry = rememberDefaultCountry()
-    var country by remember { mutableStateOf(defaultCountry) }
+    val country = rememberDefaultCountry()
     val phoneValid = phoneNormalizer.isValid(phone, country)
 
     Column(
@@ -130,8 +129,6 @@ private fun SignupContent(
         PhoneNumberField(
             number = phone,
             onNumberChange = { phone = it },
-            country = country,
-            onCountryChange = { country = it },
             label = "Mobile Number",
             modifier = Modifier.fillMaxWidth(),
         )

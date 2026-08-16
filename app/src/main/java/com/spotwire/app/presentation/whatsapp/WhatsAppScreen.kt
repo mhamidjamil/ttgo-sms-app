@@ -190,34 +190,39 @@ private fun GatewayHealthCard(uiState: WhatsAppUiState, onCheck: () -> Unit) {
     }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // Status on the left, its action at the right edge of the same row.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Box(Modifier.size(10.dp).clip(CircleShape).background(dot))
                 Spacer(Modifier.width(8.dp))
-                Text(headline, style = MaterialTheme.typography.titleSmall)
-            }
-            uiState.gatewayCheckedLabel?.let {
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                )
+                Column(Modifier.weight(1f)) {
+                    Text(headline, style = MaterialTheme.typography.titleSmall)
+                    uiState.gatewayCheckedLabel?.let {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        )
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+                OutlinedButton(onClick = onCheck, enabled = !uiState.isCheckingGateway) {
+                    if (uiState.isCheckingGateway) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text("Check gateway")
+                    }
+                }
             }
             if (uiState.gatewayUp == false) {
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(8.dp))
                 Text(
                     "Messages cannot be delivered on WhatsApp until it is back. Nothing is lost: " +
                         "send them by hand for now and try again shortly.",
                     style = MaterialTheme.typography.bodySmall,
                 )
-            }
-            Spacer(Modifier.height(10.dp))
-            OutlinedButton(onClick = onCheck, enabled = !uiState.isCheckingGateway) {
-                if (uiState.isCheckingGateway) {
-                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                } else {
-                    Text("Check gateway")
-                }
             }
         }
     }
@@ -226,30 +231,37 @@ private fun GatewayHealthCard(uiState: WhatsAppUiState, onCheck: () -> Unit) {
 @Composable
 private fun OwnGatewayCard(uiState: WhatsAppUiState, onDisconnect: () -> Unit) {
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
-            Text(
-                "Connected to your own gateway",
-                fontWeight = FontWeight.SemiBold,
-                style = MaterialTheme.typography.titleSmall,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                uiState.ownKeyPhone?.let { "Messages are sent from +$it" }
-                    ?: "Messages are sent from your own linked WhatsApp number",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            uiState.ownStatus?.let { status ->
-                Spacer(Modifier.height(8.dp))
-                val (label, colour) = when (status) {
-                    "connected" -> "WhatsApp is connected" to MaterialTheme.colorScheme.primary
-                    "qr_ready", "connecting" -> "Still connecting on the portal" to MaterialTheme.colorScheme.onSurfaceVariant
-                    else -> "Not connected — re-link the number on the portal" to MaterialTheme.colorScheme.error
+        // The detail fills the left, the one action sits at the right edge on the
+        // same row. A button stacked underneath would leave half the card empty.
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "Connected to your own gateway",
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    uiState.ownKeyPhone?.let { "Messages are sent from +$it" }
+                        ?: "Messages are sent from your own linked WhatsApp number",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                uiState.ownStatus?.let { status ->
+                    Spacer(Modifier.height(8.dp))
+                    val (label, colour) = when (status) {
+                        "connected" -> "WhatsApp is connected" to MaterialTheme.colorScheme.primary
+                        "qr_ready", "connecting" -> "Still connecting on the portal" to MaterialTheme.colorScheme.onSurfaceVariant
+                        else -> "Not connected, re-link the number on the portal" to MaterialTheme.colorScheme.error
+                    }
+                    Text(label, style = MaterialTheme.typography.bodySmall, color = colour)
                 }
-                Text(label, style = MaterialTheme.typography.bodySmall, color = colour)
             }
-            Spacer(Modifier.height(12.dp))
-            OutlinedButton(onClick = onDisconnect, enabled = !uiState.isBusy) { Text("Use a different key") }
+            Spacer(Modifier.width(12.dp))
+            OutlinedButton(onClick = onDisconnect, enabled = !uiState.isBusy) { Text("Change key") }
         }
     }
 }

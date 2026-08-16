@@ -56,8 +56,7 @@ private fun SendContent(
     // Hoisted so the queued-toast effect can clear the field for the next message.
     var phone by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
-    val defaultCountry = rememberDefaultCountry()
-    var country by remember { mutableStateOf(defaultCountry) }
+    val country = rememberDefaultCountry()
 
     if (showRequestDialog) {
         RequestMoreDialog(
@@ -180,8 +179,6 @@ private fun SendContent(
             PhoneNumberField(
                 number = phone,
                 onNumberChange = { phone = it },
-                country = country,
-                onCountryChange = { country = it },
                 label = "Phone Number",
                 modifier = Modifier.fillMaxWidth(),
             )

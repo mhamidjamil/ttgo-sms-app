@@ -12,9 +12,11 @@ import com.spotwire.app.domain.model.PlaceContact
 import com.spotwire.app.domain.model.PresenceState
 import com.spotwire.app.core.utils.WifiConfig
 import com.spotwire.app.domain.model.SettingsChange
+import com.spotwire.app.domain.repository.LinkRepository
 import com.spotwire.app.domain.repository.UserRepository
 import com.spotwire.app.domain.repository.WhatsAppRepository
 import com.spotwire.app.domain.usecase.links.InviteLinkUseCase
+import com.spotwire.app.domain.usecase.quota.GetEffectiveQuotaUseCase
 import com.spotwire.app.domain.usecase.location.GetPlaceRecipientsUseCase
 import com.spotwire.app.domain.usecase.location.SavePlacesUseCase
 import com.spotwire.app.domain.usecase.location.SendLocationNowUseCase
@@ -78,6 +80,8 @@ class SettingsViewModel(
     private val sendLocationNow: SendLocationNowUseCase,
     private val monitorLog: MonitorLogStore,
     private val inviteLink: InviteLinkUseCase,
+    private val linkRepo: LinkRepository,
+    private val getEffectiveQuota: GetEffectiveQuotaUseCase,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -104,6 +108,12 @@ class SettingsViewModel(
             val user = userRepo.getCurrentUser()
             val linked = waRepo.isLinked()
             if (user != null) {
+                // Three ways an alert can leave: inside the app to somebody
+                // already linked, over their own WhatsApp gateway, or as a text
+                // message. The warning is only honest when none of them exists.
+                val canAlertInApp = linkRepo.activeLinks(user.uid)
+                    .any { it.permissions.autoLocationUpdates }
+                val canText = getEffectiveQuota(user) > 0
                 // Copied onto whatever is already there, never a fresh state: the
                 // health read runs alongside this one and whichever finishes last
                 // used to wipe the other's fields, which is how the card ended up
@@ -117,7 +127,7 @@ class SettingsViewModel(
                     waConfigured = linked,
                     shareUrl = waRepo.shareUrl(),
                     alertRoutes = user.alertRoutes,
-                    noDeliveryRoute = !linked && !user.phoneVerified,
+                    noDeliveryRoute = !linked && !canAlertInApp && !canText,
                 )
             } else {
                 _uiState.value = _uiState.value.copy(isLoading = false, error = "Could not load settings")

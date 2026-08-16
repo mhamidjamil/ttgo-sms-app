@@ -32,7 +32,7 @@ val useCaseModule = module {
     factory { SendEmailVerificationUseCase(get(), get()) }
     factory { ConfirmEmailVerifiedUseCase(get()) }
     factory { CheckAndResetQuotaUseCase(get()) }
-    factory { GetEffectiveQuotaUseCase() }
+    factory { GetEffectiveQuotaUseCase(get()) }
     factory { DecrementQuotaUseCase(get()) }
     factory { RequestMoreSmsUseCase(get(), get()) }
     factory { EnqueueSmsUseCase(get(), get()) }

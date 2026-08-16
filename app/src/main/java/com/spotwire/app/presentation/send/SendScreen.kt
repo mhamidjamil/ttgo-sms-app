@@ -101,7 +101,29 @@ private fun SendContent(
             Spacer(Modifier.height(8.dp))
 
             val user = uiState.user
-            if (user != null && !user.phoneVerified) {
+            // An account outside Pakistan can never spend a text allowance, so
+            // it is told that plainly instead of being shown a locked one.
+            val smsIsForThisAccount =
+                user == null || phoneNormalizer.isPakistaniMobile(user.phoneNumber)
+            if (user != null && !smsIsForThisAccount) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(WarningAmber)
+                        .border(1.dp, WarningAmberBorder)
+                        .padding(12.dp),
+                ) {
+                    Text(
+                        "Text messages are sent by one device with a Pakistani SIM, so they are " +
+                            "not available on your number. Your alerts go over WhatsApp and to " +
+                            "people you are linked with inside the app.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = OnWarningAmber,
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+            }
+            if (user != null && smsIsForThisAccount && !user.phoneVerified) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -121,7 +143,7 @@ private fun SendContent(
                 Spacer(Modifier.height(12.dp))
             }
 
-            if (user != null) {
+            if (user != null && smsIsForThisAccount) {
                 Text(
                     "${uiState.remainingToday} / ${uiState.effectiveQuota} SMS remaining today",
                     style = MaterialTheme.typography.bodySmall,

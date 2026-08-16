@@ -1,15 +1,20 @@
 package com.spotwire.app.domain.usecase.quota
 
+import com.spotwire.app.core.utils.PhoneNormalizer
 import com.spotwire.app.domain.model.User
 
-class GetEffectiveQuotaUseCase {
-    // Phone verification gates sending entirely:
-    //   phone verified   → full assigned quota (e.g. 10 SMS/day from the device doc)
-    //   phone unverified → 0 (must verify the number before sending anything —
-    //                      messages carry a "Sent by <number>" signature, so an
-    //                      unverified sender identity is never allowed)
-    // Email verification does NOT affect the SMS quota; it is required only for
-    // WhatsApp linking and admin contact.
-    operator fun invoke(user: User): Int =
-        if (user.phoneVerified) user.assignedQuota else 0
+class GetEffectiveQuotaUseCase(private val normalizer: PhoneNormalizer) {
+    // Text messages are sent by one device holding a Pakistani SIM, so they are
+    // for Pakistani accounts and nobody else:
+    //   Pakistani number, verified → the full daily allowance
+    //   Pakistani number, unverified → 0, because every message is signed with
+    //                                  the sender's number and an unproven
+    //                                  identity may not sign anything
+    //   any other country → 0, and the Send screen says why rather than showing
+    //                       an allowance that could never be spent
+    operator fun invoke(user: User): Int = when {
+        !normalizer.isPakistaniMobile(user.phoneNumber) -> 0
+        !user.phoneVerified -> 0
+        else -> user.assignedQuota
+    }
 }

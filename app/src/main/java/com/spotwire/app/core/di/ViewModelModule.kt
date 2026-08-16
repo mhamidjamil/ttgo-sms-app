@@ -25,7 +25,7 @@ val viewModelModule = module {
     viewModel { EmailVerifyViewModel(get(), get(), get(), get()) }
     // V2
     viewModel { AutoViewModel(get(), get(), get(), get()) }
-    viewModel { SettingsViewModel(get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { SettingsViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { SettingsHistoryViewModel(get()) }
     viewModel { MonitorLogViewModel(get(), get(), get()) }
     viewModel { WhatsAppViewModel(get(), get()) }

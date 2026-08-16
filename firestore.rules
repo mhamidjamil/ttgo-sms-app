@@ -74,25 +74,6 @@ service cloud.firestore {
              get(path).data.get('phone_number', '') == phone;
     }
 
-    // ── app_config: settings the app reads, nobody signs for ─────────────────
-
-    // The verification-only WhatsApp credential, and nothing else. It sits here
-    // rather than in the build because a build constant can be read straight out
-    // of the installed file and can only be changed by shipping a release, while
-    // this can be rotated from the console and takes effect immediately.
-    //
-    // A read grant is per document and never per field, so EVERY signed-in user
-    // can read what is in here. That is acceptable only because the gateway
-    // scopes this credential to checking an opt-in and sending or checking a
-    // verification code, with the message text fixed on its side and a code only
-    // ever sent to a number that has already messaged the gateway asking for it.
-    // Nothing with any wider power may be added to this document: put it behind
-    // an endpoint that authenticates the user instead.
-    match /app_config/{doc} {
-      allow read: if isAppUser();
-      allow write: if false;
-    }
-
     // ── sim_module: the gateway's namespace ──────────────────────────────────
 
     // Config + health + block lists + lifetime counters.
@@ -235,23 +216,20 @@ service cloud.firestore {
                 after.remaining_quota <= after.assigned_quota);
       }
 
-      // A number can never be swapped while the flag stays on: savePhoneNumber
-      // clears it, and this makes that mandatory rather than polite.
-      //
-      // The code itself is no longer checked here. It used to have to be
-      // consumed out of this same document, which sounded like proof and was
-      // not: the owner could write any value into phone_otp and immediately
-      // spend it, so the rule only ever enforced the shape of the write. The
-      // real check moved to the WhatsApp gateway, which generates the code,
-      // keeps only a hash of it, counts the wrong guesses and never hands it
-      // back. Closing the remaining gap (a client setting the flag directly)
-      // needs a server that can write on the user's behalf, which this project
-      // does not have yet.
+      // phone_verified may only be switched on by the write that consumes the
+      // stored code: markPhoneVerified sets the flag and deletes phone_otp in
+      // the same update. And a number can never be swapped while the flag stays
+      // on — savePhoneNumber clears it, and this makes that mandatory rather
+      // than polite.
       function phoneVerificationOk() {
         let before = resource.data;
         let after = request.resource.data;
+        let wasVerified = before.get('phone_verified', false);
+        let nowVerified = after.get('phone_verified', false);
         let numberMoved = after.get('phone_number', '') != before.get('phone_number', '');
-        return !numberMoved || !after.get('phone_verified', false);
+        return (!nowVerified || wasVerified ||
+                (('phone_otp' in before) && !('phone_otp' in after) && !numberMoved)) &&
+               (!numberMoved || !nowVerified);
       }
 
       // Same shape for email, plus the one case where the truth comes from

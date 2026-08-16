@@ -22,11 +22,6 @@ object Paths {
     // uid + name only, keyed by verified number, so link invites can find an
     // account without opening up the user documents themselves.
     const val PHONE_DIRECTORY: String = "phone_directory"
-    // The verification-only gateway credential. It lives in Firestore rather
-    // than in the build because a build constant is readable straight out of the
-    // installed file and can only be changed by shipping a new release.
-    const val APP_CONFIG: String = "app_config"
-    const val WHATSAPP_CONFIG_DOC: String = "whatsapp"
 }
 
 object Quota {

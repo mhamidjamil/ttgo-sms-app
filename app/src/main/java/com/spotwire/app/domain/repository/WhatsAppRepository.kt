@@ -8,20 +8,6 @@ interface WhatsAppRepository {
      */
     data class GatewayHealth(val whatsAppConnected: Boolean?)
 
-    data class VerifyTarget(
-        val phoneNumber: String,
-        val phrase: String,
-        val waLink: String,
-        val codeLength: Int,
-        val resendAfterSeconds: Int,
-    )
-
-    data class VerifyResult(
-        val verified: Boolean,
-        val reason: String,
-        val attemptsRemaining: Int?,
-    )
-
     // What the WhatsApp screen needs to know about the gateway link, resolved
     // once so the screen never has to ask three separate questions.
     data class Link(
@@ -40,24 +26,6 @@ interface WhatsAppRepository {
      * possibly finish.
      */
     suspend fun checkGateway(): Result<GatewayHealth>
-
-    // ── Proving a phone number ────────────────────────────────────────────────
-    //
-    // These run on a credential the app fetches at run time and that the gateway
-    // scopes to verification alone. A brand new account has no credential of its
-    // own yet, which is the whole reason this one exists.
-
-    /** The number to message and the words to send, or null when unavailable. */
-    suspend fun verifyTarget(): Result<VerifyTarget>
-
-    /** Has this number sent us the agreed words yet? */
-    suspend fun verifyOptIn(phoneE164: String): Result<Boolean>
-
-    /** Ask for a code. Fails with the reason when the number has not opted in. */
-    suspend fun verifySendCode(phoneE164: String): Result<Unit>
-
-    /** Check a typed code. */
-    suspend fun verifyCheckCode(phoneE164: String, code: String): Result<VerifyResult>
 
     suspend fun clearLink()
 

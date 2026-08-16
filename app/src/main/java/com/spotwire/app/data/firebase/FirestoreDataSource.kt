@@ -174,18 +174,6 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
             .toMap()
     }
 
-    // The credential the app carries only while proving a phone number. It can do
-    // nothing but check an opt-in and send or check a code, and it is read at run
-    // time rather than compiled in, so rotating it is a console edit and never a
-    // release. Every signed-in user can read it, which is exactly why the gateway
-    // has to keep its powers that narrow.
-    suspend fun getVerificationCredential(): Result<Pair<String, String>?> = runCatching {
-        val snap = db.collection(Paths.APP_CONFIG).document(Paths.WHATSAPP_CONFIG_DOC).get().await()
-        val keyId = snap.getString("verify_key_id").orEmpty()
-        val secret = snap.getString("verify_key_secret").orEmpty()
-        if (keyId.isBlank() || secret.isBlank()) null else keyId to secret
-    }
-
     // ── Phone verification (V1.5) ─────────────────────────────────────────────
 
     suspend fun savePhoneNumber(

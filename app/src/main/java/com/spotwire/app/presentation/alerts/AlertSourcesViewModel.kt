@@ -48,10 +48,10 @@ class AlertSourcesViewModel(
     private fun load() {
         viewModelScope.launch {
             val user = userRepo.getCurrentUser()
-            if (user == null || !user.phoneVerified || user.phoneNumber.isBlank()) {
+            if (user == null || (!user.phoneVerified && !user.emailVerified)) {
                 _uiState.value = AlertSourcesUiState(
                     isLoading = false,
-                    error = "Verify your phone number to see who is sending you alerts",
+                    error = "Confirm your account to see who is alerting you",
                 )
                 return@launch
             }

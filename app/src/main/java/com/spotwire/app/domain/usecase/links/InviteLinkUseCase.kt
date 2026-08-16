@@ -23,8 +23,13 @@ class InviteLinkUseCase(
             )
         val me = userRepo.getCurrentUser()
             ?: return Result.failure(IllegalStateException("Could not load your profile"))
-        if (!me.phoneVerified) {
-            return Result.failure(IllegalStateException("Verify your own number before linking accounts"))
+        // Confirmed by either route. A number outside Pakistan cannot receive a
+        // code from the one device that sends them, and refusing those accounts
+        // here would leave the in-app alerts they depend on with nobody to link.
+        if (!me.phoneVerified && !me.emailVerified) {
+            return Result.failure(
+                IllegalStateException("Confirm your account before linking with anyone")
+            )
         }
         if (normalized == me.phoneNumber) {
             return Result.failure(IllegalArgumentException("That is your own number"))

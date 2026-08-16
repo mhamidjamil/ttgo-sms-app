@@ -340,7 +340,7 @@ private fun ProfileContent(
                         Spacer(Modifier.height(10.dp))
                         OutlinedButton(
                             onClick = onNavigateToLinkedAccounts,
-                            enabled = user.phoneVerified,
+                            enabled = user.phoneVerified || user.emailVerified,
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("Manage Linked Accounts") }
                     }
@@ -364,7 +364,7 @@ private fun ProfileContent(
                         Spacer(Modifier.height(10.dp))
                         OutlinedButton(
                             onClick = onNavigateToAlertSources,
-                            enabled = user.phoneVerified,
+                            enabled = user.phoneVerified || user.emailVerified,
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("Manage Incoming Alerts") }
                     }

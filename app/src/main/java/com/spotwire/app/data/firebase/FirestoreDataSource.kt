@@ -274,7 +274,7 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         "message" to place.message,
         "wa_message" to place.waMessage,
         "contacts" to place.contacts.map {
-            mapOf("name" to it.name, "number" to it.number)
+            mapOf("name" to it.name, "number" to it.number, "whatsapp" to it.whatsApp)
         },
         "bssids" to place.bssids,
         "min_rssi" to place.minRssi,

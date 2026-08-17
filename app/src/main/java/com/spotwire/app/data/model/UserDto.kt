@@ -91,7 +91,13 @@ data class UserDto(
             val contacts = contactMaps?.mapNotNull { c ->
                 val number = c["number"] as? String ?: return@mapNotNull null
                 if (number.isBlank()) null
-                else PlaceContact(name = c["name"] as? String ?: "", number = number)
+                else PlaceContact(
+                    name = c["name"] as? String ?: "",
+                    number = number,
+                    // A contact saved before the tick existed reads as ticked, so
+                    // nobody's delivery changes because of this field appearing.
+                    whatsApp = c["whatsapp"] as? Boolean ?: true,
+                )
             } ?: (raw["recipients"] as? List<*>)?.filterIsInstance<String>()
                 ?.filter { it.isNotBlank() }?.map { PlaceContact(name = "", number = it) }
                 .orEmpty()

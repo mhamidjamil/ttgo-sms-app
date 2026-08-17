@@ -86,7 +86,11 @@ class SavePlacesUseCase(private val userRepo: UserRepository) {
         }
     }
 
+    // The WhatsApp tick is named, or turning it off shows an audit row whose
+    // before and after read identically.
     private fun describe(contacts: List<PlaceContact>): String =
-        if (contacts.isEmpty()) "none (default guardian)"
-        else contacts.joinToString(", ") { it.name.ifBlank { it.number } }
+        if (contacts.isEmpty()) "none (guardians only)"
+        else contacts.joinToString(", ") {
+            it.name.ifBlank { it.number } + if (it.whatsApp) " (WhatsApp)" else ""
+        }
 }

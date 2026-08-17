@@ -175,8 +175,17 @@ class RecordArrivalUseCase(
                 return@forEach
             }
             // recipientName personalizes for the RECEIVER (gateway anti-ban).
-            val sentViaWhatsApp = waLinked &&
-                waRepo.sendMessage(contact.number, waText, contact.name.ifBlank { null }).isSuccess
+            // Somebody whose tick is off is only ever texted, however good the
+            // gateway is: they do not use WhatsApp, so a message delivered there
+            // is a message they never see.
+            val sentViaWhatsApp = waLinked && contact.whatsApp &&
+                waRepo.sendMessage(contact.number, waText, contact.name.ifBlank { null })
+                    .onFailure {
+                        // A WhatsApp failure used to fall silently into the SMS
+                        // branch, so a dead gateway looked exactly like a
+                        // contact who had never asked for WhatsApp at all.
+                        Log.w(TAG, "$placeId: WhatsApp send to ${contact.number} failed, texting instead", it)
+                    }.isSuccess
             if (sentViaWhatsApp) {
                 // Record WhatsApp deliveries too, or the Auto page never shows them.
                 smsRepo.logAutoWhatsAppArrival(

@@ -5,6 +5,11 @@ package com.spotwire.app.domain.model
 data class PlaceContact(
     val name: String = "",
     val number: String = "",
+    // Deliver over the account's own WhatsApp gateway when there is one, falling
+    // back to a text message. On by default because WhatsApp costs nothing and
+    // reaches any country, unlike the Pakistani SIM in the device; off is for
+    // somebody who does not use WhatsApp and should only ever be texted.
+    val whatsApp: Boolean = true,
 )
 
 // How settled the phone has to be before this place is allowed to alert. The

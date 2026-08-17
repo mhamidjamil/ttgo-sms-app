@@ -1542,8 +1542,10 @@ private fun PlaceEditorDialog(
                 Text("Contacts", style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary)
                 Text(
-                    "The default guardian is always notified. Anyone added below is notified too, " +
-                        "one message each.",
+                    "Every guardian is always notified. Anyone added below is notified too, " +
+                        "one message each." +
+                        if (showWaMessage) " Ticked means WhatsApp when it works, a text if it does not."
+                        else "",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 )
@@ -1563,6 +1565,19 @@ private fun PlaceEditorDialog(
                                 contact.number,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            )
+                        }
+                        // Only offered once a gateway is connected: a tick that
+                        // could not change anything is worse than no tick.
+                        if (showWaMessage) {
+                            Text(
+                                "WhatsApp",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            )
+                            Checkbox(
+                                checked = contact.whatsApp,
+                                onCheckedChange = { contacts[index] = contact.copy(whatsApp = it) },
                             )
                         }
                         IconButton(onClick = { contacts.removeAt(index) }) {

@@ -47,10 +47,10 @@ interface UserRepository {
     // Arrival monitoring (V2) — dynamic place list
     suspend fun savePlacesSettings(
         uid: String,
-        guardianNumber: String,
+        guardianNumbers: List<String>,
         places: List<Place>,
     ): Result<Unit>
-    // Places only — leaves guardian_number untouched (used by the place editor).
+    // Places only — leaves the guardian list untouched (used by the place editor).
     suspend fun savePlaces(uid: String, places: List<Place>): Result<Unit>
     suspend fun recordArrival(uid: String, placeId: String, date: String, currentTime: String): Result<Unit>
 

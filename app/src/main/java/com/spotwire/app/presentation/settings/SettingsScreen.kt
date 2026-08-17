@@ -98,7 +98,9 @@ fun SettingsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    var guardianNumber by remember(uiState.guardianNumber) { mutableStateOf(uiState.guardianNumber) }
+    val guardians = remember(uiState.guardianNumbers) {
+        mutableStateListOf<String>().apply { addAll(uiState.guardianNumbers) }
+    }
 
     var scanResults by remember { mutableStateOf<List<ScanResult>>(emptyList()) }
     var showScanDialog by remember { mutableStateOf(false) }
@@ -280,8 +282,9 @@ fun SettingsScreen(
     SettingsContent(
         uiState = uiState,
         snackbarHostState = snackbarHostState,
-        guardianNumber = guardianNumber,
-        onGuardianChange = { guardianNumber = it },
+        guardians = guardians,
+        onAddGuardian = { guardians.add(it) },
+        onRemoveGuardian = { guardians.remove(it) },
         onInviteRecipient = viewModel::inviteRecipient,
         onAlertRoutesChange = viewModel::setAlertRoutes,
         onEditPlace = { editingPlaceId = it },
@@ -321,7 +324,7 @@ fun SettingsScreen(
         },
         geofencesBlocked = !backgroundLocationAllowed && uiState.places.any { it.hasGeofence },
         onFixGeofences = { showBackgroundDisclosure = true },
-        onSave = { guardian -> viewModel.save(guardian) },
+        onSave = { viewModel.save(guardians.toList()) },
         onSendLocation = viewModel::openLocationPrompt,
         onBack = onBack,
         onViewChangeHistory = onViewChangeHistory,
@@ -335,8 +338,9 @@ fun SettingsScreen(
 private fun SettingsContent(
     uiState: SettingsUiState,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
-    guardianNumber: String,
-    onGuardianChange: (String) -> Unit,
+    guardians: List<String>,
+    onAddGuardian: (String) -> Unit,
+    onRemoveGuardian: (String) -> Unit,
     onEditPlace: (String) -> Unit,
     onAddPlace: () -> Unit,
     onRemovePlace: (String) -> Unit,
@@ -345,7 +349,7 @@ private fun SettingsContent(
     onMonitoringToggle: (Boolean) -> Unit,
     geofencesBlocked: Boolean = false,
     onFixGeofences: () -> Unit = {},
-    onSave: (String) -> Unit,
+    onSave: () -> Unit,
     onSendLocation: (String) -> Unit = {},
     onBack: (() -> Unit)? = null,
     onViewChangeHistory: () -> Unit = {},
@@ -357,7 +361,8 @@ private fun SettingsContent(
     val context = LocalContext.current
     val phoneNormalizer = remember { PhoneNormalizer() }
     val guardianCountry = rememberDefaultCountry()
-    val guardianValid = guardianNumber.isBlank() || phoneNormalizer.isValid(guardianNumber, guardianCountry)
+    var newGuardian by remember { mutableStateOf("") }
+    var guardianError by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         contentWindowInsets = WindowInsets(0.dp),
@@ -444,28 +449,61 @@ private fun SettingsContent(
             }
 
             Spacer(Modifier.height(20.dp))
-            SectionTitle("Default Guardian")
+            SectionTitle("Guardians")
             Text(
-                "Always notified, on top of any contacts a place has of its own",
+                "Everyone here is notified about every place, on top of any contacts a " +
+                    "place has of its own. They also see the whole movement timeline.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
             Spacer(Modifier.height(8.dp))
+            guardians.forEach { number ->
+                key(number) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(number, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                        // Reaching them inside the app costs nothing and works in
+                        // any country, but it needs them to have an account and
+                        // to have agreed.
+                        TextButton(
+                            onClick = { onInviteRecipient(number) },
+                            enabled = !uiState.isInviting,
+                        ) { Text("Alert in app") }
+                        IconButton(onClick = { onRemoveGuardian(number) }) {
+                            Icon(Icons.Default.Close, contentDescription = "Remove guardian",
+                                Modifier.size(18.dp))
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(4.dp))
             PhoneNumberField(
-                number = guardianNumber,
-                onNumberChange = onGuardianChange,
+                number = newGuardian,
+                onNumberChange = { newGuardian = it; guardianError = null },
                 label = "Guardian Phone",
                 modifier = Modifier.fillMaxWidth(),
+                supportingText = guardianError,
             )
-            // Reaching them inside the app costs nothing and works in any
-            // country, but it needs them to have an account and to have agreed.
-            val guardianE164 = phoneNormalizer.normalize(guardianNumber, guardianCountry)
-            if (guardianE164 != null) {
-                Spacer(Modifier.height(6.dp))
-                TextButton(
-                    onClick = { onInviteRecipient(guardianE164) },
-                    enabled = !uiState.isInviting,
-                ) { Text("Alert them inside the app instead") }
+            Spacer(Modifier.height(6.dp))
+            OutlinedButton(
+                onClick = {
+                    val normalized = phoneNormalizer.normalize(newGuardian, guardianCountry)
+                    when {
+                        normalized == null ->
+                            guardianError = "Enter a valid mobile number for the country selected"
+                        normalized in guardians -> guardianError = "That number is already a guardian"
+                        else -> {
+                            onAddGuardian(normalized)
+                            newGuardian = ""
+                            guardianError = null
+                        }
+                    }
+                },
+                enabled = newGuardian.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Add Guardian")
             }
             uiState.inviteMessage?.let { note ->
                 Spacer(Modifier.height(4.dp))
@@ -563,19 +601,15 @@ private fun SettingsContent(
 
             Spacer(Modifier.height(28.dp))
             Button(
-                onClick = {
-                    val normalized = phoneNormalizer.normalize(guardianNumber, guardianCountry)
-                        ?: guardianNumber
-                    onSave(normalized)
-                },
-                enabled = guardianValid && !uiState.isSaving,
+                onClick = onSave,
+                enabled = !uiState.isSaving,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
             ) {
                 if (uiState.isSaving) {
                     CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp,
                         color = MaterialTheme.colorScheme.onPrimary)
                 } else {
-                    Text("Save Guardian Number", style = MaterialTheme.typography.titleLarge)
+                    Text("Save Guardians", style = MaterialTheme.typography.titleLarge)
                 }
             }
             Spacer(Modifier.height(16.dp))
@@ -1838,7 +1872,7 @@ private fun SettingsLoadingPreview() {
     SpotwireTheme {
         SettingsContent(
             uiState = SettingsUiState(isLoading = true),
-            guardianNumber = "", onGuardianChange = {},
+            guardians = emptyList(), onAddGuardian = {}, onRemoveGuardian = {},
             onEditPlace = {}, onAddPlace = {}, onRemovePlace = {}, onScanPlace = {},
             isMonitoring = false, onMonitoringToggle = {},
             onSave = {}, onBack = {},
@@ -1853,11 +1887,11 @@ private fun SettingsFilledPreview() {
         SettingsContent(
             uiState = SettingsUiState(
                 isLoading = false,
-                guardianNumber = "03001234567",
+                guardianNumbers = listOf("+923001234567"),
                 places = previewPlaces,
                 serviceRunning = true,
             ),
-            guardianNumber = "03001234567", onGuardianChange = {},
+            guardians = listOf("+923001234567"), onAddGuardian = {}, onRemoveGuardian = {},
             onEditPlace = {}, onAddPlace = {}, onRemovePlace = {}, onScanPlace = {},
             isMonitoring = true, onMonitoringToggle = {},
             onSave = {}, onBack = {},

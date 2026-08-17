@@ -33,8 +33,8 @@ import java.util.Locale
 data class SettingsUiState(
     val isLoading: Boolean = true,
     val isSaving: Boolean = false,
-    // Fallback recipient for places that have no contacts of their own.
-    val guardianNumber: String = "",
+    // Fallback recipients for places that have no contacts of their own.
+    val guardianNumbers: List<String> = emptyList(),
     val places: List<Place> = emptyList(),
     val error: String? = null,
     val saveSuccess: Boolean = false,
@@ -120,7 +120,7 @@ class SettingsViewModel(
                 // stuck on "nothing checked yet" and "away" for every place.
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    guardianNumber = user.guardianNumber,
+                    guardianNumbers = user.guardianNumbers,
                     // toDomain() migrates legacy home/office fields into the
                     // places list, so old accounts land here with both seeded.
                     places = user.places.ifEmpty { Place.defaults() },
@@ -262,16 +262,16 @@ class SettingsViewModel(
         persistPlaces(places, clearStateFor = id)
     }
 
-    fun save(guardianNumber: String) {
+    fun save(guardianNumbers: List<String>) {
         val uid = userRepo.currentFirebaseUser()?.uid ?: return
         val places = _uiState.value.places.filter(::isWorthSaving)
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isSaving = true, error = null, saveSuccess = false)
-            savePlaces(uid, guardianNumber, places)
+            savePlaces(uid, guardianNumbers, places)
                 .onSuccess {
                     _uiState.value = _uiState.value.copy(
                         isSaving = false, saveSuccess = true,
-                        guardianNumber = guardianNumber, places = places,
+                        guardianNumbers = guardianNumbers, places = places,
                     )
                 }
                 .onFailure {
@@ -391,7 +391,11 @@ class SettingsViewModel(
         val fresh = withTimeoutOrNull(10_000) { userRepo.getCurrentUser() }
             ?: return "Signed in, but your account could not be read from the server just now. " +
                 "An arrival at this moment would fall back to the copy already on the phone."
-        val guardian = if (fresh.guardianNumber.isBlank()) "no guardian number set" else "guardian number set"
+        val guardian = when (fresh.guardianNumbers.size) {
+            0 -> "no guardian set"
+            1 -> "1 guardian set"
+            else -> "${fresh.guardianNumbers.size} guardians set"
+        }
         return "Account readable: ${fresh.places.size} place(s), $guardian."
     }
 

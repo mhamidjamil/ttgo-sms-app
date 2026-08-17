@@ -290,12 +290,16 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
 
     suspend fun savePlacesSettings(
         uid: String,
-        guardianNumber: String,
+        guardianNumbers: List<String>,
         places: List<Place>,
     ): Result<Unit> = runCatching {
         db.collection(Paths.USERS).document(uid).set(
             mapOf(
-                "guardian_number" to guardianNumber,
+                "guardian_numbers" to guardianNumbers,
+                // The first of them is mirrored onto the field this account used
+                // to have, so a phone still on an older build goes on alerting
+                // the main guardian instead of nobody.
+                "guardian_number" to guardianNumbers.firstOrNull().orEmpty(),
                 "places" to places.map(::placeMap),
             ),
             SetOptions.merge(),

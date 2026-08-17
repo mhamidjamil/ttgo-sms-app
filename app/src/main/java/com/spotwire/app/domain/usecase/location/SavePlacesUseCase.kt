@@ -9,18 +9,18 @@ class SavePlacesUseCase(private val userRepo: UserRepository) {
 
     suspend operator fun invoke(
         uid: String,
-        guardianNumber: String,
+        guardianNumbers: List<String>,
         places: List<Place>,
     ): Result<Unit> {
         val before = userRepo.getCurrentUser()
-        val result = userRepo.savePlacesSettings(uid, guardianNumber, places)
+        val result = userRepo.savePlacesSettings(uid, guardianNumbers, places)
         if (result.isSuccess && before != null) {
             val changes = buildList {
-                if (before.guardianNumber != guardianNumber) {
+                if (before.guardianNumbers != guardianNumbers) {
                     add(SettingsChange(
-                        field = "Guardian number",
-                        oldValue = before.guardianNumber,
-                        newValue = guardianNumber,
+                        field = "Guardians",
+                        oldValue = before.guardianNumbers.joinToString(", ").ifBlank { "none" },
+                        newValue = guardianNumbers.joinToString(", ").ifBlank { "none" },
                     ))
                 }
                 addAll(placeChanges(before.places, places))

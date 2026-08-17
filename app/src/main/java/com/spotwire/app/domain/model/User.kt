@@ -16,7 +16,10 @@ data class User(
     val waSessionId: String = "",
 
     // V2: arrival monitoring
-    val guardianNumber: String = "",
+    // Everyone who is told about every place, on top of whatever contacts a
+    // place has of its own. A household usually has two of these; the single
+    // number this replaced could not describe two parents.
+    val guardianNumbers: List<String> = emptyList(),
     // Which routes an arrival alert may take. Somebody whose people all have the
     // app does not want a text message as well, and somebody whose people do not
     // have it must not have alerts quietly parked in an app nobody installed.

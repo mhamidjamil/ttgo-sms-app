@@ -5,8 +5,8 @@ import com.spotwire.app.domain.repository.LinkRepository
 import com.spotwire.app.domain.repository.UserRepository
 
 /**
- * Everyone an alert for one place goes to: the default guardian, the contacts
- * saved on the place itself, and any linked account allowed automatic updates.
+ * Everyone an alert for one place goes to: every guardian, the contacts saved on
+ * the place itself, and any linked account allowed automatic updates.
  * It is the same list an arrival alert builds, so the "send my location" prompt
  * offers exactly the people who would have been told automatically.
  */
@@ -21,7 +21,8 @@ class GetPlaceRecipientsUseCase(
             .filter { it.permissions.autoLocationUpdates }
             .map { PlaceContact(name = it.otherName, number = it.otherPhone) }
         // Named entries first so a number that appears twice keeps its name.
-        return (place.contacts + linked + PlaceContact("Guardian", user.guardianNumber))
+        val guardians = user.guardianNumbers.map { PlaceContact("Guardian", it) }
+        return (place.contacts + linked + guardians)
             .filter { it.number.isNotBlank() }
             .distinctBy { it.number }
     }

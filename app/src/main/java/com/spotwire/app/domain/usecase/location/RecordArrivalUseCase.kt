@@ -83,8 +83,8 @@ class RecordArrivalUseCase(
             DateUtils.currentTimeHHmm()
         }
 
-        // The default guardian is ALWAYS notified, plus every contact configured
-        // for this place, plus any linked account granted automatic updates. One
+        // Every guardian is ALWAYS notified, plus every contact configured for
+        // this place, plus any linked account granted automatic updates. One
         // SMS job per recipient, because the TTGO module sends one at a time.
         // Named entries come first so a number that appears twice keeps its name.
         val linkedAccounts = linkRepo.activeLinks(uid)
@@ -93,7 +93,8 @@ class RecordArrivalUseCase(
         // lists they appear on.
         val uidByNumber = linkedAccounts.associate { it.otherPhone to it.otherUid }
         val linked = linkedAccounts.map { PlaceContact(name = it.otherName, number = it.otherPhone) }
-        val candidates = (place.contacts + linked + PlaceContact(name = "", number = user.guardianNumber))
+        val guardians = user.guardianNumbers.map { PlaceContact(name = "", number = it) }
+        val candidates = (place.contacts + linked + guardians)
             .filter { it.number.isNotBlank() }
             .distinctBy { it.number }
         // Anyone who unsubscribed in their own copy of the app is skipped.

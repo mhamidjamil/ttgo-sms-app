@@ -33,8 +33,13 @@ data class UserDto(
     var createdAt: Timestamp? = null,
 
     // V2: arrival monitoring
+    // The single number this account used to have. Still read, so an account
+    // that has not been re-saved since keeps its guardian, and still written as
+    // the first of the list so a phone on an older build keeps alerting them.
     @get:PropertyName("guardian_number") @set:PropertyName("guardian_number")
     var guardianNumber: String = "",
+    @get:PropertyName("guardian_numbers") @set:PropertyName("guardian_numbers")
+    var guardianNumbers: List<String> = emptyList(),
     // How arrival alerts go out: "both" (default), "in_app" or "message".
     @get:PropertyName("alert_routes") @set:PropertyName("alert_routes")
     var alertRoutes: String = "both",
@@ -142,7 +147,11 @@ data class UserDto(
             remainingQuota = remainingQuota,
             lastQuotaResetDate = lastQuotaResetDate,
             waSessionId = waSessionId,
-            guardianNumber = guardianNumber,
+            // An account saved before guardians could be a list carries only the
+            // old single field, so it becomes a list of one here rather than
+            // losing the only person it was telling.
+            guardianNumbers = guardianNumbers.filter { it.isNotBlank() }
+                .ifEmpty { listOfNotNull(guardianNumber.takeIf { it.isNotBlank() }) },
             alertRoutes = alertRoutes.ifBlank { AlertRoutes.BOTH },
             places = placeList,
             arrivalTimesByPlace = timesByPlace,

@@ -269,7 +269,7 @@ private fun rowTime(at: Long): String {
     else SimpleDateFormat("d MMM h:mm a", Locale.US).format(date)
 }
 
-@Preview(showBackground = true, name = "Timeline — a day")
+@Preview(showBackground = true, name = "Timeline, a day")
 @Composable
 private fun TimelinePreview() {
     val now = System.currentTimeMillis()

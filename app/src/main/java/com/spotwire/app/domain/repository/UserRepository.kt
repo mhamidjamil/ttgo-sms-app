@@ -51,7 +51,7 @@ interface UserRepository {
         guardianNumbers: List<String>,
         places: List<Place>,
     ): Result<Unit>
-    // Places only — leaves the guardian list untouched (used by the place editor).
+    // Places only, leaving the guardian list untouched (used by the place editor).
     suspend fun savePlaces(uid: String, places: List<Place>): Result<Unit>
     suspend fun recordArrival(uid: String, placeId: String, date: String, currentTime: String): Result<Unit>
 

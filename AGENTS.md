@@ -76,13 +76,14 @@ If `~/.claude/knowledge/` is missing on this machine, clone it:
 - ViewModels keep immutable `data class *UiState` in `MutableStateFlow`, expose `StateFlow` via `asStateFlow()`, and launch work in `viewModelScope`.
 - Firestore DTOs live in `data/model` and map to domain with `toDomain()`. Use `@PropertyName` for snake_case Firestore fields, as in `UserDto` and `HistoryEntryDto`.
 - Phone inputs must pass through `PhoneNormalizer`, which takes the number and the two-letter country it was typed for and returns E.164. Every phone field uses the shared `presentation/components/PhoneNumberField`, so the country picker and the validation are the same everywhere. A number already carrying its country code normalizes with no country passed.
-- Navigation is centralized in `core/navigation/AppNavGraph.kt`; bottom tabs are `Send`, `History`, `Arrival`, and `Profile`, while auth and the detail screens (settings history, WhatsApp, incoming alerts, linked accounts, monitoring log) are outside the bottom bar. `History` carries a Manual/Automated filter rather than a separate Auto tab.
+- Navigation is centralized in `core/navigation/AppNavGraph.kt`; bottom tabs are `Send`, `History`, `Timeline`, `Arrival`, and `Profile`, while auth and the detail screens (settings history, WhatsApp, incoming alerts, linked accounts, monitoring log, a linked person's timeline) are outside the bottom bar. `History` carries a Manual/Automated filter rather than a separate Auto tab.
+- V5 adds the place timeline: `data/local/VisitLogStore` keeps a week of stays on the phone (JSON lines, same shape as `MonitorLogStore`) and `ttgo_users/{uid}/place_visits` keeps a month on the account. Samples come from `ArrivalService.notePosition`, which the sweep, the two fence handlers and the watchdog alarm all call. It is fed from `resolvePresence`, NOT from `PresenceState`: the presence machine is an alert machine and returns early for alerts-off places, the cooling-off window and quiet hours. Design and the sharing rules: `docs/V5-TIMELINE-AND-LIVE-LOCATION.md`.
 - Arrival monitoring writes a 72-hour on-device activity log through `MonitorLogStore` (JSON lines in app storage), shown on the Monitoring Log page reached from the Arrival tab and exportable through the share sheet from that page. New sweep-level decisions should log there as well as to Logcat, with repeat-per-sweep conditions written once when they appear.
 
 ## Versioning
 - App version is in `app/build.gradle.kts`: `versionCode` (integer, bumped for each release) and `versionName` (semver string, e.g. `1.0.1`).
 - **Whenever you make any solid changes or bug fixes, always bump `versionCode` by 1 and update `versionName` appropriately** (patch bump for fixes, minor for features). The version is displayed at the bottom of the Send screen via `BuildConfig.VERSION_NAME`.
-- Current version: `1.8.0` (versionCode=15).
+- Current version: `1.9.0` (versionCode=16).
 
 ## Developer Workflow
 - Toolchain is AGP 8.9.1 / Gradle 8.11.1 / JDK 17, compiling against SDK 36. `targetSdk` must stay at 36 or above: Play refuses a lower target for new apps and updates from 31 August 2026.

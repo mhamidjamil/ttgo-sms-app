@@ -296,7 +296,7 @@ service cloud.firestore {
     // Somebody else may read them only through a grant that lives on MY link
     // document (setLinkPermissions FirestoreDataSource.kt:916), never on
     // theirs, so taking it back is a write to my own document and they can
-    // never write it themselves — the links block above deliberately keeps
+    // never write it themselves: the links block above deliberately keeps
     // every perm_* field out of what the other party may touch.
     //
     // A guardian's condition does not depend on the row, so they may list the

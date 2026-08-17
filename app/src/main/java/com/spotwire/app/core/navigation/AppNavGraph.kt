@@ -8,6 +8,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -34,6 +35,7 @@ import com.spotwire.app.presentation.profile.ProfileScreen
 import com.spotwire.app.presentation.send.SendScreen
 import com.spotwire.app.presentation.settings.SettingsHistoryScreen
 import com.spotwire.app.presentation.settings.SettingsScreen
+import com.spotwire.app.presentation.timeline.TimelineScreen
 import com.spotwire.app.presentation.whatsapp.WhatsAppScreen
 
 private data class BottomNavItem(
@@ -45,6 +47,7 @@ private data class BottomNavItem(
 private val bottomNavItems = listOf(
     BottomNavItem(Screen.Send, "Send", Icons.Default.Send),
     BottomNavItem(Screen.History, "History", Icons.Default.History),
+    BottomNavItem(Screen.Timeline, "Timeline", Icons.Default.Timeline),
     BottomNavItem(Screen.Arrival, "Arrival", Icons.Default.LocationOn),
     BottomNavItem(Screen.Profile, "Profile", Icons.Default.Person),
 )
@@ -145,6 +148,7 @@ fun AppNavGraph(startDestination: String) {
             }
             composable(Screen.Send.route) { SendScreen() }
             composable(Screen.History.route) { HistoryScreen() }
+            composable(Screen.Timeline.route) { TimelineScreen() }
             // A bottom-bar destination, so no back arrow — onBack is null here.
             composable(Screen.Arrival.route) {
                 SettingsScreen(

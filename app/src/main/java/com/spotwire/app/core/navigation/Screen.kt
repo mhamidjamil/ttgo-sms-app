@@ -10,6 +10,8 @@ sealed class Screen(val route: String) {
     data object History : Screen("history")
     // Arrival monitoring has its own tab instead of living under Profile.
     data object Arrival : Screen("arrival")
+    // Where the day went: time per place, and the run of stops behind it.
+    data object Timeline : Screen("timeline")
     data object Profile : Screen("profile")
     data object SettingsHistory : Screen("settings_history")
     data object MonitorLog : Screen("monitor_log")

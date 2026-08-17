@@ -17,10 +17,13 @@ import com.spotwire.app.data.local.PreferencesDataSource
 import com.spotwire.app.data.local.VisitLogStore
 import com.spotwire.app.domain.model.Place
 import com.spotwire.app.domain.model.PresenceState
+import com.spotwire.app.domain.repository.LinkRepository
 import com.spotwire.app.domain.repository.UserRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 
@@ -43,6 +46,7 @@ class ArrivalWatchdogReceiver : BroadcastReceiver(), KoinComponent {
     private val userRepo: UserRepository by inject()
     private val monitorLog: MonitorLogStore by inject()
     private val visitLog: VisitLogStore by inject()
+    private val linkRepo: LinkRepository by inject()
 
     override fun onReceive(context: Context, intent: Intent) {
         val reason = intent.action ?: return
@@ -93,6 +97,16 @@ class ArrivalWatchdogReceiver : BroadcastReceiver(), KoinComponent {
                 if (places != null) noteWhereabouts(appContext, places)
                 pruneOldVisits(appContext)
                 if (ArrivalService.isRunning) return@launch
+                // Somebody waiting on a location request is a reason to start,
+                // whatever the fences are doing. There is no push here, so this
+                // tick is the only thing that can wake a phone whose app is
+                // closed: without it a guardian's ask would sit unanswered until
+                // the app was next opened by hand.
+                if (hasWaitingRequest()) {
+                    Log.i(TAG, "Starting monitoring: a linked account is waiting on a location request")
+                    ArrivalService.start(appContext)
+                    return@launch
+                }
                 // Nothing to bring back when every alerting place is watched by
                 // a fence: starting here would only show a notification for the
                 // seconds the service takes to stop itself again.
@@ -128,6 +142,16 @@ class ArrivalWatchdogReceiver : BroadcastReceiver(), KoinComponent {
         val winner = resolvePresence(places, visible).winner
         runCatching { ArrivalService.notePosition(uid, winner, visitLog, userRepo) }
             .onFailure { Log.w(TAG, "Could not record where the phone is", it) }
+    }
+
+    // A read, not a listener: this runs in a receiver with about ten seconds to
+    // live, so it takes the first list the query produces and gets out.
+    private suspend fun hasWaitingRequest(): Boolean {
+        val uid = userRepo.currentFirebaseUser()?.uid ?: return false
+        return runCatching {
+            withTimeoutOrNull(5_000) { linkRepo.watchPendingRequests(uid).first() }
+                ?.any { !it.stopRequested } == true
+        }.getOrDefault(false)
     }
 
     /**

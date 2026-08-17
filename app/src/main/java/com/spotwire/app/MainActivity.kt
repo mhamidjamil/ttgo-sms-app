@@ -83,7 +83,11 @@ class MainActivity : ComponentActivity() {
             val uid = userRepo.currentFirebaseUser()?.uid ?: return@launch
             linkRepo.watchPendingRequests(uid).collect { pending ->
                 pending.forEach { request ->
-                    answerLocationRequest(uid, request, visibleBssids(this@MainActivity))
+                    // The context is what lets a precise ask be answered at all.
+                    // With the app on screen this is the best moment for it:
+                    // scanning is unthrottled and a fix comes back quickly.
+                    answerLocationRequest(uid, request, visibleBssids(this@MainActivity),
+                        this@MainActivity)
                 }
             }
         }

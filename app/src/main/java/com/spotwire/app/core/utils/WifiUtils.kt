@@ -82,6 +82,35 @@ fun cachedVisibleAccessPoints(context: Context): Map<String, Int> {
     }
 }
 
+// One access point as it is reported to somebody asking where this phone is.
+// The NAME is the part that answers the question: "Al-Madina Store" says where
+// a child stopped, a pair of coordinates and a hardware id do not.
+data class VisibleNetwork(val ssid: String, val bssid: String, val level: Int)
+
+/**
+ * The networks around the phone, loudest first, read straight from the scan
+ * cache.
+ *
+ * Deliberately no [requestWifiScan]: Android allows four sweeps per two minutes
+ * and the arrival engine's whole cadence is built around that budget, so a
+ * location answer asking for its own sweep would starve detection. The sweeps
+ * already running keep this cache warm.
+ */
+@Suppress("DEPRECATION")
+fun visibleNetworks(context: Context, limit: Int = 20): List<VisibleNetwork> {
+    if (!canScanWifi(context)) return emptyList()
+    val wm = context.applicationContext.getSystemService(WifiManager::class.java) ?: return emptyList()
+    return try {
+        wm.scanResults.mapNotNull { result ->
+            val bssid = result.BSSID?.lowercase() ?: return@mapNotNull null
+            VisibleNetwork(result.SSID.orEmpty(), bssid, result.level)
+        }.sortedByDescending { it.level }.take(limit)
+    } catch (e: Exception) {
+        Log.w(TAG, "Scan results unavailable: ${e.message}")
+        emptyList()
+    }
+}
+
 // Asks the framework for a fresh sweep. Android throttles this (four calls per
 // two minutes) and a refused request simply leaves the cached results in place,
 // so the return value is deliberately ignored.

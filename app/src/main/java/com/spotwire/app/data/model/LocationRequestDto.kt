@@ -13,6 +13,13 @@ data class LocationRequestDto(
     var requesterName: String = "",
     val status: String = "pending",
     val answer: String = "",
+    // Absent on every request written before precise mode existed, so the
+    // default is what those have always meant: a place name only.
+    val mode: String = LocationRequest.PLACE,
+    // The one field the ASKER may write, so a request they opened can be called
+    // off from their side instead of only from the phone being asked.
+    @get:PropertyName("stop_requested") @set:PropertyName("stop_requested")
+    var stopRequested: Boolean = false,
     @get:PropertyName("created_at") @set:PropertyName("created_at")
     var createdAt: Timestamp? = null,
 ) {
@@ -22,6 +29,8 @@ data class LocationRequestDto(
         requesterName = requesterName,
         status = status,
         answer = answer,
+        mode = mode.ifBlank { LocationRequest.PLACE },
+        stopRequested = stopRequested,
         createdAt = createdAt?.toDate(),
     )
 }

@@ -23,6 +23,8 @@ data class AccountLinkDto(
     var permVisitLog: Boolean = false,
     @get:PropertyName("visit_log_place_ids") @set:PropertyName("visit_log_place_ids")
     var visitLogPlaceIds: List<String> = emptyList(),
+    @get:PropertyName("perm_precise_location") @set:PropertyName("perm_precise_location")
+    var permPreciseLocation: Boolean = false,
 ) {
     fun toDomain() = AccountLink(
         otherUid = otherUid,
@@ -34,6 +36,7 @@ data class AccountLinkDto(
             requestLocation = permRequestLocation,
             visitLog = permVisitLog,
             visitLogPlaceIds = visitLogPlaceIds,
+            preciseLocation = permPreciseLocation,
         ),
     )
 }

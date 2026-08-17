@@ -44,6 +44,7 @@ import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.spotwire.app.data.local.MonitorLogStore
 import com.spotwire.app.data.local.PreferencesDataSource
 import com.spotwire.app.data.local.VisitLogStore
+import com.spotwire.app.domain.model.LocationRequest
 import com.spotwire.app.domain.model.Place
 import com.spotwire.app.domain.model.PresenceState
 import com.spotwire.app.domain.model.User
@@ -59,6 +60,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -160,6 +162,11 @@ class ArrivalService : Service() {
     // actually tears the service down, and a second stop would write the line
     // explaining it twice.
     private var stopping = false
+    // request id → the loop answering it. A live location request is the one
+    // thing that keeps this service alive in geofence mode, and only for as long
+    // as the request is open.
+    private val liveAnswerJobs = ConcurrentHashMap<String, Job>()
+    @Volatile private var liveRequests = 0
 
     // Doze parks the sweep's delay and takes the dwell clock down with it, so an
     // arrival at night was never counted long enough to alert. A bounded lock,
@@ -398,6 +405,10 @@ class ArrivalService : Service() {
         // is what cancelled every send launched by the sweep that then decided
         // nothing was left to do.
         if (sendsInFlight.get() > 0) return false
+        // The one place the geofence battery win is deliberately given up, and
+        // only for the life of the request: somebody following this phone gets
+        // nothing at all if the process that answers them is stopped.
+        if (liveRequests > 0) return false
         if (places.any { prefs.getPresence(it.id).state == PresenceState.APPROACHING }) return false
         if (needsResidentService(places, this)) return false
         // The fences are the only thing left watching, so they have to be with
@@ -987,11 +998,48 @@ class ArrivalService : Service() {
         scope.launch {
             val uid = userRepo.currentFirebaseUser()?.uid ?: return@launch
             linkRepo.watchPendingRequests(uid).collect { pending ->
+                liveRequests = pending.count { it.mode == LocationRequest.PRECISE && !it.stopRequested }
                 pending.forEach { request ->
-                    answerLocationRequest(uid, request, visibleBssids(this@ArrivalService))
+                    if (request.mode == LocationRequest.PRECISE) keepAnswering(uid, request)
+                    else answerLocationRequest(uid, request, visibleBssids(this@ArrivalService))
                 }
             }
         }
+    }
+
+    /**
+     * A live request is answered over and over until the asker stops it or it
+     * runs out of time, so the position sharpens as the satellites come in
+     * instead of being one reading that may have landed on a cell-tower guess.
+     *
+     * One job per request, because the pending list is delivered again on every
+     * change and a second loop for the same request would double the readings
+     * and the battery they cost.
+     */
+    private fun keepAnswering(uid: String, request: LocationRequest) {
+        if (liveAnswerJobs.containsKey(request.id)) return
+        liveAnswerJobs[request.id] = scope.launch {
+            try {
+                while (isActive) {
+                    // Re-read rather than trusting the copy this loop started
+                    // with: stopping is a write to that document, and a loop
+                    // reading its own stale copy would never see it.
+                    val current = linkRepo.watchLocationRequest(uid, request.id).first()
+                    if (current == null || current.status != LocationRequest.PENDING) break
+                    answerLocationRequest(uid, current, visibleBssids(this@ArrivalService),
+                        this@ArrivalService)
+                    if (current.stopRequested) break
+                    delay(LIVE_ANSWER_SECONDS * 1000L)
+                }
+            } finally {
+                liveAnswerJobs.remove(request.id)
+                liveRequests = liveAnswerJobs.size
+                monitorLog.append(MonitorLogStore.Kind.EVENT, "Live location request closed")
+            }
+        }
+        monitorLog.append(MonitorLogStore.Kind.EVENT,
+            "${request.requesterName.ifBlank { "A linked account" }} is following this phone's location")
+        updateNotification("Sharing live location with ${request.requesterName.ifBlank { "a linked account" }}")
     }
 
     private fun buildNetworkRequest() = NetworkRequest.Builder()
@@ -1089,6 +1137,10 @@ class ArrivalService : Service() {
         // Indoors a fix can wait for satellites that never arrive, and the
         // decision cannot sit there forever with nothing watching.
         private const val LOCATION_FIX_TIMEOUT_MILLIS = 15_000L
+        // How often a live request is answered. A fix costs battery and the WiFi
+        // list only changes as fast as the sweeps refresh it, so anything
+        // quicker would send the same reading twice and charge for it.
+        private const val LIVE_ANSWER_SECONDS = 60
 
         const val ACTION_VALIDATE = "com.spotwire.app.VALIDATE_ARRIVAL"
         const val ACTION_DEPART = "com.spotwire.app.CHECK_DEPARTURE"

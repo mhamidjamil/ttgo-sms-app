@@ -5,6 +5,7 @@ import com.spotwire.app.domain.model.IncomingAlert
 import com.spotwire.app.domain.model.AccountLink
 import com.spotwire.app.domain.model.LinkPermissions
 import com.spotwire.app.domain.model.LinkState
+import com.spotwire.app.domain.model.LocationAnswer
 import com.spotwire.app.domain.model.LocationRequest
 import com.spotwire.app.domain.model.PlaceVisit
 import com.spotwire.app.domain.repository.LinkRepository
@@ -72,8 +73,30 @@ class LinkRepositoryImpl(private val firestore: FirestoreDataSource) : LinkRepos
             .map { it.toDomain() }
             .filter { it.state == LinkState.ACTIVE }
 
-    override suspend fun requestLocation(targetUid: String, requesterUid: String, requesterName: String) =
-        firestore.createLocationRequest(targetUid, requesterUid, requesterName)
+    override suspend fun requestLocation(
+        targetUid: String,
+        requesterUid: String,
+        requesterName: String,
+        mode: String,
+    ) = firestore.createLocationRequest(targetUid, requesterUid, requesterName, mode)
+
+    override suspend fun appendAnswer(
+        uid: String,
+        requestId: String,
+        latitude: Double,
+        longitude: Double,
+        accuracyMeters: Float,
+        placeLabel: String,
+        networks: List<String>,
+    ) = firestore.appendLocationAnswer(
+        uid, requestId, latitude, longitude, accuracyMeters, placeLabel, networks,
+    )
+
+    override fun watchAnswers(targetUid: String, requestId: String): Flow<List<LocationAnswer>> =
+        firestore.watchLocationAnswers(targetUid, requestId).map { list -> list.map { it.toDomain() } }
+
+    override suspend fun stopRequest(targetUid: String, requestId: String) =
+        firestore.stopLocationRequest(targetUid, requestId)
 
     override fun watchLocationRequest(targetUid: String, requestId: String): Flow<LocationRequest?> =
         firestore.watchLocationRequest(targetUid, requestId).map { it?.toDomain() }

@@ -21,8 +21,14 @@ enum class LinkState(val firestoreValue: String) {
 data class LinkPermissions(
     // Push my arrival alerts to them automatically.
     val autoLocationUpdates: Boolean = true,
-    // Let them ask where I am right now.
+    // Let them ask where I am right now. On its own this answers with a saved
+    // place's name and nothing else.
     val requestLocation: Boolean = false,
+    // Let that ask come back with the coordinates, how accurate the fix was and
+    // the wireless networks around me, and let them hold it open so the reading
+    // sharpens. Separate from the switch above and off by default, because it is
+    // a different thing to agree to.
+    val preciseLocation: Boolean = false,
     // Let them read my whole movement timeline, every place and every stay.
     // This is what a guardian gets.
     val visitLog: Boolean = false,

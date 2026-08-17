@@ -20,6 +20,7 @@ import com.spotwire.app.data.model.AlertSubscriptionDto
 import com.spotwire.app.data.model.AutoHistoryEntryDto
 import com.spotwire.app.data.model.HistoryEntryDto
 import com.spotwire.app.data.model.IncomingAlertDto
+import com.spotwire.app.data.model.LocationAnswerDto
 import com.spotwire.app.data.model.LocationRequestDto
 import com.spotwire.app.data.model.PlaceVisitDto
 import com.spotwire.app.data.model.SettingsChangeDto
@@ -112,6 +113,17 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
             userDoc.collection(Paths.AUTO_HISTORY_SUB).get().await()
                 .documents.mapNotNull { it.getString("job_phone_key") }.distinct()
         }.getOrDefault(emptyList())
+        // The readings sit one level below a request, so deleting the request
+        // documents would orphan them rather than erase them.
+        runCatching {
+            userDoc.collection(Paths.LOCATION_REQUESTS_SUB).get().await().documents.forEach { req ->
+                val answers = req.reference.collection(Paths.ANSWERS_SUB).get().await()
+                if (answers.isEmpty) return@forEach
+                val batch = db.batch()
+                answers.documents.forEach { batch.delete(it.reference) }
+                batch.commit().await()
+            }
+        }
         listOf(
             Paths.HISTORY_SUB, Paths.AUTO_HISTORY_SUB, Paths.SETTINGS_HISTORY_SUB,
             Paths.LINKS_SUB, Paths.LOCATION_REQUESTS_SUB, Paths.INCOMING_ALERTS_SUB,
@@ -924,6 +936,7 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
                 "perm_request_location" to permissions.requestLocation,
                 "perm_visit_log" to permissions.visitLog,
                 "visit_log_place_ids" to permissions.visitLogPlaceIds,
+                "perm_precise_location" to permissions.preciseLocation,
             ),
             SetOptions.merge(),
         ).await()
@@ -1027,6 +1040,7 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         targetUid: String,
         requesterUid: String,
         requesterName: String,
+        mode: String = LocationRequest.PLACE,
     ): Result<String> = runCatching {
         val ref = locationRequests(targetUid).document()
         ref.set(mapOf(
@@ -1034,10 +1048,52 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
             "requester_name" to requesterName,
             "status" to LocationRequest.PENDING,
             "answer" to "",
+            "mode" to mode,
+            "stop_requested" to false,
             "created_at" to Timestamp.now(),
         )).await()
         ref.id
     }
+
+    /**
+     * Calls a request off from the ASKER's side. It is the one field they are
+     * allowed to write, and it exists because a live request that only the other
+     * phone could close would be a tracker with no off switch.
+     */
+    suspend fun stopLocationRequest(targetUid: String, requestId: String): Result<Unit> = runCatching {
+        locationRequests(targetUid).document(requestId).update("stop_requested", true).await()
+    }
+
+    /** One reading sent back for a precise ask. A live request collects a run. */
+    suspend fun appendLocationAnswer(
+        uid: String,
+        requestId: String,
+        latitude: Double,
+        longitude: Double,
+        accuracyMeters: Float,
+        placeLabel: String,
+        networks: List<String>,
+    ): Result<Unit> = runCatching {
+        locationRequests(uid).document(requestId).collection(Paths.ANSWERS_SUB).document().set(mapOf(
+            "at" to System.currentTimeMillis(),
+            "latitude" to latitude,
+            "longitude" to longitude,
+            "accuracy_m" to accuracyMeters.toDouble(),
+            "place_label" to placeLabel,
+            "networks" to networks,
+        )).await()
+    }
+
+    fun watchLocationAnswers(targetUid: String, requestId: String): Flow<List<LocationAnswerDto>> =
+        locationRequests(targetUid).document(requestId).collection(Paths.ANSWERS_SUB)
+            .orderBy("at", Query.Direction.DESCENDING)
+            .limit(50)
+            .snapshots()
+            .map { snap ->
+                snap.documents.mapNotNull { doc ->
+                    doc.toObject(LocationAnswerDto::class.java)?.copy(id = doc.id)
+                }
+            }
 
     fun watchLocationRequest(targetUid: String, requestId: String): Flow<LocationRequestDto?> =
         locationRequests(targetUid).document(requestId).snapshots()

@@ -14,6 +14,9 @@ object Paths {
     // Finished stays, one per place visited, kept for a month so the timeline
     // survives a reinstall and can be read by the people this account trusts.
     const val PLACE_VISITS_SUB: String = "place_visits"
+    // Readings sent back for one live location request, so it collects a track
+    // rather than overwriting itself and losing the fix that was sharpening.
+    const val ANSWERS_SUB: String = "answers"
     // Alerts delivered inside the app, written by a linked sender onto the
     // recipient's own account. Only what was sent to them, never the sender's log.
     const val INCOMING_ALERTS_SUB: String = "incoming_alerts"

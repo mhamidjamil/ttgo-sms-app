@@ -16,6 +16,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.spotwire.app.core.theme.SpotwireTheme
+import com.spotwire.app.core.utils.DateUtils
 import com.spotwire.app.presentation.components.PhoneNumberField
 import com.spotwire.app.presentation.components.rememberDefaultCountry
 import com.spotwire.app.domain.model.AccountLink
@@ -37,7 +38,8 @@ fun LinkedAccountsScreen(
         onRespond = viewModel::respond,
         onSetPermissions = viewModel::setPermissions,
         onRemove = viewModel::remove,
-        onRequestLocation = viewModel::requestLocation,
+        onRequestLocation = { viewModel.requestLocation(it) },
+        onFollowLive = { viewModel.requestLocation(it, live = true) },
         onDismissLocationAnswer = viewModel::dismissLocationAnswer,
         onClearMessages = viewModel::clearMessages,
         onViewTimeline = onViewTimeline,
@@ -54,6 +56,7 @@ private fun LinkedAccountsContent(
     onSetPermissions: (AccountLink, LinkPermissions) -> Unit,
     onRemove: (AccountLink) -> Unit,
     onRequestLocation: (AccountLink) -> Unit,
+    onFollowLive: (AccountLink) -> Unit,
     onDismissLocationAnswer: () -> Unit,
     onClearMessages: () -> Unit,
     onViewTimeline: (AccountLink) -> Unit = {},
@@ -101,19 +104,13 @@ private fun LinkedAccountsContent(
     if (uiState.awaitingLocationFor != null) {
         AlertDialog(
             onDismissRequest = onDismissLocationAnswer,
-            title = { Text("Current location") },
-            text = {
-                if (uiState.locationAnswer == null) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(10.dp))
-                        Text("Asking their device. This needs their app to be running.")
-                    }
-                } else {
-                    Text(uiState.locationAnswer)
+            title = { Text(if (uiState.isLive) "Following their location" else "Current location") },
+            text = { LocationPanel(uiState) },
+            confirmButton = {
+                TextButton(onClick = onDismissLocationAnswer) {
+                    Text(if (uiState.isLive) "Stop" else "Close")
                 }
             },
-            confirmButton = { TextButton(onClick = onDismissLocationAnswer) { Text("Close") } },
         )
     }
 
@@ -133,8 +130,9 @@ private fun LinkedAccountsContent(
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
             Text(
-                "Linked people only ever see a place name, never a map position or WiFi details. " +
-                    "You choose what each of them is allowed to do, and can change it any time.",
+                "A linked person sees a place name and nothing more, unless you switch on the " +
+                    "extra permissions on their card. You choose those one by one, and can " +
+                    "change any of them at any time.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
@@ -165,6 +163,7 @@ private fun LinkedAccountsContent(
                             onSetPermissions = { onSetPermissions(link, it) },
                             onRemove = { pendingRemoval = link },
                             onRequestLocation = { onRequestLocation(link) },
+                            onFollowLive = { onFollowLive(link) },
                             onViewTimeline = { onViewTimeline(link) },
                             places = uiState.places,
                         )
@@ -183,6 +182,7 @@ private fun LinkCard(
     onSetPermissions: (LinkPermissions) -> Unit,
     onRemove: () -> Unit,
     onRequestLocation: () -> Unit,
+    onFollowLive: () -> Unit = {},
     onViewTimeline: () -> Unit = {},
     places: List<Place> = emptyList(),
 ) {
@@ -256,8 +256,24 @@ private fun LinkCard(
                         label = "Ask where I am right now",
                         checked = link.permissions.requestLocation,
                         enabled = !isBusy,
-                        onChange = { onSetPermissions(link.permissions.copy(requestLocation = it)) },
+                        onChange = {
+                            onSetPermissions(link.permissions.copy(
+                                requestLocation = it,
+                                // Turning the ask off has to take the stronger
+                                // answer with it, or the switch above would
+                                // read as off while this one still applied.
+                                preciseLocation = it && link.permissions.preciseLocation,
+                            ))
+                        },
                     )
+                    if (link.permissions.requestLocation) {
+                        PermissionRow(
+                            label = "Answer with my exact position and nearby WiFi",
+                            checked = link.permissions.preciseLocation,
+                            enabled = !isBusy,
+                            onChange = { onSetPermissions(link.permissions.copy(preciseLocation = it)) },
+                        )
+                    }
                     // A guardian's switch. Turning it on hands over every place
                     // and every stay, so the per-place rows below are switched
                     // off with it: naming single places would say nothing they
@@ -298,8 +314,8 @@ private fun LinkCard(
                         OutlinedButton(onClick = onRequestLocation, enabled = !isBusy) {
                             Text("Where are they")
                         }
-                        OutlinedButton(onClick = onViewTimeline, enabled = !isBusy) {
-                            Text("Their timeline")
+                        OutlinedButton(onClick = onFollowLive, enabled = !isBusy) {
+                            Text("Follow live")
                         }
                         Spacer(Modifier.weight(1f))
                         OutlinedButton(
@@ -310,13 +326,89 @@ private fun LinkCard(
                             ),
                         ) { Text("Remove") }
                     }
-                    Text(
-                        "Both work only if they gave you that permission on their side.",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Following keeps asking until you stop it, so the position gets " +
+                                "sharper. All of it works only if they allowed it on their side.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = onViewTimeline, enabled = !isBusy) { Text("Timeline") }
+                    }
                 }
             }
+        }
+    }
+}
+
+/**
+ * What has come back so far. A live ask keeps this open, so it says how many
+ * readings have arrived and how good the newest one is: a first fix indoors is
+ * often hundreds of metres out and gets better while this is on screen.
+ */
+@Composable
+private fun LocationPanel(uiState: LinkedAccountsUiState) {
+    val fix = uiState.latestFix
+    Column {
+        if (fix == null && uiState.locationAnswer == null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(10.dp))
+                Text("Asking their device. This needs their app to be running.")
+            }
+            return@Column
+        }
+        if (fix == null) {
+            Text(uiState.locationAnswer.orEmpty())
+            return@Column
+        }
+        if (fix.placeLabel.isNotBlank()) {
+            Text("At ${fix.placeLabel}", style = MaterialTheme.typography.bodyLarge)
+            Spacer(Modifier.height(6.dp))
+        }
+        Text(
+            "%.6f, %.6f".format(fix.latitude, fix.longitude),
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            "Accurate to about ${fix.accuracyMeters.toInt()} m, " +
+                "reading ${uiState.fixCount} at ${DateUtils.time12h(fix.at)}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+        )
+        if (fix.networks.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "WiFi around them",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            // Loudest first, and only a handful: the nearest few are what name
+            // the building, and a list of thirty is unreadable in a dialog.
+            fix.networks.take(8).forEach { row ->
+                val parts = row.split("|")
+                Text(
+                    parts.getOrNull(0)?.ifBlank { "(hidden network)" } ?: row,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    "${parts.getOrNull(1).orEmpty()}  ${parts.getOrNull(2).orEmpty()} dBm",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                )
+            }
+        }
+        if (uiState.isLive) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Still following. The position sharpens as more readings arrive; " +
+                    "Stop closes it on their phone too.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+            )
         }
     }
 }
@@ -437,7 +529,7 @@ private fun LinkedAccountsPreview() {
         LinkedAccountsContent(
             uiState = LinkedAccountsUiState(links = sampleLinks, isLoading = false),
             onInvite = { _, _, _ -> }, onRespond = { _, _ -> }, onSetPermissions = { _, _ -> },
-            onRemove = {}, onRequestLocation = {}, onDismissLocationAnswer = {},
+            onRemove = {}, onRequestLocation = {}, onFollowLive = {}, onDismissLocationAnswer = {},
             onClearMessages = {}, onBack = {},
         )
     }
@@ -450,7 +542,7 @@ private fun LinkedAccountsEmptyPreview() {
         LinkedAccountsContent(
             uiState = LinkedAccountsUiState(isLoading = false),
             onInvite = { _, _, _ -> }, onRespond = { _, _ -> }, onSetPermissions = { _, _ -> },
-            onRemove = {}, onRequestLocation = {}, onDismissLocationAnswer = {},
+            onRemove = {}, onRequestLocation = {}, onFollowLive = {}, onDismissLocationAnswer = {},
             onClearMessages = {}, onBack = {},
         )
     }

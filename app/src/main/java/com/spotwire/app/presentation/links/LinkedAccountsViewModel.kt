@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.spotwire.app.domain.model.AccountLink
 import com.spotwire.app.domain.model.LinkPermissions
 import com.spotwire.app.domain.model.LinkState
+import com.spotwire.app.domain.model.LocationAnswer
 import com.spotwire.app.domain.model.LocationRequest
 import com.spotwire.app.domain.model.Place
 import com.spotwire.app.domain.repository.LinkRepository
@@ -28,6 +29,11 @@ data class LinkedAccountsUiState(
     // uid of the account whose location was asked for, plus the answer so far.
     val awaitingLocationFor: String? = null,
     val locationAnswer: String? = null,
+    // A live ask stays open and collects readings, so the panel shows the newest
+    // one and how many have arrived rather than a single frozen answer.
+    val isLive: Boolean = false,
+    val latestFix: LocationAnswer? = null,
+    val fixCount: Int = 0,
     // My own places, so each link can be trusted with one of them rather than
     // with everywhere I go.
     val places: List<Place> = emptyList(),
@@ -45,6 +51,10 @@ class LinkedAccountsViewModel(
     private var myUid: String = ""
     private var myName: String = ""
     private var answerWatcher: Job? = null
+    private var fixWatcher: Job? = null
+    // (their uid, request id) while a request is open, so closing the panel can
+    // close the request on their phone as well.
+    private var openRequest: Pair<String, String>? = null
 
     init { load() }
 
@@ -119,18 +129,30 @@ class LinkedAccountsViewModel(
         }
     }
 
-    // Asks the other device where it is. The answer arrives asynchronously, so
-    // the request document itself is watched rather than polled.
-    fun requestLocation(link: AccountLink) {
+    /**
+     * Asks the other device where it is. The answer arrives asynchronously, so
+     * the request document itself is watched rather than polled.
+     *
+     * A live ask stays open and keeps collecting readings until it is stopped,
+     * which is what lets an indoor fix improve from half a kilometre to a few
+     * metres while the panel is on screen.
+     */
+    fun requestLocation(link: AccountLink, live: Boolean = false) {
         answerWatcher?.cancel()
+        fixWatcher?.cancel()
         _uiState.value = _uiState.value.copy(
             awaitingLocationFor = link.otherUid,
             locationAnswer = null,
+            isLive = live,
+            latestFix = null,
+            fixCount = 0,
             error = null,
         )
         viewModelScope.launch {
-            linkRepo.requestLocation(link.otherUid, myUid, myName)
+            val mode = if (live) LocationRequest.PRECISE else LocationRequest.PLACE
+            linkRepo.requestLocation(link.otherUid, myUid, myName, mode)
                 .onSuccess { requestId ->
+                    openRequest = link.otherUid to requestId
                     answerWatcher = linkRepo.watchLocationRequest(link.otherUid, requestId)
                         .onEach { request ->
                             when (request?.status) {
@@ -138,9 +160,18 @@ class LinkedAccountsViewModel(
                                     _uiState.value = _uiState.value.copy(locationAnswer = request.answer)
                                 LocationRequest.DENIED ->
                                     _uiState.value = _uiState.value.copy(
-                                        locationAnswer = "They have not allowed on-demand location requests.",
+                                        locationAnswer = "They have not allowed this kind of request.",
                                     )
                             }
+                        }
+                        .launchIn(viewModelScope)
+                    if (!live) return@onSuccess
+                    fixWatcher = linkRepo.watchAnswers(link.otherUid, requestId)
+                        .onEach { answers ->
+                            _uiState.value = _uiState.value.copy(
+                                latestFix = answers.firstOrNull(),
+                                fixCount = answers.size,
+                            )
                         }
                         .launchIn(viewModelScope)
                 }
@@ -153,10 +184,24 @@ class LinkedAccountsViewModel(
         }
     }
 
+    /**
+     * Closes the panel AND the request. Cancelling only the listener used to
+     * leave the request open on the other phone forever, which for a live one
+     * would mean it went on answering with nobody reading.
+     */
     fun dismissLocationAnswer() {
         answerWatcher?.cancel()
+        fixWatcher?.cancel()
         answerWatcher = null
-        _uiState.value = _uiState.value.copy(awaitingLocationFor = null, locationAnswer = null)
+        fixWatcher = null
+        openRequest?.let { (targetUid, requestId) ->
+            viewModelScope.launch { linkRepo.stopRequest(targetUid, requestId) }
+        }
+        openRequest = null
+        _uiState.value = _uiState.value.copy(
+            awaitingLocationFor = null, locationAnswer = null,
+            isLive = false, latestFix = null, fixCount = 0,
+        )
     }
 
     fun clearMessages() { _uiState.value = _uiState.value.copy(error = null, message = null) }

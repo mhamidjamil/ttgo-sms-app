@@ -354,12 +354,38 @@ service cloud.firestore {
       allow create: if isAppUser() &&
                        request.resource.data.requester_uid == request.auth.uid &&
                        request.resource.data.status == 'pending' &&
+                       request.resource.data.stop_requested == false &&
+                       request.resource.data.mode in ['place', 'precise'] &&
                        request.resource.data.keys().hasOnly([
-                         'requester_uid', 'requester_name', 'status', 'answer', 'created_at'
+                         'requester_uid', 'requester_name', 'status', 'answer', 'created_at',
+                         'mode', 'stop_requested'
                        ]) &&
                        exists(/databases/$(database)/documents/ttgo_users/$(uid)/links/$(request.auth.uid));
-      allow update: if isOwner(uid);
+      // The asker owns exactly one field: the way to call it off. Without this a
+      // live request they opened could only ever be closed by the other phone,
+      // which is a tracker with the off switch on the wrong side.
+      allow update: if isOwner(uid) ||
+                       (isAppUser() &&
+                        resource.data.get('requester_uid', '') == request.auth.uid &&
+                        request.resource.data.diff(resource.data)
+                          .affectedKeys().hasOnly(['stop_requested']));
       allow delete: if isOwner(uid);
+    }
+
+    // One reading per answer, so a request held open collects a track and the
+    // position visibly sharpens instead of one fix overwriting the last. Only
+    // the phone being asked may write them, and only the account that opened the
+    // request may read them.
+    match /ttgo_users/{uid}/location_requests/{requestId}/answers/{answerId} {
+      function ask() {
+        let path = /databases/$(database)/documents/ttgo_users/$(uid)/location_requests/$(requestId);
+        return exists(path) ? get(path).data : null;
+      }
+
+      allow read: if isOwner(uid) ||
+                     (isAppUser() && ask() != null &&
+                      ask().get('requester_uid', '') == request.auth.uid);
+      allow create, update, delete: if isOwner(uid);
     }
 
     // Alerts delivered inside the app. The SENDER writes onto the RECIPIENT's

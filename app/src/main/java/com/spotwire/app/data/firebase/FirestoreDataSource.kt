@@ -21,6 +21,7 @@ import com.spotwire.app.data.model.AutoHistoryEntryDto
 import com.spotwire.app.data.model.HistoryEntryDto
 import com.spotwire.app.data.model.IncomingAlertDto
 import com.spotwire.app.data.model.LocationRequestDto
+import com.spotwire.app.data.model.PlaceVisitDto
 import com.spotwire.app.data.model.SettingsChangeDto
 import com.spotwire.app.data.model.SmsJobDto
 import com.spotwire.app.data.model.UserDto
@@ -114,6 +115,7 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
         listOf(
             Paths.HISTORY_SUB, Paths.AUTO_HISTORY_SUB, Paths.SETTINGS_HISTORY_SUB,
             Paths.LINKS_SUB, Paths.LOCATION_REQUESTS_SUB, Paths.INCOMING_ALERTS_SUB,
+            Paths.PLACE_VISITS_SUB,
         ).forEach { sub ->
             // Batches cap at 500 writes, so a long history is cleared in pages.
             while (true) {
@@ -947,6 +949,69 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
             .get().await().documents.mapNotNull { doc ->
                 doc.toObject(AccountLinkDto::class.java)?.copy(otherUid = doc.id)
             }
+    }
+
+    // ── Where this account has been ───────────────────────────────────────────
+    //
+    // The phone keeps its own week of stays; this is the copy that outlives a
+    // reinstall and is the only one anybody else can be shown.
+
+    private fun placeVisits(uid: String) =
+        db.collection(Paths.USERS).document(uid).collection(Paths.PLACE_VISITS_SUB)
+
+    suspend fun recordPlaceVisit(
+        uid: String,
+        placeId: String,
+        placeLabel: String,
+        startedAt: Long,
+        endedAt: Long,
+    ): Result<Unit> = runCatching {
+        val row = mapOf(
+            "place_id" to placeId,
+            "place_label" to placeLabel,
+            "started_at" to startedAt,
+            "ended_at" to endedAt,
+        )
+        // Bounded like every other write here. A stay that cannot reach the
+        // server right now sits in Firestore's own queue and goes up later; the
+        // phone's copy is what the timeline reads meanwhile, so nothing is lost.
+        withTimeoutOrNull(COMMIT_TIMEOUT_MILLIS) { placeVisits(uid).document().set(row).await() }
+    }
+
+    /**
+     * Stays since [sinceMillis], newest first. A place id narrows it to one
+     * place, which is the only shape somebody trusted with a single place is
+     * allowed to ask for.
+     */
+    fun getPlaceVisits(uid: String, sinceMillis: Long, placeId: String? = null): Flow<List<PlaceVisitDto>> {
+        val base = if (placeId == null) placeVisits(uid)
+            else placeVisits(uid).whereEqualTo("place_id", placeId)
+        return base
+            .whereGreaterThanOrEqualTo("started_at", sinceMillis)
+            .orderBy("started_at", Query.Direction.DESCENDING)
+            .limit(500)
+            .snapshots()
+            .map { snap ->
+                snap.documents.mapNotNull { doc ->
+                    doc.toObject(PlaceVisitDto::class.java)?.copy(id = doc.id)
+                }
+            }
+    }
+
+    /**
+     * Drops stays older than the retention window. Nothing runs on the server,
+     * so the account's own phone is what keeps this from growing forever.
+     */
+    suspend fun prunePlaceVisits(uid: String, cutoffMillis: Long): Result<Unit> = runCatching {
+        while (true) {
+            val page = placeVisits(uid)
+                .whereLessThan("started_at", cutoffMillis).limit(400).get().await()
+            if (page.isEmpty) break
+            val batch = db.batch()
+            page.documents.forEach { batch.delete(it.reference) }
+            batch.commit().await()
+            if (page.size() < 400) break
+        }
     }
 
     // ── On-demand location requests ───────────────────────────────────────────

@@ -2,6 +2,7 @@ package com.spotwire.app.domain.repository
 
 import com.google.firebase.auth.FirebaseUser
 import com.spotwire.app.domain.model.Place
+import com.spotwire.app.domain.model.PlaceVisit
 import com.spotwire.app.domain.model.SettingsChange
 import com.spotwire.app.domain.model.User
 import kotlinx.coroutines.flow.Flow
@@ -53,6 +54,18 @@ interface UserRepository {
     // Places only — leaves the guardian list untouched (used by the place editor).
     suspend fun savePlaces(uid: String, places: List<Place>): Result<Unit>
     suspend fun recordArrival(uid: String, placeId: String, date: String, currentTime: String): Result<Unit>
+
+    // Where this account has been. The phone keeps its own week of stays; these
+    // are the copy that outlives a reinstall and that trusted people can read.
+    suspend fun recordPlaceVisit(
+        uid: String,
+        placeId: String,
+        placeLabel: String,
+        startedAt: Long,
+        endedAt: Long,
+    ): Result<Unit>
+    fun getPlaceVisits(uid: String, sinceMillis: Long): Flow<List<PlaceVisit>>
+    suspend fun prunePlaceVisits(uid: String, cutoffMillis: Long): Result<Unit>
 
     // Settings audit trail
     suspend fun logSettingsChanges(uid: String, changes: List<SettingsChange>): Result<Unit>

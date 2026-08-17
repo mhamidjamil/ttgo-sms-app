@@ -61,15 +61,24 @@ fun visibleAccessPoints(context: Context): Map<String, Int> {
  * for a sweep of its own. A cached read costs nothing and needs no scan budget,
  * which is what makes it safe to run from a fifteen minute alarm.
  */
+fun cachedVisibleBssids(context: Context): Set<String> = cachedVisibleAccessPoints(context).keys
+
+/**
+ * The same cached read, with the signal strengths, so an alarm can ask the same
+ * "where am I" question the sweep asks instead of settling for "is any of this
+ * place's network in the list".
+ */
 @Suppress("DEPRECATION")
-fun cachedVisibleBssids(context: Context): Set<String> {
-    if (!canScanWifi(context)) return emptySet()
-    val wm = context.applicationContext.getSystemService(WifiManager::class.java) ?: return emptySet()
+fun cachedVisibleAccessPoints(context: Context): Map<String, Int> {
+    if (!canScanWifi(context)) return emptyMap()
+    val wm = context.applicationContext.getSystemService(WifiManager::class.java) ?: return emptyMap()
     return try {
-        wm.scanResults.mapNotNull { it.BSSID?.lowercase() }.toSet()
+        wm.scanResults.mapNotNull { result ->
+            result.BSSID?.lowercase()?.let { it to result.level }
+        }.toMap()
     } catch (e: Exception) {
         Log.w(TAG, "Cached scan results unavailable: ${e.message}")
-        emptySet()
+        emptyMap()
     }
 }
 

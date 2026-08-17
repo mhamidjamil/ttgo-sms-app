@@ -287,6 +287,17 @@ service cloud.firestore {
       allow read, write: if isOwner(uid);
     }
 
+    // Where this account has been, one row per finished stay. The phone keeps
+    // its own week of these; this copy outlives a reinstall and is the only one
+    // anybody else can be shown. The place NAME is copied onto every row because
+    // the user document that holds the place list is owner-only, so a reader
+    // handed an id alone could never turn it into a name.
+    // Owner-only for now; the grants that let a guardian read these arrive with
+    // the sharing change.
+    match /ttgo_users/{uid}/place_visits/{visitId} {
+      allow read, write: if isOwner(uid);
+    }
+
     // One side of an account pairing. Both sides are written at once
     // (createLinkInvite :601, setLinkState :625, deleteLink :649), so the person
     // a link names must be able to write that single document — but ONLY the

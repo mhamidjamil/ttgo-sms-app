@@ -8,9 +8,13 @@ import android.content.Intent
 import android.os.SystemClock
 import android.os.UserManager
 import android.util.Log
+import com.spotwire.app.core.utils.cachedVisibleAccessPoints
 import com.spotwire.app.core.utils.cachedVisibleBssids
+import com.spotwire.app.core.utils.canScanWifi
+import com.spotwire.app.core.utils.resolvePresence
 import com.spotwire.app.data.local.MonitorLogStore
 import com.spotwire.app.data.local.PreferencesDataSource
+import com.spotwire.app.data.local.VisitLogStore
 import com.spotwire.app.domain.model.Place
 import com.spotwire.app.domain.model.PresenceState
 import com.spotwire.app.domain.repository.UserRepository
@@ -38,6 +42,7 @@ class ArrivalWatchdogReceiver : BroadcastReceiver(), KoinComponent {
     private val prefs: PreferencesDataSource by inject()
     private val userRepo: UserRepository by inject()
     private val monitorLog: MonitorLogStore by inject()
+    private val visitLog: VisitLogStore by inject()
 
     override fun onReceive(context: Context, intent: Intent) {
         val reason = intent.action ?: return
@@ -81,6 +86,12 @@ class ArrivalWatchdogReceiver : BroadcastReceiver(), KoinComponent {
                     prefs.setGeofencesRefreshedAt(System.currentTimeMillis())
                 }
                 if (places != null) rescueMissedFences(appContext, places, prefs, monitorLog)
+                // With every place watched by a fence the service is stopped
+                // most of the time, so this tick is the only thing left that can
+                // put anything on the timeline. It reads the scan cache, which
+                // costs no scan budget, so it is safe from an alarm.
+                if (places != null) noteWhereabouts(appContext, places)
+                pruneOldVisits(appContext)
                 if (ArrivalService.isRunning) return@launch
                 // Nothing to bring back when every alerting place is watched by
                 // a fence: starting here would only show a notification for the
@@ -99,6 +110,39 @@ class ArrivalWatchdogReceiver : BroadcastReceiver(), KoinComponent {
                 pending.finish()
             }
         }
+    }
+
+    /**
+     * One sample for the timeline. Nothing is written when the phone cannot look
+     * at all: a hole in the record is the honest answer, and crediting the hours
+     * to wherever it last was is not.
+     */
+    private suspend fun noteWhereabouts(context: Context, places: List<Place>) {
+        val uid = userRepo.currentFirebaseUser()?.uid ?: return
+        if (!canScanWifi(context)) return
+        val visible = cachedVisibleAccessPoints(context)
+        if (visible.isEmpty()) return
+        // The same rule the sweep uses, so the two never disagree about where
+        // the phone was at the same minute. A place with no saved networks can
+        // only be reported by its fence, which starts the service instead.
+        val winner = resolvePresence(places, visible).winner
+        runCatching { ArrivalService.notePosition(uid, winner, visitLog, userRepo) }
+            .onFailure { Log.w(TAG, "Could not record where the phone is", it) }
+    }
+
+    /**
+     * Drops the account's stays past the month. Nothing runs on the server, so
+     * this is the only thing keeping them from growing forever; once a day is
+     * plenty for a window measured in weeks.
+     */
+    private suspend fun pruneOldVisits(context: Context) {
+        val uid = userRepo.currentFirebaseUser()?.uid ?: return
+        val store = context.getSharedPreferences(WATCHDOG_PREFS, Context.MODE_PRIVATE)
+        val now = System.currentTimeMillis()
+        if (now - store.getLong(KEY_VISITS_PRUNED_AT, 0L) < PRUNE_INTERVAL_MILLIS) return
+        store.edit().putLong(KEY_VISITS_PRUNED_AT, now).apply()
+        userRepo.prunePlaceVisits(uid, now - VISIT_RETENTION_MILLIS)
+            .onFailure { Log.w(TAG, "Could not drop stays past the month", it) }
     }
 
     companion object {
@@ -172,6 +216,13 @@ class ArrivalWatchdogReceiver : BroadcastReceiver(), KoinComponent {
         }
 
         private const val WATCHDOG_PREFS = "spotwire_watchdog"
+        private const val KEY_VISITS_PRUNED_AT = "visits_pruned_at"
+        // A window measured in weeks does not need trimming every quarter hour.
+        private const val PRUNE_INTERVAL_MILLIS = 24 * 60 * 60 * 1000L
+        // A month on the account, against the seven days the phone itself keeps.
+        // Long enough to answer "where was he last Tuesday" after a reinstall,
+        // short enough that a location history is not kept indefinitely.
+        private const val VISIT_RETENTION_MILLIS = 30L * 24 * 60 * 60 * 1000L
 
         // Inexact on purpose: the system batches it with other wake-ups, so the
         // check costs nothing extra. Catching a killed service ten minutes late

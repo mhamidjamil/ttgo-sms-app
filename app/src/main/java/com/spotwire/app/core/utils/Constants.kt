@@ -11,6 +11,9 @@ object Paths {
     const val SETTINGS_HISTORY_SUB: String = "settings_history"
     const val LINKS_SUB: String = "links"
     const val LOCATION_REQUESTS_SUB: String = "location_requests"
+    // Finished stays, one per place visited, kept for a month so the timeline
+    // survives a reinstall and can be read by the people this account trusts.
+    const val PLACE_VISITS_SUB: String = "place_visits"
     // Alerts delivered inside the app, written by a linked sender onto the
     // recipient's own account. Only what was sent to them, never the sender's log.
     const val INCOMING_ALERTS_SUB: String = "incoming_alerts"

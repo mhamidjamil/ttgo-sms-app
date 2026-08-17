@@ -6,7 +6,9 @@ import com.spotwire.app.data.firebase.FirebaseAuthDataSource
 import com.spotwire.app.data.firebase.FirestoreDataSource
 import com.spotwire.app.data.local.MonitorLogStore
 import com.spotwire.app.data.local.PreferencesDataSource
+import com.spotwire.app.data.local.VisitLogStore
 import com.spotwire.app.domain.model.Place
+import com.spotwire.app.domain.model.PlaceVisit
 import com.spotwire.app.domain.model.SettingsChange
 import com.spotwire.app.domain.model.User
 import com.spotwire.app.domain.repository.UserRepository
@@ -20,6 +22,7 @@ class UserRepositoryImpl(
     private val firestore: FirestoreDataSource,
     private val prefs: PreferencesDataSource,
     private val monitorLog: MonitorLogStore,
+    private val visitLog: VisitLogStore,
 ) : UserRepository {
 
     override suspend fun signIn(email: String, password: String): Result<FirebaseUser> {
@@ -55,8 +58,10 @@ class UserRepositoryImpl(
         auth.signOut()
         prefs.clearAll()
         // The activity log names the places this person visited and when, so it
-        // belongs to the account, not to the phone.
+        // belongs to the account, not to the phone. The timeline says it more
+        // precisely still, so it goes the same way.
         monitorLog.clear()
+        visitLog.clear()
     }
 
     override suspend fun getCurrentUser(): User? {
@@ -171,6 +176,7 @@ class UserRepositoryImpl(
         firestore.deleteUserData(fbUser.uid, phoneNumber).getOrThrow()
         prefs.clearAll()
         monitorLog.clear()
+        visitLog.clear()
         auth.deleteAccount().getOrThrow()
     }
 
@@ -196,6 +202,20 @@ class UserRepositoryImpl(
 
     override suspend fun recordArrival(uid: String, placeId: String, date: String, currentTime: String) =
         firestore.recordArrival(uid, placeId, date, currentTime)
+
+    override suspend fun recordPlaceVisit(
+        uid: String,
+        placeId: String,
+        placeLabel: String,
+        startedAt: Long,
+        endedAt: Long,
+    ) = firestore.recordPlaceVisit(uid, placeId, placeLabel, startedAt, endedAt)
+
+    override fun getPlaceVisits(uid: String, sinceMillis: Long): Flow<List<PlaceVisit>> =
+        firestore.getPlaceVisits(uid, sinceMillis).map { list -> list.map { it.toDomain() } }
+
+    override suspend fun prunePlaceVisits(uid: String, cutoffMillis: Long) =
+        firestore.prunePlaceVisits(uid, cutoffMillis)
 
     override suspend fun logSettingsChanges(uid: String, changes: List<SettingsChange>) =
         firestore.logSettingsChanges(uid, changes)

@@ -43,6 +43,7 @@ import com.spotwire.app.core.utils.visibleBssids
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.spotwire.app.data.local.MonitorLogStore
 import com.spotwire.app.data.local.PreferencesDataSource
+import com.spotwire.app.data.local.VisitLogStore
 import com.spotwire.app.domain.model.Place
 import com.spotwire.app.domain.model.PresenceState
 import com.spotwire.app.domain.model.User
@@ -86,6 +87,7 @@ class ArrivalService : Service() {
     private val answerLocationRequest: AnswerLocationRequestsUseCase by inject()
     private val prefs: PreferencesDataSource by inject()
     private val monitorLog: MonitorLogStore by inject()
+    private val visitLog: VisitLogStore by inject()
     private val firestore: FirebaseFirestore by inject()
     private val routineAnalyzer = RoutineAnalyzer()
 
@@ -456,6 +458,10 @@ class ArrivalService : Service() {
         prefs.setPresence(placeId, presence.copy(
             state = PresenceState.APPROACHING, visitStartedAt = enteredAt, stationaryMillis = 0L,
         ))
+        // A place with no saved networks is never audible, so a crossing is the
+        // only thing that will ever put it on the timeline. Dated from the
+        // crossing rather than from now, which can be minutes later.
+        userRepo.currentFirebaseUser()?.uid?.let { notePosition(it, place, visitLog, userRepo, enteredAt) }
         notePlace(place, MonitorLogStore.Kind.EVENT,
             if (missedFence) "no fence fired, confirming the arrival on WiFi alone"
             else "geofence entered, confirming the arrival")
@@ -493,6 +499,9 @@ class ArrivalService : Service() {
             state = PresenceState.AWAY, visitStartedAt = 0L, stationaryMillis = 0L,
         ))
         notePlace(place, MonitorLogStore.Kind.EVENT, "departure confirmed after geofence exit")
+        // Closes the stay on the timeline. Wherever the phone is now was never
+        // saved, or a sweep would have named it.
+        userRepo.currentFirebaseUser()?.uid?.let { notePosition(it, null, visitLog, userRepo) }
     }
 
     /**
@@ -852,7 +861,6 @@ class ArrivalService : Service() {
         if (saved.none { prefs.getPresence(it.id).state == PresenceState.APPROACHING }) {
             releaseWakeLock()
         }
-        if (stopIfOnlyFencesAreNeeded(user.places)) return
         val here = saved.firstOrNull { prefs.getPresence(it.id).state == PresenceState.HERE }
         // A place mid-confirmation is not "not at a saved place": the screen in
         // the user's hand says "You are at Hostel" while the wait runs, and the
@@ -860,6 +868,14 @@ class ArrivalService : Service() {
         val confirming = if (here == null) {
             saved.firstOrNull { prefs.getPresence(it.id).state == PresenceState.APPROACHING }
         } else null
+        // The timeline records where the phone IS, which is not the same
+        // question as whether an alert may go out. The confirmed answer is used
+        // when there is one; the loudest place in range covers the places that
+        // never reach it, such as one whose alerts are switched off.
+        notePosition(uid, here ?: confirming ?: winner, visitLog, userRepo)
+        // Written before this: the stop takes the process with it, and a sweep
+        // that has just worked out where the phone is should say so first.
+        if (stopIfOnlyFencesAreNeeded(user.places)) return
         // What each place sounded like on this check, kept with the row because
         // "not at a saved place" is only arguable next to the numbers that
         // produced it: one network short, or heard but too faint for its floor.
@@ -1176,6 +1192,31 @@ class ArrivalService : Service() {
 
         fun stop(context: Context) {
             context.stopService(Intent(context, ArrivalService::class.java))
+        }
+
+        /**
+         * Puts where the phone is on the timeline, and sends a stay that has
+         * just ended up to the account.
+         *
+         * Shared with the watchdog tick, because in geofence mode this service
+         * is stopped most of the time and that tick is then the only thing
+         * still looking. A null place means somewhere that was never saved,
+         * which is a stay in its own right rather than a blank.
+         */
+        suspend fun notePosition(
+            uid: String,
+            place: Place?,
+            visitLog: VisitLogStore,
+            userRepo: UserRepository,
+            at: Long = System.currentTimeMillis(),
+        ) {
+            val ended = visitLog.note(
+                at,
+                place?.id ?: VisitLogStore.UNKNOWN_ID,
+                place?.let { it.label.ifBlank { it.id } } ?: VisitLogStore.UNKNOWN_LABEL,
+            ) ?: return
+            userRepo.recordPlaceVisit(uid, ended.placeId, ended.label, ended.from, ended.to)
+                .onFailure { Log.w(TAG, "Stay at ${ended.label} did not reach the account", it) }
         }
     }
 }

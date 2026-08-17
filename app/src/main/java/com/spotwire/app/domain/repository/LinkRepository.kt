@@ -5,6 +5,7 @@ import com.spotwire.app.domain.model.IncomingAlert
 import com.spotwire.app.domain.model.LinkPermissions
 import com.spotwire.app.domain.model.LinkState
 import com.spotwire.app.domain.model.LocationRequest
+import com.spotwire.app.domain.model.PlaceVisit
 import kotlinx.coroutines.flow.Flow
 
 interface LinkRepository {
@@ -60,4 +61,12 @@ interface LinkRepository {
     fun watchLocationRequest(targetUid: String, requestId: String): Flow<LocationRequest?>
     fun watchPendingRequests(uid: String): Flow<List<LocationRequest>>
     suspend fun answerRequest(uid: String, requestId: String, status: String, answer: String): Result<Unit>
+
+    /**
+     * Somebody else's stays. A place id narrows it to one place, which is the
+     * only shape a per-place contact's grant can satisfy: the rules are checked
+     * against every row a query could return, so a query without the filter is
+     * refused outright rather than trimmed.
+     */
+    fun visitsOf(otherUid: String, sinceMillis: Long, placeId: String?): Flow<List<PlaceVisit>>
 }

@@ -922,6 +922,8 @@ class FirestoreDataSource(private val db: FirebaseFirestore) {
             mapOf(
                 "perm_auto_updates" to permissions.autoLocationUpdates,
                 "perm_request_location" to permissions.requestLocation,
+                "perm_visit_log" to permissions.visitLog,
+                "visit_log_place_ids" to permissions.visitLogPlaceIds,
             ),
             SetOptions.merge(),
         ).await()

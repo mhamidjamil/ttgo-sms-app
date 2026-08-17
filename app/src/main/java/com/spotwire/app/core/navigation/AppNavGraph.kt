@@ -194,7 +194,29 @@ fun AppNavGraph(startDestination: String) {
                 AlertSourcesScreen(onBack = { navController.popBackStack() })
             }
             composable(Screen.LinkedAccounts.route) {
-                LinkedAccountsScreen(onBack = { navController.popBackStack() })
+                LinkedAccountsScreen(
+                    onBack = { navController.popBackStack() },
+                    onViewTimeline = { link ->
+                        // Somebody trusted with the whole timeline asks for all
+                        // of it; somebody trusted with one place may only ask
+                        // for that one, because the rules refuse a wider query
+                        // rather than trimming it.
+                        navController.navigate(Screen.SharedTimeline.route(
+                            link.otherUid,
+                            link.otherName.ifBlank { link.otherPhone },
+                            link.permissions.visitLogPlaceIds.firstOrNull(),
+                        ))
+                    },
+                )
+            }
+            composable(Screen.SharedTimeline.route) { entry ->
+                val placeId = entry.arguments?.getString("placeId")
+                TimelineScreen(
+                    viewingUid = entry.arguments?.getString("uid").orEmpty(),
+                    viewingName = entry.arguments?.getString("name").orEmpty(),
+                    onlyPlaceId = placeId?.takeIf { it != Screen.SharedTimeline.ALL_PLACES },
+                    onBack = { navController.popBackStack() },
+                )
             }
         }
     }

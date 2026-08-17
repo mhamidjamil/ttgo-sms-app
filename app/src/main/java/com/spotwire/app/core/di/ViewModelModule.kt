@@ -29,7 +29,7 @@ val viewModelModule = module {
     viewModel { SettingsViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { SettingsHistoryViewModel(get()) }
     viewModel { MonitorLogViewModel(get(), get(), get()) }
-    viewModel { TimelineViewModel(get(), get()) }
+    viewModel { TimelineViewModel(get(), get(), get()) }
     viewModel { WhatsAppViewModel(get(), get()) }
     // Sharing: who may see my location, and who is alerting me
     viewModel { AlertSourcesViewModel(get(), get(), get(), get()) }

@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -44,11 +46,33 @@ import java.util.Locale
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TimelineScreen(viewModel: TimelineViewModel = koinViewModel()) {
+fun TimelineScreen(
+    // Set when a linked person's timeline is being read instead of this phone's
+    // own; the place id narrows it to the one place they are trusted with.
+    viewingUid: String? = null,
+    viewingName: String = "",
+    onlyPlaceId: String? = null,
+    onBack: (() -> Unit)? = null,
+    viewModel: TimelineViewModel = koinViewModel(),
+) {
     val uiState by viewModel.uiState.collectAsState()
+    LaunchedEffect(viewingUid, onlyPlaceId) {
+        if (viewingUid != null) viewModel.showAccount(viewingUid, onlyPlaceId)
+    }
 
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Text("Timeline", style = MaterialTheme.typography.headlineMedium)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (onBack != null) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                }
+                Spacer(Modifier.width(4.dp))
+            }
+            Text(
+                if (viewingUid == null) "Timeline" else "${viewingName.ifBlank { "Their" }} timeline",
+                style = MaterialTheme.typography.headlineMedium,
+            )
+        }
         Spacer(Modifier.height(10.dp))
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
             TimelineWindow.entries.forEachIndexed { index, option ->

@@ -6,6 +6,7 @@ import com.spotwire.app.domain.model.AccountLink
 import com.spotwire.app.domain.model.LinkPermissions
 import com.spotwire.app.domain.model.LinkState
 import com.spotwire.app.domain.model.LocationRequest
+import com.spotwire.app.domain.model.Place
 import com.spotwire.app.domain.repository.LinkRepository
 import com.spotwire.app.domain.repository.UserRepository
 import com.spotwire.app.domain.usecase.links.InviteLinkUseCase
@@ -27,6 +28,9 @@ data class LinkedAccountsUiState(
     // uid of the account whose location was asked for, plus the answer so far.
     val awaitingLocationFor: String? = null,
     val locationAnswer: String? = null,
+    // My own places, so each link can be trusted with one of them rather than
+    // with everywhere I go.
+    val places: List<Place> = emptyList(),
 )
 
 class LinkedAccountsViewModel(
@@ -53,6 +57,7 @@ class LinkedAccountsViewModel(
             }
             myUid = user.uid
             myName = user.name
+            _uiState.value = _uiState.value.copy(places = user.places)
             linkRepo.getLinks(user.uid)
                 .onEach { links ->
                     _uiState.value = _uiState.value.copy(

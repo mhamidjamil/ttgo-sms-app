@@ -21,11 +21,13 @@ import com.spotwire.app.presentation.components.rememberDefaultCountry
 import com.spotwire.app.domain.model.AccountLink
 import com.spotwire.app.domain.model.LinkPermissions
 import com.spotwire.app.domain.model.LinkState
+import com.spotwire.app.domain.model.Place
 import org.koin.androidx.compose.koinViewModel
 
 @Composable
 fun LinkedAccountsScreen(
     onBack: () -> Unit,
+    onViewTimeline: (AccountLink) -> Unit = {},
     viewModel: LinkedAccountsViewModel = koinViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -38,6 +40,7 @@ fun LinkedAccountsScreen(
         onRequestLocation = viewModel::requestLocation,
         onDismissLocationAnswer = viewModel::dismissLocationAnswer,
         onClearMessages = viewModel::clearMessages,
+        onViewTimeline = onViewTimeline,
         onBack = onBack,
     )
 }
@@ -53,6 +56,7 @@ private fun LinkedAccountsContent(
     onRequestLocation: (AccountLink) -> Unit,
     onDismissLocationAnswer: () -> Unit,
     onClearMessages: () -> Unit,
+    onViewTimeline: (AccountLink) -> Unit = {},
     onBack: () -> Unit,
 ) {
     var showInviteDialog by remember { mutableStateOf(false) }
@@ -161,6 +165,8 @@ private fun LinkedAccountsContent(
                             onSetPermissions = { onSetPermissions(link, it) },
                             onRemove = { pendingRemoval = link },
                             onRequestLocation = { onRequestLocation(link) },
+                            onViewTimeline = { onViewTimeline(link) },
+                            places = uiState.places,
                         )
                     }
                 }
@@ -177,6 +183,8 @@ private fun LinkCard(
     onSetPermissions: (LinkPermissions) -> Unit,
     onRemove: () -> Unit,
     onRequestLocation: () -> Unit,
+    onViewTimeline: () -> Unit = {},
+    places: List<Place> = emptyList(),
 ) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
@@ -250,11 +258,50 @@ private fun LinkCard(
                         enabled = !isBusy,
                         onChange = { onSetPermissions(link.permissions.copy(requestLocation = it)) },
                     )
+                    // A guardian's switch. Turning it on hands over every place
+                    // and every stay, so the per-place rows below are switched
+                    // off with it: naming single places would say nothing they
+                    // could not already see.
+                    PermissionRow(
+                        label = "See my whole timeline",
+                        checked = link.permissions.visitLog,
+                        enabled = !isBusy,
+                        onChange = {
+                            onSetPermissions(link.permissions.copy(
+                                visitLog = it,
+                                visitLogPlaceIds = if (it) emptyList() else link.permissions.visitLogPlaceIds,
+                            ))
+                        },
+                    )
+                    if (!link.permissions.visitLog && places.isNotEmpty()) {
+                        Text(
+                            "Or only these places",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        )
+                        places.forEach { place ->
+                            val allowed = place.id in link.permissions.visitLogPlaceIds
+                            PermissionRow(
+                                label = place.label.ifBlank { place.id },
+                                checked = allowed,
+                                enabled = !isBusy,
+                                onChange = { on ->
+                                    val ids = if (on) link.permissions.visitLogPlaceIds + place.id
+                                        else link.permissions.visitLogPlaceIds - place.id
+                                    onSetPermissions(link.permissions.copy(visitLogPlaceIds = ids))
+                                },
+                            )
+                        }
+                    }
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = onRequestLocation, enabled = !isBusy) {
-                            Text("Get Current Location")
+                            Text("Where are they")
                         }
+                        OutlinedButton(onClick = onViewTimeline, enabled = !isBusy) {
+                            Text("Their timeline")
+                        }
+                        Spacer(Modifier.weight(1f))
                         OutlinedButton(
                             onClick = onRemove,
                             enabled = !isBusy,
@@ -264,7 +311,7 @@ private fun LinkCard(
                         ) { Text("Remove") }
                     }
                     Text(
-                        "Asking works only if they gave you that permission on their side.",
+                        "Both work only if they gave you that permission on their side.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                     )

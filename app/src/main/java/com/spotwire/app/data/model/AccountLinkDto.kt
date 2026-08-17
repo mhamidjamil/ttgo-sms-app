@@ -17,6 +17,12 @@ data class AccountLinkDto(
     var permAutoUpdates: Boolean = false,
     @get:PropertyName("perm_request_location") @set:PropertyName("perm_request_location")
     var permRequestLocation: Boolean = false,
+    // Absent on every link written before the timeline existed, and the mapper
+    // leaves the default in place, so nothing has to be migrated.
+    @get:PropertyName("perm_visit_log") @set:PropertyName("perm_visit_log")
+    var permVisitLog: Boolean = false,
+    @get:PropertyName("visit_log_place_ids") @set:PropertyName("visit_log_place_ids")
+    var visitLogPlaceIds: List<String> = emptyList(),
 ) {
     fun toDomain() = AccountLink(
         otherUid = otherUid,
@@ -26,6 +32,8 @@ data class AccountLinkDto(
         permissions = LinkPermissions(
             autoLocationUpdates = permAutoUpdates,
             requestLocation = permRequestLocation,
+            visitLog = permVisitLog,
+            visitLogPlaceIds = visitLogPlaceIds,
         ),
     )
 }

@@ -18,4 +18,14 @@ sealed class Screen(val route: String) {
     data object WhatsApp : Screen("whatsapp")
     data object AlertSources : Screen("alert_sources")
     data object LinkedAccounts : Screen("linked_accounts")
+
+    // A linked person's timeline, opened from their card. The name is carried in
+    // the route because the reader is only allowed the stays themselves, never
+    // the account they came from.
+    data object SharedTimeline : Screen("shared_timeline/{uid}/{name}/{placeId}") {
+        fun route(uid: String, name: String, placeId: String?) =
+            "shared_timeline/$uid/${name.ifBlank { "Their" }}/${placeId ?: ALL_PLACES}"
+
+        const val ALL_PLACES = "all"
+    }
 }

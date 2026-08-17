@@ -6,6 +6,7 @@ import com.spotwire.app.domain.model.AccountLink
 import com.spotwire.app.domain.model.LinkPermissions
 import com.spotwire.app.domain.model.LinkState
 import com.spotwire.app.domain.model.LocationRequest
+import com.spotwire.app.domain.model.PlaceVisit
 import com.spotwire.app.domain.repository.LinkRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -82,4 +83,7 @@ class LinkRepositoryImpl(private val firestore: FirestoreDataSource) : LinkRepos
 
     override suspend fun answerRequest(uid: String, requestId: String, status: String, answer: String) =
         firestore.answerLocationRequest(uid, requestId, status, answer)
+
+    override fun visitsOf(otherUid: String, sinceMillis: Long, placeId: String?): Flow<List<PlaceVisit>> =
+        firestore.getPlaceVisits(otherUid, sinceMillis, placeId).map { list -> list.map { it.toDomain() } }
 }

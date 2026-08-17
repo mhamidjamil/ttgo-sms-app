@@ -292,10 +292,34 @@ service cloud.firestore {
     // anybody else can be shown. The place NAME is copied onto every row because
     // the user document that holds the place list is owner-only, so a reader
     // handed an id alone could never turn it into a name.
-    // Owner-only for now; the grants that let a guardian read these arrive with
-    // the sharing change.
+    //
+    // Somebody else may read them only through a grant that lives on MY link
+    // document (setLinkPermissions FirestoreDataSource.kt:916), never on
+    // theirs, so taking it back is a write to my own document and they can
+    // never write it themselves — the links block above deliberately keeps
+    // every perm_* field out of what the other party may touch.
+    //
+    // A guardian's condition does not depend on the row, so they may list the
+    // whole subcollection. A per-place contact's does, so their query has to
+    // carry whereEqualTo('place_id', ...): a list is only allowed when the rule
+    // holds for EVERY row the query could return, so an unfiltered read is
+    // refused outright rather than quietly trimmed.
     match /ttgo_users/{uid}/place_visits/{visitId} {
-      allow read, write: if isOwner(uid);
+      // exists() first: a get() on a missing document returns null and null.data
+      // is an evaluation error rather than a false, which fails closed either
+      // way but is unreadable in the console. Same reason as ownsVerifiedNumber.
+      function grant() {
+        let path = /databases/$(database)/documents/ttgo_users/$(uid)/links/$(request.auth.uid);
+        return exists(path) ? get(path).data : null;
+      }
+
+      allow read: if isOwner(uid) ||
+                     (isAppUser() && grant() != null &&
+                      grant().get('state', '') == 'active' &&
+                      (grant().get('perm_visit_log', false) == true ||
+                       resource.data.get('place_id', '') in
+                         grant().get('visit_log_place_ids', [])));
+      allow create, update, delete: if isOwner(uid);
     }
 
     // One side of an account pairing. Both sides are written at once

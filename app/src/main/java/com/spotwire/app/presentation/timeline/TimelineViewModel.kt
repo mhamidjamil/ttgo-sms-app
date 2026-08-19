@@ -15,16 +15,15 @@ import kotlinx.coroutines.withContext
 import java.util.Calendar
 
 /**
- * One stretch of the day as the page draws it. A gap in the record is a row of
- * its own rather than a silence, because "nothing was watching between two and
- * six" is an answer and a blank is not.
+ * One stretch of the day as the page draws it. A gap in the record is simply not
+ * drawn: every row carries its own start time, so a jump from one row to the
+ * next is still visible.
  */
 data class Stretch(
     val placeId: String,
     val label: String,
     val from: Long,
     val to: Long,
-    val tracked: Boolean = true,
 ) {
     val millis: Long get() = to - from
 }
@@ -39,12 +38,8 @@ data class TimelineUiState(
     val isLoading: Boolean = true,
     val window: TimelineWindow = TimelineWindow.TODAY,
     val stretches: List<Stretch> = emptyList(),
-    // Place label to time spent there, longest first. Untracked time is left
-    // out: it is reported on its own line, because folding it into the chart
-    // would make an evening with the WiFi off look like the biggest place of
-    // the day.
+    // Place label to time spent there, longest first.
     val totals: List<Pair<String, Long>> = emptyList(),
-    val untrackedMillis: Long = 0L,
     val error: String? = null,
 )
 
@@ -77,10 +72,9 @@ class TimelineViewModel(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, window = window, error = null)
             val from = startOf(window)
-            val now = System.currentTimeMillis()
             val theirUid = otherUid
             if (theirUid != null) {
-                showStretches(fromAccount(theirUid, from, now, onlyPlaceId), window)
+                showStretches(fromAccount(theirUid, from, onlyPlaceId), window)
                 return@launch
             }
             // For my own timeline the phone's copy is the source: it is
@@ -90,8 +84,8 @@ class TimelineViewModel(
             val stays = withContext(Dispatchers.IO) { visitLog.stays() }
                 .filter { it.to >= from }
                 .sortedBy { it.from }
-            val stretches = if (stays.isNotEmpty()) fill(stays, from, now)
-                else fromAccount(userRepo.currentFirebaseUser()?.uid, from, now, null)
+            val stretches = if (stays.isNotEmpty()) fill(stays, from)
+                else fromAccount(userRepo.currentFirebaseUser()?.uid, from, null)
             showStretches(stretches, window)
         }
     }
@@ -101,11 +95,10 @@ class TimelineViewModel(
             isLoading = false,
             window = window,
             stretches = stretches.reversed(),
-            totals = stretches.filter { it.tracked }
+            totals = stretches
                 .groupBy { it.label }
                 .map { (label, rows) -> label to rows.sumOf { it.millis } }
                 .sortedByDescending { it.second },
-            untrackedMillis = stretches.filterNot { it.tracked }.sumOf { it.millis },
         )
     }
 
@@ -117,7 +110,6 @@ class TimelineViewModel(
     private suspend fun fromAccount(
         uid: String?,
         from: Long,
-        now: Long,
         placeId: String?,
     ): List<Stretch> {
         if (uid == null) return emptyList()
@@ -135,32 +127,18 @@ class TimelineViewModel(
         if (visits.isEmpty()) return emptyList()
         val stays = visits.map { VisitLogStore.Stay(it.placeId, it.label, it.startedAt, it.endedAt) }
             .sortedBy { it.from }
-        // Somebody trusted with one place is shown only the stays at it. Filling
-        // the rest of the day in as untracked would be a lie: it was tracked,
-        // they are simply not allowed to see it.
-        if (placeId != null) return stays.map { Stretch(it.placeId, it.label, it.from, it.to) }
-        return fill(stays, from, now)
+        // Somebody trusted with one place is shown only the stays at it, which
+        // is the same drawing job as a whole day of them.
+        return fill(stays, from)
     }
 
-    /**
-     * Turns the stays into an unbroken run of stretches, so every minute of the
-     * window is accounted for either by a place or by an admission that nothing
-     * was watching.
-     */
-    private fun fill(stays: List<VisitLogStore.Stay>, from: Long, now: Long): List<Stretch> = buildList {
-        var cursor = from
-        stays.forEach { stay ->
+    // Clamped into the window, so a stay that began before it does not stretch
+    // the chart back past midnight.
+    private fun fill(stays: List<VisitLogStore.Stay>, from: Long): List<Stretch> =
+        stays.map { stay ->
             val start = maxOf(stay.from, from)
-            if (start - cursor >= GAP_WORTH_SHOWING_MILLIS) {
-                add(Stretch(UNTRACKED_ID, "Not tracked", cursor, start, tracked = false))
-            }
-            add(Stretch(stay.placeId, stay.label, maxOf(cursor, start), maxOf(stay.to, start)))
-            cursor = maxOf(cursor, stay.to)
+            Stretch(stay.placeId, stay.label, start, maxOf(stay.to, start))
         }
-        if (now - cursor >= GAP_WORTH_SHOWING_MILLIS) {
-            add(Stretch(UNTRACKED_ID, "Not tracked", cursor, now, tracked = false))
-        }
-    }
 
     private fun startOf(window: TimelineWindow): Long = Calendar.getInstance().apply {
         set(Calendar.HOUR_OF_DAY, 0)
@@ -169,12 +147,4 @@ class TimelineViewModel(
         set(Calendar.MILLISECOND, 0)
         add(Calendar.DAY_OF_YEAR, -(window.days - 1))
     }.timeInMillis
-
-    companion object {
-        const val UNTRACKED_ID = "__untracked"
-        // Checks are minutes apart at best, so a short hole is the cadence
-        // rather than a gap in what is known, and drawing it would fill the page
-        // with rows nobody needs.
-        private const val GAP_WORTH_SHOWING_MILLIS = 20 * 60 * 1000L
-    }
 }

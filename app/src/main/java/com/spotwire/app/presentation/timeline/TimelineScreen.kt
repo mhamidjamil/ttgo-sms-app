@@ -39,10 +39,7 @@ import java.util.Locale
  * Where the day went: how the time split across the saved places, and then the
  * same day read top to bottom as the run of stops that produced it.
  *
- * Everywhere that was never saved is one slice called "Unknown place", and any
- * stretch nobody was watching is kept out of the chart and named underneath it,
- * so the percentages add up instead of quietly hiding a night with the radios
- * switched off.
+ * Everywhere that was never saved is one slice called "Unknown place".
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -167,13 +164,6 @@ private fun TimeSpentCard(uiState: TimelineUiState, colorByLabel: Map<String, Co
                     }
                     Spacer(Modifier.height(4.dp))
                 }
-                if (uiState.untrackedMillis > 0L) {
-                    Text(
-                        "Not tracked: ${duration(uiState.untrackedMillis)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                    )
-                }
             }
         }
     }
@@ -223,15 +213,14 @@ private fun StretchRow(stretch: Stretch, color: Color) {
             modifier = Modifier.width(84.dp),
         )
         Box(
-            Modifier.padding(top = 4.dp).size(10.dp).clip(CircleShape)
-                .background(if (stretch.tracked) color else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
+            Modifier.padding(top = 4.dp).size(10.dp).clip(CircleShape).background(color)
         )
         Spacer(Modifier.width(10.dp))
         Column {
             Text(
                 stretch.label,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (stretch.tracked) 0.9f else 0.5f),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
             )
             Text(
                 // "About", because a check runs every few minutes at best and
@@ -284,7 +273,6 @@ private fun TimelinePreview() {
                     Stretch("office", "Office", now - 8 * hour, now - 2 * hour),
                 ),
                 totals = listOf("Office" to 6 * hour, "Home" to hour, "Unknown place" to hour),
-                untrackedMillis = 3 * hour,
             )
         )
     }

@@ -40,13 +40,19 @@ class VisitLogStore(context: Context) {
         // Same place, and observation never lapsed: this is the same stay, so
         // push its end forward rather than starting another one.
         if (last != null && last.placeId == placeId && at - last.to <= GAP_THAT_ENDS_A_STAY_MILLIS) {
-            writeAll(all.dropLast(1) + last.copy(to = at))
+            writeAll(all.dropLast(1) + last.copy(to = maxOf(last.to, at)))
             return null
         }
-        writeAll(all + Stay(placeId, label, at, at))
+        // A fence crossing is dated from the fix that crossed it, which can be
+        // a little earlier than the last sweep's note. The newer evidence wins
+        // the overlap, or two stays would claim the same minutes.
+        val settled = if (last != null && at < last.to) {
+            all.dropLast(1) + last.copy(to = maxOf(last.from, at))
+        } else all
+        writeAll(settled + Stay(placeId, label, at, at))
         // A stay seen exactly once is a single sample, not somewhere the phone
         // spent time, so it is not worth putting on the account.
-        return last?.takeIf { it.millis >= WORTH_KEEPING_MILLIS }
+        return settled.lastOrNull()?.takeIf { it.millis >= WORTH_KEEPING_MILLIS }
     }
 
     /** Newest first, nothing older than the retention window. */
@@ -95,10 +101,12 @@ class VisitLogStore(context: Context) {
         const val UNKNOWN_LABEL = "Unknown place"
 
         private const val RETENTION_MILLIS = 7 * 24 * 60 * 60 * 1000L
-        // Checks run as rarely as every fifteen minutes, and further apart than
-        // that means nobody was watching, so the stay ends where it was last
-        // seen rather than swallowing the silence.
-        private const val GAP_THAT_ENDS_A_STAY_MILLIS = 20 * 60 * 1000L
+        // Checks land as rarely as every fifteen minutes once the phone has
+        // settled, and Doze stretches that further: one desk produced gaps of
+        // half an hour, each of which cut the evening into under-a-minute
+        // fragments. An hour of silence is where "probably still there" stops
+        // being the safest reading.
+        private const val GAP_THAT_ENDS_A_STAY_MILLIS = 60 * 60 * 1000L
         // Under this a stay is a passing reading, not time spent somewhere.
         private const val WORTH_KEEPING_MILLIS = 5 * 60 * 1000L
     }

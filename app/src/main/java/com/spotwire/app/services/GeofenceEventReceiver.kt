@@ -30,10 +30,14 @@ class GeofenceEventReceiver : BroadcastReceiver() {
             return
         }
         val appContext = context.applicationContext
-        // The event carries no wall clock of its own, and it lands inside the
-        // fence's one-minute responsiveness window, so the moment it arrives is
-        // as close to the crossing as the message timestamp can get.
-        val at = System.currentTimeMillis()
+        // The location fix that crossed the fence carries its own wall clock,
+        // and delivery can run minutes behind it while the phone dozes, so the
+        // fix's time is the crossing time. Delivery time is only the fallback,
+        // and the fix's clock is trusted only when it reads sane: not in the
+        // future, and not so old that it describes some earlier trip.
+        val now = System.currentTimeMillis()
+        val at = event.triggeringLocation?.time
+            ?.takeIf { it in (now - 30 * 60 * 1000L)..now } ?: now
         val transition = event.geofenceTransition
         event.triggeringGeofences.orEmpty().forEach { fence ->
             val placeId = fence.requestId

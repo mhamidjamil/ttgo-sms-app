@@ -466,6 +466,11 @@ class ArrivalService : Service() {
         }
         geofenceEnteredAt[placeId] = enteredAt
         missedFenceSession[placeId] = missedFence
+        // The miss counter has been growing for as long as this place was out
+        // of range, so without this reset the fresh visit is one silent sweep
+        // from being called departed before its WiFi was ever close enough to
+        // hear.
+        missedSweeps.remove(placeId)
         prefs.setPresence(placeId, presence.copy(
             state = PresenceState.APPROACHING, visitStartedAt = enteredAt, stationaryMillis = 0L,
         ))
@@ -708,6 +713,20 @@ class ArrivalService : Service() {
             }
 
             if (!present) {
+                // A fence crossing was observed minutes ago, so silence from
+                // this place's WiFi means "not deep enough inside yet", never
+                // "left". Ending the session here is what re-dated visits to
+                // whenever the WiFi finally spoke, so the arrival message named
+                // the confirmation time instead of the arrival. Once the grace
+                // runs out the ordinary departure rules take over, so a fence
+                // sitting at wrong coordinates still cannot hold a visit open.
+                val fenceEnteredAt = geofenceEnteredAt[place.id]
+                if (presence.state == PresenceState.APPROACHING &&
+                    fenceEnteredAt != null && missedFenceSession[place.id] != true &&
+                    System.currentTimeMillis() - fenceEnteredAt < FENCE_SILENCE_GRACE_MILLIS
+                ) {
+                    return@forEach
+                }
                 // Leaving has to be seen, not assumed. A power cut leaves the
                 // neighbours' networks exactly where they were, so the
                 // surroundings barely move and this correctly refuses to call it
@@ -775,9 +794,14 @@ class ArrivalService : Service() {
             // minute visit is nearly all still time; driving past contains none,
             // so a short setting stays safe instead of becoming trigger-happy.
             val stationary = presence.stationaryMillis + if (started) 0L else stillSinceLastSweep
+            // A visit that begins inside an open fence session began at the
+            // crossing, not at the first sweep that heard the WiFi: the alert
+            // has to name the time the person actually got there.
             val running = presence.copy(
                 state = PresenceState.APPROACHING,
-                visitStartedAt = if (started) System.currentTimeMillis() else presence.visitStartedAt,
+                visitStartedAt = if (started) {
+                    geofenceEnteredAt[place.id] ?: System.currentTimeMillis()
+                } else presence.visitStartedAt,
                 stationaryMillis = stationary,
             )
             prefs.setPresence(place.id, running)
@@ -880,10 +904,16 @@ class ArrivalService : Service() {
             saved.firstOrNull { prefs.getPresence(it.id).state == PresenceState.APPROACHING }
         } else null
         // The timeline records where the phone IS, which is not the same
-        // question as whether an alert may go out. The confirmed answer is used
-        // when there is one; the loudest place in range covers the places that
-        // never reach it, such as one whose alerts are switched off.
-        notePosition(uid, here ?: confirming ?: winner, visitLog, userRepo)
+        // question as whether an alert may go out. What is audible right now
+        // outranks a remembered visit: the old place stays marked here until
+        // its departure is fully observed, minutes after genuinely arriving
+        // somewhere else, and those minutes used to be written to the timeline
+        // as a flip back to the place just left.
+        val fenceVisit = user.places.filter { place ->
+            geofenceEnteredAt.containsKey(place.id) &&
+                prefs.getPresence(place.id).state != PresenceState.AWAY
+        }.maxByOrNull { geofenceEnteredAt[it.id] ?: 0L }
+        notePosition(uid, winner ?: fenceVisit ?: here ?: confirming, visitLog, userRepo)
         // Written before this: the stop takes the process with it, and a sweep
         // that has just worked out where the phone is should say so first.
         if (stopIfOnlyFencesAreNeeded(user.places)) return
@@ -1137,6 +1167,11 @@ class ArrivalService : Service() {
         // Indoors a fix can wait for satellites that never arrive, and the
         // decision cannot sit there forever with nothing watching.
         private const val LOCATION_FIX_TIMEOUT_MILLIS = 15_000L
+        // How long a fence-opened session may sit in WiFi silence before the
+        // ordinary departure rules apply to it. Long enough to walk from the
+        // fence line to wherever the router is audible, short enough that a
+        // misplaced fence cannot pin a visit open all afternoon.
+        private const val FENCE_SILENCE_GRACE_MILLIS = 10 * 60 * 1000L
         // How often a live request is answered. A fix costs battery and the WiFi
         // list only changes as fast as the sweeps refresh it, so anything
         // quicker would send the same reading twice and charge for it.

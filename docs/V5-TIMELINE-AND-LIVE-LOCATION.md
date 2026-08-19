@@ -21,8 +21,8 @@ Two ids are not real places:
 - `__unknown` / "Unknown place": somewhere that was never saved. It is a stay
   in its own right, because "he was somewhere for two hours" is an answer.
 - Nothing at all is written when the phone cannot look (WiFi off, location off,
-  permission gone). The **gap** is the honest record, and the Timeline page
-  fills gaps longer than twenty minutes with a "Not tracked" row.
+  permission gone). The **gap** is the honest record; the page simply does not
+  draw it, and each row carries its own start time so a jump is still visible.
 
 ### Where the samples come from
 
@@ -33,9 +33,10 @@ Two ids are not real places:
 | `ArrivalService.onGeofenceExit` | a confirmed departure | closes the stay |
 | `ArrivalWatchdogReceiver` | the fifteen-minute alarm | in geofence mode the service is stopped most of the time; without this a fenced phone records a blank week |
 
-The sweep uses `here ?: confirming ?: winner`. The first two are the presence
-machine's settled answer; `winner` is the fallback that covers a place the
-machine never advances, such as one whose alerts are switched off.
+The sweep prefers what is audible right now over a remembered visit (winner
+first, then an open fence session, then the presence machine's answer): the old
+place stays marked here for minutes after genuinely arriving somewhere else, and
+those minutes used to be written as a flip back to the place just left.
 
 The presence state machine was deliberately **not** used as the source. It is an
 *alert* state machine: a place with alerts off returns before any presence write,
@@ -70,8 +71,7 @@ per place with the legend beside it (not under it: that would leave the right
 half of the card empty), then the day as a vertical rail with the clock time on
 the left of each dot and the place on the right.
 
-Untracked time is **excluded from the chart** and named on a line under it. Left
-in, a night with the radios off would be the largest slice of the day.
+Untracked time never appears: not in the chart and not on the rail.
 
 Segment boundaries are accurate to a sweep interval at best and to a Doze window
 at worst, which is why every duration on the page reads "about".

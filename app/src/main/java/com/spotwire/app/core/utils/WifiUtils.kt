@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.net.wifi.WifiManager
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.spotwire.app.domain.model.Place
@@ -15,6 +16,9 @@ private const val TAG = "SpotwireWifi"
 // Android hands back this placeholder instead of the real connected BSSID when
 // the caller has no location permission, which is not a usable answer either.
 private const val NO_BSSID = "02:00:00:00:00:00"
+
+// How old a cached reading may be and still count as "here, now".
+private const val CACHED_SCAN_MAX_AGE_MILLIS = 10 * 60 * 1000L
 
 /**
  * Every access point the phone can HEAR right now, connected or not, lowercased.
@@ -73,7 +77,11 @@ fun cachedVisibleAccessPoints(context: Context): Map<String, Int> {
     if (!canScanWifi(context)) return emptyMap()
     val wm = context.applicationContext.getSystemService(WifiManager::class.java) ?: return emptyMap()
     return try {
-        wm.scanResults.mapNotNull { result ->
+        // Only readings young enough to still describe where the phone is. The
+        // cache survives a walk across town, and a reading from the last place
+        // used to put the phone back there a quarter of an hour after leaving.
+        val floorMicros = (SystemClock.elapsedRealtime() - CACHED_SCAN_MAX_AGE_MILLIS) * 1000
+        wm.scanResults.filter { it.timestamp >= floorMicros }.mapNotNull { result ->
             result.BSSID?.lowercase()?.let { it to result.level }
         }.toMap()
     } catch (e: Exception) {

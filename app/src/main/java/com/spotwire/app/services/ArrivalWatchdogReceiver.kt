@@ -132,15 +132,24 @@ class ArrivalWatchdogReceiver : BroadcastReceiver(), KoinComponent {
      * to wherever it last was is not.
      */
     private suspend fun noteWhereabouts(context: Context, places: List<Place>) {
+        // The running service samples from scans it asked for itself. A second
+        // writer working from the cache would contradict it with older readings,
+        // which is how the timeline flipped back to a place already left.
+        if (ArrivalService.isRunning) return
         val uid = userRepo.currentFirebaseUser()?.uid ?: return
         if (!canScanWifi(context)) return
         val visible = cachedVisibleAccessPoints(context)
         if (visible.isEmpty()) return
         // The same rule the sweep uses, so the two never disagree about where
-        // the phone was at the same minute. A place with no saved networks can
-        // only be reported by its fence, which starts the service instead.
-        val winner = resolvePresence(places, visible).winner
-        runCatching { ArrivalService.notePosition(uid, winner, visitLog, userRepo) }
+        // the phone was at the same minute. A place mid-visit is better
+        // evidence than a cache that recognises nothing: a place with no saved
+        // networks has nothing to hear at all, and only its fence knows.
+        val visiting = places.firstOrNull {
+            val state = prefs.getPresence(it.id).state
+            state == PresenceState.HERE || state == PresenceState.APPROACHING
+        }
+        val at = resolvePresence(places, visible).winner ?: visiting
+        runCatching { ArrivalService.notePosition(uid, at, visitLog, userRepo) }
             .onFailure { Log.w(TAG, "Could not record where the phone is", it) }
     }
 

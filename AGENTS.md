@@ -89,5 +89,6 @@ If `~/.claude/knowledge/` is missing on this machine, clone it:
 - Toolchain is AGP 8.9.1 / Gradle 8.11.1 / JDK 17, compiling against SDK 36. `targetSdk` must stay at 36 or above: Play refuses a lower target for new apps and updates from 31 August 2026.
 - Main build command: `./run-build.sh assembleDebug` (it pins JAVA_HOME/ANDROID_HOME for this repo only). `./run-build.sh bundleRelease` produces the signed Play bundle.
 - There are no Kotlin test source sets. The Firestore rules DO have tests: they run on the emulator, which needs JDK 21 or newer, unlike the app build.
+- Landing a `versionCode` bump on `main` starts `.github/workflows/release.yml`: it builds the signed bundle and puts it on the Play production track **as a draft**, so nothing ships until Hamid publishes it by hand. The hand-written note at `store/whatsnew-<versionCode>.txt` must exist and stay under 500 characters, or the workflow stops before it builds.
 - `docs/PLAY-RELEASE.md` is the release checklist and the record of what is still deliberately open.
 - Important docs: `docs/ARCHITECTURE.md` for flows and design decisions, `docs/FIREBASE-SCHEMA.md` for Firestore fields, and `docs/V2-ARRIVAL-FEATURE.md` for arrival behavior.

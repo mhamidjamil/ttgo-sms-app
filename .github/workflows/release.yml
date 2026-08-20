@@ -1,0 +1,177 @@
+name: Release to Play Store
+
+# Raising versionCode in app/build.gradle.kts and landing it on main is the whole
+# release trigger. The build lands in the production track as a DRAFT: nothing
+# reaches a phone until Hamid opens the console, sets the countries and presses
+# publish himself.
+
+on:
+  push:
+    branches: [main]
+    paths: [app/build.gradle.kts]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: play-release
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Did the build number change?
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.version.outputs.release }}
+      name: ${{ steps.version.outputs.name }}
+      code: ${{ steps.version.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: version
+        run: |
+          set -euo pipefail
+          code=$(grep -m1 -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts)
+          name=$(grep -m1 -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+          if [ "${{ github.event_name }}" = 'workflow_dispatch' ]; then
+            echo "Manual run, releasing $name ($code) without the build-number check."
+            echo 'release=true' >> "$GITHUB_OUTPUT"
+          else
+            before='${{ github.event.before }}'
+            if [ -z "$before" ] || ! git cat-file -e "$before^{commit}" 2>/dev/null; then
+              before=$(git rev-parse HEAD~1)
+            fi
+            previous=$(git show "$before:app/build.gradle.kts" | grep -m1 -oP 'versionCode\s*=\s*\K[0-9]+')
+            if [ "$code" = "$previous" ]; then
+              echo "Build number is still $code, nothing to release."
+              echo 'release=false' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Build number went $previous to $code, releasing $name."
+            echo 'release=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      # The note is product copy read by somebody standing at the install button,
+      # so it is written by hand and committed with the build number. Checking it
+      # here rather than after the build fails in seconds instead of minutes.
+      - name: Check the release note
+        if: steps.version.outputs.release == 'true'
+        run: |
+          set -euo pipefail
+          notes="store/whatsnew-${{ steps.version.outputs.code }}.txt"
+          if [ ! -s "$notes" ]; then
+            echo "::error::No release note at $notes. Write one before raising the build number."
+            exit 1
+          fi
+          chars=$(wc -m < "$notes")
+          if [ "$chars" -gt 500 ]; then
+            echo "::error::The release note is $chars characters. The Play Store limit is 500."
+            exit 1
+          fi
+          echo "Release note ($chars characters):"
+          cat "$notes"
+
+  release:
+    name: Build and upload a draft
+    needs: check
+    if: needs.check.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Everything the build needs that is deliberately kept out of git. There is
+      # no local.properties here: every value it carries has the shipping default
+      # in app/build.gradle.kts, and the gateway addresses are read from Firestore
+      # at runtime anyway.
+      - name: Restore the files that are kept out of git
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GOOGLE_SERVICES_JSON" > app/google-services.json
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > upload.jks
+          {
+            echo "storeFile=upload.jks"
+            echo "storePassword=$ANDROID_KEYSTORE_PASSWORD"
+            echo "keyAlias=$ANDROID_KEY_ALIAS"
+            echo "keyPassword=$ANDROID_KEY_PASSWORD"
+          } > keystore.properties
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build the signed app bundle
+        run: ./gradlew bundleRelease --no-daemon
+
+      - name: Fail if the bundle came out unsigned
+        run: |
+          set -euo pipefail
+          if unzip -l app/build/outputs/bundle/release/app-release.aab | grep -q 'META-INF/.*\.RSA'; then
+            echo "Bundle is signed."
+          else
+            echo "::error::The bundle is unsigned, so the upload key never reached the build."
+            exit 1
+          fi
+
+      - name: Collect the release note for the store
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/whatsnew"
+          cp "store/whatsnew-${{ needs.check.outputs.code }}.txt" "$RUNNER_TEMP/whatsnew/whatsnew-en-US"
+
+      # A draft, on purpose: the countries the app is offered in and the final
+      # look of the listing are decided in the console before anything ships.
+      - name: Upload a draft release to the production track
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.spotwire.app
+          releaseFiles: app/build/outputs/bundle/release/app-release.aab
+          releaseName: ${{ needs.check.outputs.name }} (${{ needs.check.outputs.code }})
+          track: production
+          status: draft
+          whatsNewDirectory: ${{ runner.temp }}/whatsnew
+          mappingFile: app/build/outputs/mapping/release/mapping.txt
+
+      # The repository is public, so the bundle stays a build artifact rather than
+      # a downloadable asset on the release.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-bundle-${{ needs.check.outputs.code }}
+          path: app/build/outputs/bundle/release/app-release.aab
+          retention-days: 30
+
+      - name: Tag the commit and record the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ needs.check.outputs.name }}+${{ needs.check.outputs.code }}
+        run: |
+          set -euo pipefail
+          git tag "$TAG"
+          git push origin "$TAG"
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file "store/whatsnew-${{ needs.check.outputs.code }}.txt"
+
+      - name: Say what is waiting in the console
+        run: |
+          echo "### Draft is waiting in Play Console" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Spotwire ${{ needs.check.outputs.name }} (build ${{ needs.check.outputs.code }}) is a draft on the production track." >> "$GITHUB_STEP_SUMMARY"
+          echo "Nothing reaches a phone until it is reviewed and published by hand." >> "$GITHUB_STEP_SUMMARY"

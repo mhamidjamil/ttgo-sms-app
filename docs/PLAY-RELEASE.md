@@ -2,7 +2,26 @@
 
 What the repository now does for you, and what only you can do in the console.
 
-## Build the upload artifact
+## Releasing is automatic, publishing is not
+
+Raising `versionCode` in `app/build.gradle.kts` and landing it on `main` is the
+whole trigger. `.github/workflows/release.yml` then builds the signed bundle,
+uploads it to the **production track as a draft**, attaches the hand-written
+release note, tags the commit and records a GitHub release. It can also be run
+by hand from the Actions tab, which skips the build-number check.
+
+Nothing reaches a phone from that. The draft waits in the console until it is
+reviewed and published by hand, which is where the countries the app is offered
+in and the final listing are decided.
+
+The workflow reads six repository secrets: the upload keystore as base64 and its
+three passwords, `app/google-services.json`, and the Play service account key.
+The service account is the shared one that also publishes PakSehat; Spotwire was
+added to it in the Play Console. It builds without a `local.properties`, because
+every value that file carries has its shipping default in `app/build.gradle.kts`
+and the gateway addresses are read from Firestore at runtime anyway.
+
+## Build the upload artifact by hand
 
 ```
 ./run-build.sh bundleRelease
@@ -37,11 +56,14 @@ serves to users):
 
 ## Release notes
 
-Written by hand, one file per build, at `store/whatsnew-<versionCode>.txt`. Play
-allows 500 characters per language; paste it into the console's "What's new"
-panel. It is product copy read by somebody standing next to the install button,
-so it never mentions version numbers, internal vocabulary, or anything that was
-just fixed for security reasons.
+Written by hand, one file per build, at `store/whatsnew-<versionCode>.txt`, and
+uploaded with the bundle. Play allows 500 characters per language, and the
+workflow refuses to release without a note or with one over that limit, before
+it spends a runner on the build. It is product copy read by somebody standing
+next to the install button, so it never mentions version numbers, internal
+vocabulary, or anything that was just fixed for security reasons. A build that
+skips several versions describes everything since the release that is live, not
+only the last change.
 
 ## What you have to do in the console
 
